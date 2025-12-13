@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../../schemas/section_manifest.schema.json",
+  "schema_version": "1.0.0",
+  "content_version": "1.0.0",
+  "module_id": "physics",
+  "section_id": "motion",
+  "title": "Motion",
+  "description": "Basics of motion with a short text and a gravity simulation preset.",
+  "packages": [
+    {
+      "package_id": "page_001",
+      "title": "Motion Page 001",
+      "manifest_path": "packages/page_001/package_manifest.json",
+      "order": 1
+    }
+  ]
+}
