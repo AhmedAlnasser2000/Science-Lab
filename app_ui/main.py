@@ -625,6 +625,13 @@ class ContentBrowserScreen(QtWidgets.QWidget):
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setHeaderLabels(["Item", "Status"])
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setColumnCount(2)
+        header = self.tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.setMinimumWidth(260)
         self.tree.itemSelectionChanged.connect(self._on_selection)
         splitter.addWidget(self.tree)
 
@@ -679,19 +686,27 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         if not module:
             QtWidgets.QMessageBox.warning(self, "Content", data.get("reason") or "Module data unavailable.")
             return
-        module_item = QtWidgets.QTreeWidgetItem([f"Module {module.get('title')}", data.get("status", "")])
+        module_label = self._display_name(module.get("title"), module.get("module_id"), "Module")
+        module_item = QtWidgets.QTreeWidgetItem([module_label, data.get("status", "")])
+        module_item.setToolTip(0, module_label)
         module_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "module"})
         self.tree.addTopLevelItem(module_item)
         for section in module.get("sections", []):
-            sec_item = QtWidgets.QTreeWidgetItem([f"Section {section.get('title')}", section.get("status", "")])
+            sec_label = self._display_name(section.get("title"), section.get("section_id"), "Section")
+            sec_item = QtWidgets.QTreeWidgetItem([sec_label, section.get("status", "")])
+            sec_item.setToolTip(0, sec_label)
             sec_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "section"})
             module_item.addChild(sec_item)
             for package in section.get("packages", []):
-                pkg_item = QtWidgets.QTreeWidgetItem([f"Package {package.get('title')}", package.get("status", "")])
+                pkg_label = self._display_name(package.get("title"), package.get("package_id"), "Package")
+                pkg_item = QtWidgets.QTreeWidgetItem([pkg_label, package.get("status", "")])
+                pkg_item.setToolTip(0, pkg_label)
                 pkg_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "package"})
                 sec_item.addChild(pkg_item)
                 for part in package.get("parts", []):
-                    part_item = QtWidgets.QTreeWidgetItem([f"Part {part.get('title')}", part.get("status")])
+                    part_label = self._display_name(part.get("title"), part.get("part_id"), "Part")
+                    part_item = QtWidgets.QTreeWidgetItem([part_label, part.get("status")])
+                    part_item.setToolTip(0, part_label)
                     part_item.setData(
                         0,
                         QtCore.Qt.ItemDataRole.UserRole,
@@ -727,6 +742,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
 
     def _on_selection(self) -> None:
         item = self.tree.currentItem()
+        self.viewer.clear()
         if not item:
             self._clear_details()
             return
@@ -824,6 +840,10 @@ class ContentBrowserScreen(QtWidgets.QWidget):
             lab_id = "gravity"
         if not lab_id and self.current_part_id == "gravity_demo":
             lab_id = "gravity"
+        if not lab_id and behavior.get("preset") == "projectile-demo":
+            lab_id = "projectile"
+        if not lab_id and self.current_part_id == "projectile_demo":
+            lab_id = "projectile"
         if lab_id:
             if detail.get("status") != STATUS_READY:
                 QtWidgets.QMessageBox.information(self, "Open", "Install this lab first.")
@@ -859,6 +879,10 @@ class ContentBrowserScreen(QtWidgets.QWidget):
             return True
         return False
 
+    @staticmethod
+    def _display_name(title: Optional[str], fallback: Optional[str], default: str) -> str:
+        return str(title or fallback or default)
+
 
 
 
@@ -889,7 +913,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.adapter,
             self._show_main_menu,
             lambda: self.current_profile,
-            self._open_simulation,
+            self._open_lab,
         )
 
         self.stacked.addWidget(self.main_menu)
@@ -959,7 +983,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.lab_widget.deleteLater()
             self.lab_widget = None
 
-    def _open_simulation(self, lab_id: str, part_id: str, manifest: Dict, detail: Dict):
+    def _open_lab(self, lab_id: str, part_id: str, manifest: Dict, detail: Dict):
         plugin = lab_registry.get_lab(lab_id)
         if not plugin:
             QtWidgets.QMessageBox.warning(self, "Lab", f"Lab '{lab_id}' not available.")

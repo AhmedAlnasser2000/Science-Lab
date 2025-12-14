@@ -13,6 +13,24 @@
       "title": "Motion",
       "manifest_path": "sections/motion/section_manifest.json",
       "order": 1
+    },
+    {
+      "section_id": "optics",
+      "title": "Optics",
+      "manifest_path": "sections/optics/section_manifest.json",
+      "order": 2
+    },
+    {
+      "section_id": "electricity",
+      "title": "Electricity",
+      "manifest_path": "sections/electricity/section_manifest.json",
+      "order": 3
+    },
+    {
+      "section_id": "vectors",
+      "title": "Vectors",
+      "manifest_path": "sections/vectors/section_manifest.json",
+      "order": 4
     }
   ]
 }

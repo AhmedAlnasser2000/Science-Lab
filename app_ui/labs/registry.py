@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from .gravity_lab import GravityLabPlugin
+from .projectile_lab import ProjectileLabPlugin
 from .base import LabPlugin
 
 _REGISTRY: Dict[str, LabPlugin] = {}
@@ -13,6 +14,7 @@ def _register(plugin: LabPlugin) -> None:
 
 
 _register(GravityLabPlugin())
+_register(ProjectileLabPlugin())
 
 
 def get_lab(lab_id: str) -> Optional[LabPlugin]:
