@@ -13,6 +13,24 @@ PROFILE_PATH = Path("data/roaming/experience_profile.json")
 EXPERIENCE_PROFILES = ["Learner", "Educator", "Explorer"]
 
 
+class InstallWorker(QtCore.QObject):
+    finished = QtCore.pyqtSignal(dict)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self, adapter: "ContentSystemAdapter", part_id: str):
+        super().__init__()
+        self.adapter = adapter
+        self.part_id = part_id
+
+    @QtCore.pyqtSlot()
+    def run(self):
+        try:
+            result = self.adapter.download_part(self.part_id)
+            self.finished.emit(result)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.error.emit(str(exc))
+
+
 def load_ui_config() -> Dict:
     default = {"active_pack_id": "default", "reduced_motion": False}
     path = CONFIG_PATH
@@ -118,8 +136,27 @@ class ContentSystemAdapter:
 
 
 class MainMenuScreen(QtWidgets.QWidget):
-    def __init__(self, on_open_manager, on_open_settings, experience_profile: str):
+    def __init__(
+        self,
+        on_start_physics,
+        on_open_content_browser,
+        on_open_settings,
+        on_open_module_mgmt,
+        on_open_content_mgmt,
+        on_open_diagnostics,
+        on_quit,
+        experience_profile: str,
+    ):
         super().__init__()
+        self.on_start_physics = on_start_physics
+        self.on_open_content_browser = on_open_content_browser
+        self.on_open_settings = on_open_settings
+        self.on_open_module_mgmt = on_open_module_mgmt
+        self.on_open_content_mgmt = on_open_content_mgmt
+        self.on_open_diagnostics = on_open_diagnostics
+        self.on_quit = on_quit
+        self.profile = experience_profile
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
@@ -136,24 +173,49 @@ class MainMenuScreen(QtWidgets.QWidget):
         self.profile_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.profile_label.setStyleSheet("font-size: 14px; color: #333;")
 
-        button = QtWidgets.QPushButton("Module Manager")
-        button.setFixedWidth(200)
-        button.clicked.connect(on_open_manager)
-
-        settings_button = QtWidgets.QPushButton("Settings")
-        settings_button.setFixedWidth(200)
-        settings_button.clicked.connect(on_open_settings)
+        self.buttons_layout = QtWidgets.QVBoxLayout()
+        self.buttons_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(title)
         layout.addSpacing(10)
         layout.addWidget(subtitle)
         layout.addWidget(self.profile_label)
         layout.addSpacing(30)
-        layout.addWidget(button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(settings_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        layout.addLayout(self.buttons_layout)
+        self._rebuild_buttons()
 
     def set_profile(self, profile: str) -> None:
+        self.profile = profile
         self.profile_label.setText(f"Experience Profile: {profile}")
+        self._rebuild_buttons()
+
+    def _clear_buttons(self) -> None:
+        while self.buttons_layout.count():
+            item = self.buttons_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _add_button(self, label: str, callback) -> None:
+        button = QtWidgets.QPushButton(label)
+        button.setFixedWidth(220)
+        button.clicked.connect(callback)
+        self.buttons_layout.addWidget(button)
+
+    def _rebuild_buttons(self) -> None:
+        self._clear_buttons()
+        self._add_button("Start Physics", self.on_start_physics)
+        self._add_button("Physics Content", self.on_open_content_browser)
+
+        if self.profile in ("Educator", "Explorer"):
+            self._add_button("Module Management", self.on_open_module_mgmt)
+            self._add_button("Content Management", self.on_open_content_mgmt)
+
+        if self.profile == "Explorer":
+            self._add_button("Diagnostics / Developer", self.on_open_diagnostics)
+
+        self._add_button("Settings", self.on_open_settings)
+        self._add_button("Quit", self.on_quit)
 
 
 class ModuleManagerScreen(QtWidgets.QWidget):
@@ -517,37 +579,335 @@ class SettingsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Settings", f"Failed to save settings: {exc}")
 
 
+class PlaceholderDialog(QtWidgets.QDialog):
+    def __init__(self, title: str, message: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(360, 200)
+        layout = QtWidgets.QVBoxLayout(self)
+        label = QtWidgets.QLabel(message)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+
+
+class ContentBrowserScreen(QtWidgets.QWidget):
+    def __init__(self, adapter: "ContentSystemAdapter", on_back, get_profile):
+        super().__init__()
+        self.adapter = adapter
+        self.on_back = on_back
+        self.get_profile = get_profile
+        self.current_part_id: Optional[str] = None
+        self.current_part_info: Optional[Dict] = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        header = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Physics Content Browser")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_tree)
+        header.addWidget(title)
+        header.addStretch()
+        header.addWidget(refresh_btn)
+        header.addWidget(back_btn)
+        layout.addLayout(header)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        layout.addWidget(splitter, stretch=1)
+
+        self.tree = QtWidgets.QTreeWidget()
+        self.tree.setHeaderLabels(["Item", "Status"])
+        self.tree.itemSelectionChanged.connect(self._on_selection)
+        splitter.addWidget(self.tree)
+
+        detail_widget = QtWidgets.QWidget()
+        detail_layout = QtWidgets.QVBoxLayout(detail_widget)
+        self.detail_title = QtWidgets.QLabel("Select a part to view details.")
+        self.detail_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.detail_status = QtWidgets.QLabel("")
+        self.detail_reason = QtWidgets.QLabel("")
+        self.detail_reason.setStyleSheet("color: #555;")
+        self.debug_label = QtWidgets.QLabel("")
+        self.debug_label.setStyleSheet("color: #999;")
+        self.debug_label.setVisible(False)
+
+        detail_layout.addWidget(self.detail_title)
+        detail_layout.addWidget(self.detail_status)
+        detail_layout.addWidget(self.detail_reason)
+        detail_layout.addWidget(self.debug_label)
+
+        button_row = QtWidgets.QHBoxLayout()
+        self.install_button = QtWidgets.QPushButton("Install")
+        self.install_button.clicked.connect(self._install_selected)
+        self.open_button = QtWidgets.QPushButton("Open")
+        self.open_button.clicked.connect(self._open_selected)
+        self.install_button.setEnabled(False)
+        self.open_button.setEnabled(False)
+        button_row.addWidget(self.install_button)
+        button_row.addWidget(self.open_button)
+        button_row.addStretch()
+        detail_layout.addLayout(button_row)
+
+        self.viewer = QtWidgets.QPlainTextEdit()
+        self.viewer.setReadOnly(True)
+        self.viewer.setPlaceholderText("Open a part to preview markdown content.")
+        detail_layout.addWidget(self.viewer, stretch=1)
+
+        splitter.addWidget(detail_widget)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+
+        self.progress_dialog: Optional[QtWidgets.QProgressDialog] = None
+        self.install_thread: Optional[QtCore.QThread] = None
+        self.refresh_tree()
+
+    def set_profile(self, profile: str) -> None:
+        self.debug_label.setVisible(profile == "Explorer" and bool(self.debug_label.text()))
+
+    def refresh_tree(self) -> None:
+        self.tree.clear()
+        data = self.adapter.list_tree()
+        module = data.get("module")
+        if not module:
+            QtWidgets.QMessageBox.warning(self, "Content", data.get("reason") or "Module data unavailable.")
+            return
+        module_item = QtWidgets.QTreeWidgetItem([f"Module {module.get('title')}", data.get("status", "")])
+        module_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "module"})
+        self.tree.addTopLevelItem(module_item)
+        for section in module.get("sections", []):
+            sec_item = QtWidgets.QTreeWidgetItem([f"Section {section.get('title')}", section.get("status", "")])
+            sec_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "section"})
+            module_item.addChild(sec_item)
+            for package in section.get("packages", []):
+                pkg_item = QtWidgets.QTreeWidgetItem([f"Package {package.get('title')}", package.get("status", "")])
+                pkg_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "package"})
+                sec_item.addChild(pkg_item)
+                for part in package.get("parts", []):
+                    part_item = QtWidgets.QTreeWidgetItem([f"Part {part.get('title')}", part.get("status")])
+                    part_item.setData(
+                        0,
+                        QtCore.Qt.ItemDataRole.UserRole,
+                        {
+                            "type": "part",
+                            "module_id": module.get("module_id"),
+                            "section_id": section.get("section_id"),
+                            "package_id": package.get("package_id"),
+                            "part_id": part.get("part_id"),
+                            "status": part.get("status"),
+                            "reason": part.get("reason"),
+                        },
+                    )
+                    pkg_item.addChild(part_item)
+        self.tree.expandAll()
+        if self.current_part_id:
+            if not self._reselect_part(self.current_part_id):
+                self._clear_details()
+        else:
+            self._clear_details()
+
+    def _clear_details(self):
+        self.current_part_id = None
+        self.current_part_info = None
+        self.detail_title.setText("Select a part to view details.")
+        self.detail_status.clear()
+        self.detail_reason.clear()
+        self.debug_label.clear()
+        self.debug_label.setVisible(False)
+        self.viewer.clear()
+        self.install_button.setEnabled(False)
+        self.open_button.setEnabled(False)
+
+    def _on_selection(self) -> None:
+        item = self.tree.currentItem()
+        if not item:
+            self._clear_details()
+            return
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        if data.get("type") != "part":
+            self._clear_details()
+            return
+        part_id = data.get("part_id")
+        self.current_part_id = part_id
+        self.detail_title.setText(f"Part {part_id}")
+        self.detail_status.setText(f"Status: {data.get('status')}")
+        self.detail_reason.setText(f"Reason: {data.get('reason') or '—'}")
+        self.install_button.setEnabled(data.get("status") != STATUS_READY)
+        self.open_button.setEnabled(data.get("status") == STATUS_READY)
+
+        detail = self.adapter.get_part(part_id)
+        self.current_part_info = detail
+        paths = (detail or {}).get("paths") or {}
+        assets = paths.get("assets") or {}
+        asset_info = []
+        for asset, refs in assets.items():
+            repo = refs.get("repo")
+            store = refs.get("store")
+            asset_info.append(f"{asset} -> store: {store or 'n/a'}")
+        debug_text = "\n".join(asset_info)
+        profile = self.get_profile()
+        self.debug_label.setText(debug_text)
+        self.debug_label.setVisible(bool(debug_text) and profile == "Explorer")
+
+    def _reselect_part(self, part_id: str) -> bool:
+        def walk(item: QtWidgets.QTreeWidgetItem) -> bool:
+            data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+            if data.get("type") == "part" and data.get("part_id") == part_id:
+                self.tree.setCurrentItem(item)
+                return True
+            for idx in range(item.childCount()):
+                if walk(item.child(idx)):
+                    return True
+            return False
+
+        for i in range(self.tree.topLevelItemCount()):
+            if walk(self.tree.topLevelItem(i)):
+                return True
+        return False
+
+    def _install_selected(self):
+        if not self.current_part_id or self.install_thread:
+            return
+        self.progress_dialog = QtWidgets.QProgressDialog("Installing part...", "", 0, 0, self)
+        self.progress_dialog.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        self.progress_dialog.setCancelButton(None)
+        worker = InstallWorker(self.adapter, self.current_part_id)
+        thread = QtCore.QThread()
+        self.install_thread = thread
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda result: self._on_install_finished(result, worker, thread))
+        worker.error.connect(lambda err: self._on_install_error(err, worker, thread))
+        thread.start()
+
+    def _on_install_finished(self, result: Dict, worker: InstallWorker, thread: QtCore.QThread):
+        if self.progress_dialog:
+            self.progress_dialog.close()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        self.install_thread = None
+        status = result.get("status")
+        message = result.get("reason") or "Completed."
+        QtWidgets.QMessageBox.information(self, "Install", f"Status: {status}\n{message}")
+        self.refresh_tree()
+
+    def _on_install_error(self, error: str, worker: InstallWorker, thread: QtCore.QThread):
+        if self.progress_dialog:
+            self.progress_dialog.close()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        self.install_thread = None
+        QtWidgets.QMessageBox.warning(self, "Install", f"Failed to install: {error}")
+
+    def _open_selected(self):
+        if not self.current_part_id:
+            return
+        detail = self.adapter.get_part(self.current_part_id)
+        if detail.get("status") != STATUS_READY:
+            QtWidgets.QMessageBox.information(self, "Open", "Part is not installed yet.")
+            return
+        manifest = detail.get("manifest") or {}
+        content = manifest.get("content") or {}
+        asset = content.get("asset_path")
+        if not asset:
+            QtWidgets.QMessageBox.information(self, "Open", "Part has no content asset.")
+            return
+        assets = (detail.get("paths") or {}).get("assets") or {}
+        path_info = assets.get(asset) or {}
+        for candidate in ["store", "repo"]:
+            candidate_path = path_info.get(candidate)
+            if candidate_path and Path(candidate_path).exists():
+                try:
+                    text = Path(candidate_path).read_text(encoding="utf-8")
+                    self.viewer.setPlainText(text)
+                    return
+                except Exception as exc:
+                    QtWidgets.QMessageBox.warning(self, "Open", f"Failed to read asset: {exc}")
+                    return
+        QtWidgets.QMessageBox.warning(self, "Open", "Asset file not found.")
+
+
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, initial_profile: str):
         super().__init__()
         self.setWindowTitle("PhysicsLab V1")
         self.resize(900, 600)
         self.adapter = ContentSystemAdapter()
-        self.current_profile = load_experience_profile()
+        self.current_profile = initial_profile
 
         self.stacked = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stacked)
 
-        self.main_menu = MainMenuScreen(self._show_module_manager, self._open_settings, self.current_profile)
+        self.main_menu = MainMenuScreen(
+            self._show_module_manager,
+            self._open_content_browser,
+            self._open_settings,
+            self._open_module_management,
+            self._open_content_management,
+            self._open_diagnostics,
+            self._quit_app,
+            self.current_profile,
+        )
         self.module_manager = ModuleManagerScreen(self.adapter)
+        self.content_browser = ContentBrowserScreen(
+            self.adapter,
+            self._show_main_menu,
+            lambda: self.current_profile,
+        )
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.module_manager)
+        self.stacked.addWidget(self.content_browser)
+        self._show_main_menu()
 
     def _show_module_manager(self):
         self.stacked.setCurrentWidget(self.module_manager)
+
+    def _show_main_menu(self):
+        self.stacked.setCurrentWidget(self.main_menu)
+
+    def _open_content_browser(self):
+        self.content_browser.set_profile(self.current_profile)
+        self.content_browser.refresh_tree()
+        self.stacked.setCurrentWidget(self.content_browser)
 
     def _open_settings(self):
         dialog = SettingsDialog(self)
         dialog.exec()
         self.current_profile = load_experience_profile()
-        self.main_menu.set_profile(self.current_profile)
+        if self.main_menu:
+            self.main_menu.set_profile(self.current_profile)
+        if self.content_browser:
+            self.content_browser.set_profile(self.current_profile)
+
+    def _open_module_management(self):
+        PlaceholderDialog("Module Management", "Module management tools coming soon.", self).exec()
+
+    def _open_content_management(self):
+        PlaceholderDialog("Content Management", "Content management tools coming soon.", self).exec()
+
+    def _open_diagnostics(self):
+        PlaceholderDialog("Diagnostics / Developer", "Diagnostics dashboard coming soon.", self).exec()
+
+    def _quit_app(self):
+        app = QtWidgets.QApplication.instance()
+        if app:
+            app.quit()
 
 
 def main():
+    profile = load_experience_profile()
+    print(f"Experience profile: {profile}")
     app = QtWidgets.QApplication(sys.argv)
     apply_ui_config_styles(app)
-    window = MainWindow()
+    window = MainWindow(profile)
     window.show()
     sys.exit(app.exec())
 
