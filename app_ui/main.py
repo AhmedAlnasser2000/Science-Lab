@@ -1,4 +1,3 @@
-﻿import json
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -6,8 +5,10 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 import content_system
+from . import config as ui_config
 from . import kernel_bridge
 from .labs import registry as lab_registry
+from .labs.host import LabHost
 
 try:
     from core_center.discovery import ensure_data_roots, discover_components
@@ -21,10 +22,12 @@ except Exception as exc:  # pragma: no cover
     CORE_CENTER_AVAILABLE = False
     CORE_CENTER_ERROR = str(exc)
 
-CONFIG_PATH = Path("data/roaming/ui_config.json")
-PROFILE_PATH = Path("data/roaming/experience_profile.json")
-EXPERIENCE_PROFILES = ["Learner", "Educator", "Explorer"]
 RECOMMENDED_PART_SEQUENCE = ["text_intro", "gravity_demo"]
+PROFILE_GUIDE_KEYS = {
+    "Learner": "learner",
+    "Educator": "educator",
+    "Explorer": "explorer",
+}
 
 
 class InstallWorker(QtCore.QObject):
@@ -62,44 +65,23 @@ class TaskWorker(QtCore.QObject):
             self.error.emit(str(exc))
 
 
-def load_ui_config() -> Dict:
-    default = {"active_pack_id": "default", "reduced_motion": False}
-    path = CONFIG_PATH
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(default, indent=2), encoding="utf-8")
-        return default.copy()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        for key, value in default.items():
-            data.setdefault(key, value)
-        return data
-    except Exception:
-        return default.copy()
-
-
-def save_ui_config(data: Dict) -> None:
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-
-def load_experience_profile() -> str:
-    default = EXPERIENCE_PROFILES[0]
-    if not PROFILE_PATH.exists():
-        return default
-    try:
-        data = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
-        profile = data.get("profile")
-        if profile in EXPERIENCE_PROFILES:
-            return profile
-    except Exception:
-        pass
-    return default
-
-
-def save_experience_profile(profile: str) -> None:
-    PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE_PATH.write_text(json.dumps({"profile": profile}, indent=2), encoding="utf-8")
+def read_asset_text(asset_path: Optional[str], paths: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not asset_path:
+        return None
+    assets = (paths or {}).get("assets") or {}
+    path_info = assets.get(asset_path)
+    if not isinstance(path_info, dict):
+        return None
+    for key in ("store", "repo"):
+        candidate = path_info.get(key)
+        if candidate:
+            candidate_path = Path(candidate)
+            if candidate_path.exists():
+                try:
+                    return candidate_path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+    return None
 
 
 def apply_ui_config_styles(app: QtWidgets.QApplication) -> bool:
@@ -109,7 +91,7 @@ def apply_ui_config_styles(app: QtWidgets.QApplication) -> bool:
         print(f"fallback: UI pack disabled (reason: missing ui_system - {exc})")
         return False
 
-    config = load_ui_config()
+    config = ui_config.load_ui_config()
     pack_id = config.get("active_pack_id", "default")
     try:
         manager.ensure_config()
@@ -437,23 +419,9 @@ class ModuleManagerScreen(QtWidgets.QWidget):
         if not asset:
             return "Part manifest missing asset path."
 
-        asset_paths = (paths or {}).get("assets") or {}
-        path_info = asset_paths.get(asset)
-        candidate_paths = []
-        if isinstance(path_info, dict):
-            repo_path = path_info.get("repo")
-            store_path = path_info.get("store")
-            if store_path:
-                candidate_paths.append(Path(store_path))
-            if repo_path:
-                candidate_paths.append(Path(repo_path))
-
-        for path in candidate_paths:
-            if path and path.exists():
-                try:
-                    return path.read_text(encoding="utf-8")
-                except OSError:
-                    continue
+        text = read_asset_text(asset, paths)
+        if text is not None:
+            return text
         return "Asset not available yet."
 
     def _download_selected_part(self) -> None:
@@ -540,7 +508,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
         layout.addWidget(QtWidgets.QLabel("Experience Profile"))
         self.profile_combo = QtWidgets.QComboBox()
-        self.profile_combo.addItems(EXPERIENCE_PROFILES)
+        self.profile_combo.addItems(ui_config.EXPERIENCE_PROFILES)
         layout.addWidget(self.profile_combo)
 
         button_row = QtWidgets.QHBoxLayout()
@@ -555,10 +523,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self._populate_fields()
 
     def _populate_fields(self) -> None:
-        config = load_ui_config()
+        config = ui_config.load_ui_config()
         current_pack = config.get("active_pack_id", "default")
         self.reduced_motion_cb.setChecked(bool(config.get("reduced_motion", False)))
-        current_profile = load_experience_profile()
+        current_profile = ui_config.load_experience_profile()
         idx = self.profile_combo.findText(current_profile)
         if idx >= 0:
             self.profile_combo.setCurrentIndex(idx)
@@ -584,13 +552,13 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _save_settings(self) -> None:
         try:
-            config = load_ui_config()
+            config = ui_config.load_ui_config()
             config["active_pack_id"] = self.pack_combo.currentData()
             config["reduced_motion"] = self.reduced_motion_cb.isChecked()
-            save_ui_config(config)
+            ui_config.save_ui_config(config)
 
             profile = self.profile_combo.currentText()
-            save_experience_profile(profile)
+            ui_config.save_experience_profile(profile)
 
             app = QtWidgets.QApplication.instance()
             applied = True
@@ -886,18 +854,10 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         if not asset:
             QtWidgets.QMessageBox.information(self, "Open", "Part has no content asset.")
             return
-        assets = (detail.get("paths") or {}).get("assets") or {}
-        path_info = assets.get(asset) or {}
-        for candidate in ["store", "repo"]:
-            candidate_path = path_info.get(candidate)
-            if candidate_path and Path(candidate_path).exists():
-                try:
-                    text = Path(candidate_path).read_text(encoding="utf-8")
-                    self.viewer.setPlainText(text)
-                    return
-                except Exception as exc:
-                    QtWidgets.QMessageBox.warning(self, "Open", f"Failed to read asset: {exc}")
-                    return
+        text = read_asset_text(asset, detail.get("paths"))
+        if text is not None:
+            self.viewer.setPlainText(text)
+            return
         QtWidgets.QMessageBox.warning(self, "Open", "Asset file not found.")
 
     def select_part(self, part_id: Optional[str]) -> bool:
@@ -1112,6 +1072,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stacked)
         self.lab_widget: Optional[QtWidgets.QWidget] = None
+        self.lab_host_widget: Optional[QtWidgets.QWidget] = None
 
         self.main_menu = MainMenuScreen(
             self._start_physics,
@@ -1169,7 +1130,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_settings(self):
         dialog = SettingsDialog(self)
         dialog.exec()
-        self.current_profile = load_experience_profile()
+        self.current_profile = ui_config.load_experience_profile()
         if self.main_menu:
             self.main_menu.set_profile(self.current_profile)
         if self.content_browser:
@@ -1199,9 +1160,11 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.lab_widget.stop_simulation()
                 except Exception:
                     pass
-            self.stacked.removeWidget(self.lab_widget)
-            self.lab_widget.deleteLater()
             self.lab_widget = None
+        if self.lab_host_widget is not None:
+            self.stacked.removeWidget(self.lab_host_widget)
+            self.lab_host_widget.deleteLater()
+            self.lab_host_widget = None
 
     def _open_lab(self, lab_id: str, part_id: str, manifest: Dict, detail: Dict):
         plugin = lab_registry.get_lab(lab_id)
@@ -1211,20 +1174,55 @@ class MainWindow(QtWidgets.QMainWindow):
         self._dispose_lab_widget()
         try:
             widget = plugin.create_widget(self._show_content_browser, lambda: self.current_profile)
+            if not isinstance(widget, QtWidgets.QWidget):
+                raise TypeError("Lab widgets must extend QWidget")
             if hasattr(widget, "set_profile"):
                 widget.set_profile(self.current_profile)
+            reduced_motion = ui_config.get_reduced_motion()
+            if hasattr(widget, "set_reduced_motion"):
+                try:
+                    widget.set_reduced_motion(reduced_motion)
+                except Exception:
+                    pass
             if hasattr(widget, "load_part"):
                 widget.load_part(part_id, manifest, detail)
+            guide_text = self._load_lab_guide_text(manifest, detail, self.current_profile)
+            host = LabHost(widget, guide_text, reduced_motion)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Lab", f"Failed to open lab: {exc}")
             return
         self.lab_widget = widget
-        self.stacked.addWidget(widget)
-        self.stacked.setCurrentWidget(widget)
+        self.lab_host_widget = host
+        self.stacked.addWidget(host)
+        self.stacked.setCurrentWidget(host)
+
+    def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> str:
+        fallback = "Guide coming soon for this lab."
+        if not isinstance(manifest, dict):
+            return fallback
+        guides = (manifest.get("x_extensions") or {}).get("guides")
+        if not isinstance(guides, dict):
+            return fallback
+        key = PROFILE_GUIDE_KEYS.get(profile, "learner")
+        asset_path = guides.get(key)
+        if not asset_path:
+            for alt in ("learner", "educator", "explorer"):
+                asset_path = guides.get(alt)
+                if asset_path:
+                    break
+        if not asset_path:
+            asset_path = next(iter(guides.values()), None)
+        if not asset_path:
+            return fallback
+        paths = detail.get("paths") if isinstance(detail, dict) else {}
+        text = read_asset_text(asset_path, paths)
+        if text is not None:
+            return text
+        return "Guide asset missing or unreadable. Reinstall the part if this persists."
 
 
 def main():
-    profile = load_experience_profile()
+    profile = ui_config.load_experience_profile()
     print(f"Experience profile: {profile}")
     app = QtWidgets.QApplication(sys.argv)
     apply_ui_config_styles(app)

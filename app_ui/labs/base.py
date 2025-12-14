@@ -16,6 +16,9 @@ class LabWidget(Protocol):
     def stop_simulation(self) -> None:  # pragma: no cover - interface
         ...
 
+    def set_reduced_motion(self, value: bool) -> None:  # pragma: no cover - interface
+        ...
+
 
 class LabPlugin(ABC):
     id: str

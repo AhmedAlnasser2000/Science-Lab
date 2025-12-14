@@ -27,11 +27,26 @@ def _load_json(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
 
 def _collect_asset_paths(manifest: Dict[str, Any]) -> List[str]:
     assets: List[str] = []
+    seen = set()
+
+    def _add(path: Optional[str]) -> None:
+        if isinstance(path, str):
+            normalized = path.strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                assets.append(normalized)
+
     content = manifest.get("content")
     if isinstance(content, dict):
-        asset_path = content.get("asset_path")
-        if isinstance(asset_path, str) and asset_path.strip():
-            assets.append(asset_path)
+        _add(content.get("asset_path"))
+
+    x_ext = manifest.get("x_extensions")
+    if isinstance(x_ext, dict):
+        guides = x_ext.get("guides")
+        if isinstance(guides, dict):
+            for value in guides.values():
+                _add(value)
+
     return assets
 
 

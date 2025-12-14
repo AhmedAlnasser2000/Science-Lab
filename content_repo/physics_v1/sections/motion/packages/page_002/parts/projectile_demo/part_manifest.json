@@ -19,5 +19,12 @@
       "launch_angle_deg": 45,
       "gravity_m_s2": 9.81
     }
+  },
+  "x_extensions": {
+    "guides": {
+      "learner": "assets/projectile_guide_learner.md",
+      "educator": "assets/projectile_guide_educator.md",
+      "explorer": "assets/projectile_guide_explorer.md"
+    }
   }
 }

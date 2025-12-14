@@ -1,26 +1,12 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from typing import Callable, Dict
 
-import json
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from .. import config as ui_config
 from .base import LabPlugin
-
-
-CONFIG_PATH = Path("data/roaming/ui_config.json")
-
-
-def _get_reduced_motion() -> bool:
-    if not CONFIG_PATH.exists():
-        return False
-    try:
-        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        return bool(data.get("reduced_motion", False))
-    except Exception:
-        return False
 
 
 class ProjectileLabPlugin(LabPlugin):
@@ -41,12 +27,10 @@ class ProjectileLabWidget(QtWidgets.QWidget):
         self.on_exit = on_exit
         self.get_profile = get_profile
         self.profile = get_profile()
-        self.reduced_motion = _get_reduced_motion()
+        self.reduced_motion = ui_config.get_reduced_motion()
 
-        self.base_dt = 0.016 if not self.reduced_motion else 0.033
         self.g = 9.81
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(int(self.base_dt * 1000))
         self.timer.timeout.connect(self._tick)
 
         self.initial_speed = 15.0
@@ -151,6 +135,10 @@ class ProjectileLabWidget(QtWidgets.QWidget):
 
     def set_profile(self, profile: str) -> None:
         self.profile = profile
+        self._update_profile_controls()
+
+    def set_reduced_motion(self, value: bool) -> None:
+        self.reduced_motion = bool(value)
         self._update_profile_controls()
 
     def stop_simulation(self) -> None:

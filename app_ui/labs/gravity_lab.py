@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Callable, Dict, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from .. import config as ui_config
 from .. import kernel_bridge
 from .base import LabPlugin
 
@@ -29,6 +29,7 @@ class GravityLabWidget(QtWidgets.QWidget):
         self.backend = None
         self.backend_name = "python-fallback"
         self.base_dt = 0.016
+        self.reduced_motion = ui_config.get_reduced_motion()
         self.g = 9.81
         self.initial_height = 10.0
         self.initial_vy = 0.0
@@ -79,8 +80,8 @@ class GravityLabWidget(QtWidgets.QWidget):
         layout.addWidget(self.canvas, stretch=1)
 
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(16)
         self.timer.timeout.connect(self._tick)
+        self.set_reduced_motion(self.reduced_motion)
 
     def load_part(self, part_id: str, manifest: Dict, detail: Dict) -> None:
         self.stop_simulation()
@@ -102,6 +103,12 @@ class GravityLabWidget(QtWidgets.QWidget):
         self.dt_slider.setVisible(not is_learner)
         self.dt_label.setVisible(not is_learner)
         self.backend_label.setVisible(profile == "Explorer")
+
+    def set_reduced_motion(self, value: bool) -> None:
+        self.reduced_motion = bool(value)
+        self.base_dt = 0.033 if self.reduced_motion else 0.016
+        self.timer.setInterval(self._timer_interval_ms())
+        self._update_dt_label()
 
     def stop_simulation(self) -> None:
         self.timer.stop()
@@ -148,6 +155,9 @@ class GravityLabWidget(QtWidgets.QWidget):
         if self.profile == "Learner":
             return self.base_dt
         return max(0.001, self.dt_slider.value() / 1000.0)
+
+    def _timer_interval_ms(self) -> int:
+        return 33 if self.reduced_motion else 16
 
     def _tick(self) -> None:
         if not self.backend:
