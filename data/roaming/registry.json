@@ -1,0 +1,12 @@
+[
+  {
+    "id": "physics",
+    "type": "module",
+    "version": "1.0.0",
+    "source": "content_repo",
+    "state": "present",
+    "install_path": "content_repo\\physics_v1",
+    "last_seen": "2025-12-14T13:12:29Z",
+    "disk_usage_bytes": 4316
+  }
+]
