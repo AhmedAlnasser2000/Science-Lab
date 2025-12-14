@@ -56,6 +56,14 @@ def ensure_kernel_available() -> None:
     _get_lib()
 
 
+def kernel_available() -> bool:
+    try:
+        ensure_kernel_available()
+        return True
+    except KernelNotAvailable:
+        return False
+
+
 def _get_lib() -> ctypes.CDLL:
     global _LIB
     if _LIB is None:
@@ -72,29 +80,67 @@ def _fetch_error(lib: ctypes.CDLL) -> str:
     return buf.value.decode("utf-8", errors="replace")
 
 
+class GravityKernelSession:
+    def __init__(self, y0: float, vy0: float):
+        self.lib = _get_lib()
+        self.handle = self.lib.pl_world_create(ctypes.c_double(y0), ctypes.c_double(vy0))
+        if self.handle == 0:
+            raise RuntimeError(_fetch_error(self.lib))
+
+    def reset(self, y0: float, vy0: float) -> None:
+        self.close()
+        self.handle = self.lib.pl_world_create(ctypes.c_double(y0), ctypes.c_double(vy0))
+        if self.handle == 0:
+            raise RuntimeError(_fetch_error(self.lib))
+
+    def step(self, dt: float, steps: int = 1) -> None:
+        status = self.lib.pl_world_step(
+            self.handle,
+            ctypes.c_double(dt),
+            ctypes.c_uint32(max(1, steps)),
+        )
+        if status != 0:
+            raise RuntimeError(_fetch_error(self.lib))
+
+    def get_state(self) -> Tuple[float, float, float]:
+        t = ctypes.c_double()
+        y = ctypes.c_double()
+        vy = ctypes.c_double()
+        status = self.lib.pl_world_get_state(
+            self.handle,
+            ctypes.byref(t),
+            ctypes.byref(y),
+            ctypes.byref(vy),
+        )
+        if status != 0:
+            raise RuntimeError(_fetch_error(self.lib))
+        return t.value, y.value, vy.value
+
+    def close(self) -> None:
+        if getattr(self, "handle", 0):
+            self.lib.pl_world_destroy(ctypes.c_uint64(self.handle))
+            self.handle = 0
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def create_gravity_session(y0: float, vy0: float) -> GravityKernelSession:
+    return GravityKernelSession(y0, vy0)
+
+
 def run_gravity_demo(
     y0: float = 10.0, vy0: float = 0.0, dt: float = 0.01, steps: int = 300
 ) -> List[Tuple[float, float, float]]:
-    lib = _get_lib()
-    handle = lib.pl_world_create(ctypes.c_double(y0), ctypes.c_double(vy0))
-    if handle == 0:
-        raise RuntimeError(_fetch_error(lib))
-
+    session = create_gravity_session(y0, vy0)
     results: List[Tuple[float, float, float]] = []
-
     try:
         for _ in range(steps):
-            status = lib.pl_world_step(handle, ctypes.c_double(dt), ctypes.c_uint32(1))
-            if status != 0:
-                raise RuntimeError(_fetch_error(lib))
-            t = ctypes.c_double()
-            y = ctypes.c_double()
-            vy = ctypes.c_double()
-            status_state = lib.pl_world_get_state(handle, ctypes.byref(t), ctypes.byref(y), ctypes.byref(vy))
-            if status_state != 0:
-                raise RuntimeError(_fetch_error(lib))
-            results.append((t.value, y.value, vy.value))
+            session.step(dt)
+            results.append(session.get_state())
     finally:
-        lib.pl_world_destroy(handle)
-
+        session.close()
     return results
