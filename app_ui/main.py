@@ -7,6 +7,35 @@ from PyQt6 import QtCore, QtWidgets
 import content_system
 from . import kernel_bridge
 
+
+def _apply_ui_pack(app: QtWidgets.QApplication) -> None:
+    try:
+        from ui_system import manager
+    except Exception as exc:
+        print(f"fallback: UI pack disabled (reason: missing ui_system - {exc})")
+        return
+
+    try:
+        manager.ensure_config()
+        pack_id = manager.get_active_pack()
+        repo_root = Path("ui_repo/ui_v1")
+        store_root = Path("ui_store/ui_v1")
+        pack = manager.resolve_pack(pack_id, repo_root, store_root, prefer_store=True)
+        if not pack:
+            pack = manager.resolve_pack(manager.DEFAULT_PACK_ID, repo_root, store_root, prefer_store=True)
+            if not pack:
+                print("fallback: UI pack fallback: default (reason: no packs found)")
+                return
+            qss = manager.load_qss(pack)
+            manager.apply_qss(app, qss)
+            print(f"fallback: UI pack fallback: {pack.id}")
+            return
+        qss = manager.load_qss(pack)
+        manager.apply_qss(app, qss)
+        print(f"success: UI pack applied: {pack.id}")
+    except Exception as exc:
+        print(f"fallback: UI pack disabled (reason: {exc})")
+
 STATUS_READY = "READY"
 STATUS_NOT_INSTALLED = "NOT_INSTALLED"
 STATUS_UNAVAILABLE = "UNAVAILABLE"
@@ -357,6 +386,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
+    _apply_ui_pack(app)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
