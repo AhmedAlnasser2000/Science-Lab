@@ -11,16 +11,41 @@ from .labs import registry as lab_registry
 from .labs.host import LabHost
 
 try:
+    from runtime_bus import topics as BUS_TOPICS
+    from runtime_bus.bus import get_global_bus
+
+    RUNTIME_BUS_AVAILABLE = True
+    RUNTIME_BUS_ERROR = ""
+except Exception as exc:  # pragma: no cover
+    BUS_TOPICS = None
+    get_global_bus = None
+    RUNTIME_BUS_AVAILABLE = False
+    RUNTIME_BUS_ERROR = str(exc)
+
+if RUNTIME_BUS_AVAILABLE and get_global_bus:
+    APP_BUS = get_global_bus()
+else:
+    APP_BUS = None
+
+try:
     from core_center.discovery import ensure_data_roots, discover_components
     from core_center.registry import load_registry, save_registry, upsert_records
     from core_center.storage_report import format_report_text, generate_report
     from core_center.cleanup import purge_cache, prune_dumps
+    from core_center import bus_endpoints as CORE_CENTER_BUS_ENDPOINTS
 
     CORE_CENTER_AVAILABLE = True
     CORE_CENTER_ERROR = ""
 except Exception as exc:  # pragma: no cover
     CORE_CENTER_AVAILABLE = False
     CORE_CENTER_ERROR = str(exc)
+    CORE_CENTER_BUS_ENDPOINTS = None
+
+if APP_BUS and CORE_CENTER_BUS_ENDPOINTS:
+    try:
+        CORE_CENTER_BUS_ENDPOINTS.register_core_center_endpoints(APP_BUS)
+    except Exception as exc:  # pragma: no cover - optional log
+        print(f"runtime bus: failed to register core_center endpoints ({exc})")
 
 RECOMMENDED_PART_SEQUENCE = ["text_intro", "gravity_demo"]
 PROFILE_GUIDE_KEYS = {
@@ -874,10 +899,12 @@ class ContentBrowserScreen(QtWidgets.QWidget):
 
 
 class SystemHealthScreen(QtWidgets.QWidget):
-    def __init__(self, on_back):
+    def __init__(self, on_back, bus):
         super().__init__()
         self.on_back = on_back
-        self.available = CORE_CENTER_AVAILABLE
+        self.bus = bus
+        self.direct_available = CORE_CENTER_AVAILABLE
+        self.refresh_capability = bool(self.bus or self.direct_available)
         self._task_thread: Optional[QtCore.QThread] = None
         self._task_worker: Optional[TaskWorker] = None
         self._pending_initial_refresh = True
@@ -926,44 +953,79 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.report_view.setPlaceholderText("Storage report will appear here.")
         layout.addWidget(self.report_view, stretch=1)
 
-        if not self.available:
+        if not self.refresh_capability:
             self._set_status(f"Core Center unavailable: {CORE_CENTER_ERROR or 'not installed'}")
-            self._set_control_enabled(False)
+        elif self.bus:
+            self._set_status("Ready to request storage report via runtime bus.")
         else:
             self._set_status("Ready to run Core Center diagnostics.")
 
+        self._set_control_enabled(True)
+
     def prepare(self) -> None:
-        if self.available and self._pending_initial_refresh:
+        if self.refresh_capability and self._pending_initial_refresh:
             self._refresh_report()
 
     def _set_control_enabled(self, enabled: bool) -> None:
-        self.refresh_btn.setEnabled(enabled)
-        self.purge_btn.setEnabled(enabled)
-        self.prune_btn.setEnabled(enabled)
+        self.refresh_btn.setEnabled(self.refresh_capability and enabled)
+        self.purge_btn.setEnabled(self.direct_available and enabled)
+        self.prune_btn.setEnabled(self.direct_available and enabled)
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
 
     def _refresh_report(self) -> None:
-        if not self.available or self._task_thread:
+        if self._task_thread or not self.refresh_capability:
             return
         self._set_status("Refreshing storage report...")
 
-        def job():
-            ensure_data_roots()
-            registry_path = Path("data/roaming/registry.json")
-            existing = load_registry(registry_path)
-            discovered = discover_components()
-            merged = upsert_records(existing, discovered)
-            save_registry(registry_path, merged)
-            report = generate_report(merged)
-            text = format_report_text(report)
-            return {"text": text}
+        if self.bus:
+            self._run_task(self._request_report_via_bus, self._handle_bus_report)
+        else:
+            self._run_task(self._generate_report_direct, self._update_report)
 
-        self._run_task(job, self._update_report)
+    def _request_report_via_bus(self) -> Dict[str, Any]:
+        topic = (
+            getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_REQUEST", None)
+            or "core.storage.report.request"
+        )
+        if not self.bus:
+            return {"bus_response": {"ok": False, "error": "bus_unavailable"}}
+        try:
+            response = self.bus.request(
+                topic,
+                {},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            response = {"ok": False, "error": str(exc)}
+        return {"bus_response": response}
+
+    def _generate_report_direct(self) -> Dict[str, Any]:
+        ensure_data_roots()
+        registry_path = Path("data/roaming/registry.json")
+        existing = load_registry(registry_path)
+        discovered = discover_components()
+        merged = upsert_records(existing, discovered)
+        save_registry(registry_path, merged)
+        report = generate_report(merged)
+        text = format_report_text(report)
+        return {"text": text}
+
+    def _handle_bus_report(self, result: Dict[str, Any]) -> None:
+        response = result.get("bus_response") or {}
+        if response.get("ok"):
+            text = response.get("text") or "No data."
+            self._update_report({"text": text})
+            self._set_status("Storage report updated via runtime bus.")
+            return
+        error = response.get("error") or "unavailable"
+        self.report_view.setPlainText("")
+        self._set_status(f"Core Center unavailable ({error}).")
 
     def _purge_cache(self) -> None:
-        if not self.available or self._task_thread:
+        if not self.direct_available or self._task_thread:
             return
         confirm = QtWidgets.QMessageBox.question(
             self,
@@ -981,7 +1043,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._run_task(job, lambda result: self._show_cleanup_result("Cache purge", result))
 
     def _prune_dumps(self) -> None:
-        if not self.available or self._task_thread:
+        if not self.direct_available or self._task_thread:
             return
         confirm = QtWidgets.QMessageBox.question(
             self,
@@ -1091,7 +1153,7 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda: self.current_profile,
             self._open_lab,
         )
-        self.system_health = SystemHealthScreen(self._show_main_menu)
+        self.system_health = SystemHealthScreen(self._show_main_menu, APP_BUS)
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.module_manager)
