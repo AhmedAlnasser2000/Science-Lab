@@ -50,6 +50,11 @@ def discover_components() -> List[Dict]:
     return components
 
 
+def ensure_data_roots() -> None:
+    for path in DATA_ROOTS.values():
+        path.mkdir(parents=True, exist_ok=True)
+
+
 def compute_disk_usage(path: Path) -> int:
     if not path.exists():
         return 0

@@ -25,6 +25,10 @@ def generate_report(registry: List[Dict]) -> Dict:
     return {"roots": roots_usage, "components": components}
 
 
+def report_json(registry: List[Dict]) -> Dict:
+    return generate_report(registry)
+
+
 def format_report_text(report: Dict) -> str:
     lines = []
     roots = report.get("roots", {})
@@ -44,3 +48,7 @@ def format_report_text(report: Dict) -> str:
                 f"{comp.get('state')} {comp.get('disk_usage_bytes')} bytes @ {comp.get('install_path')}"
             )
     return "\n".join(lines)
+
+
+def report_text(registry: List[Dict]) -> str:
+    return format_report_text(generate_report(registry))

@@ -27,6 +27,19 @@ python -m core_center.demo_report
 - Creates/updates `data/roaming/registry.json`.
 - Exits with code 0 even if the data folders are missing.
 
+Expected sample output (will vary with local files):
+```
+Storage Roots:
+  store: 0 bytes
+  cache: 0 bytes
+  dumps: 0 bytes
+  roaming: 261 bytes
+  total: 261 bytes
+
+Components:
+  physics [module] content_repo present 4316 bytes @ content_repo\physics_v1
+```
+
 ## Notes
 - Uses Python stdlib only.
 - Core Center remains optional and is not wired into any app startup flow yet.

@@ -6,7 +6,7 @@
     "source": "content_repo",
     "state": "present",
     "install_path": "content_repo\\physics_v1",
-    "last_seen": "2025-12-14T13:12:29Z",
+    "last_seen": "2025-12-14T13:22:36Z",
     "disk_usage_bytes": 4316
   }
 ]
