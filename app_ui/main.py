@@ -1,13 +1,25 @@
 ﻿import json
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 import content_system
 from . import kernel_bridge
 from .labs import registry as lab_registry
+
+try:
+    from core_center.discovery import ensure_data_roots, discover_components
+    from core_center.registry import load_registry, save_registry, upsert_records
+    from core_center.storage_report import format_report_text, generate_report
+    from core_center.cleanup import purge_cache, prune_dumps
+
+    CORE_CENTER_AVAILABLE = True
+    CORE_CENTER_ERROR = ""
+except Exception as exc:  # pragma: no cover
+    CORE_CENTER_AVAILABLE = False
+    CORE_CENTER_ERROR = str(exc)
 
 CONFIG_PATH = Path("data/roaming/ui_config.json")
 PROFILE_PATH = Path("data/roaming/experience_profile.json")
@@ -28,6 +40,23 @@ class InstallWorker(QtCore.QObject):
     def run(self):
         try:
             result = self.adapter.download_part(self.part_id)
+            self.finished.emit(result)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.error.emit(str(exc))
+
+
+class TaskWorker(QtCore.QObject):
+    finished = QtCore.pyqtSignal(object)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self, func: Callable[[], Any]):
+        super().__init__()
+        self.func = func
+
+    @QtCore.pyqtSlot()
+    def run(self):
+        try:
+            result = self.func()
             self.finished.emit(result)
         except Exception as exc:  # pragma: no cover - defensive
             self.error.emit(str(exc))
@@ -213,8 +242,8 @@ class MainMenuScreen(QtWidgets.QWidget):
             self._add_button("Module Management", self.on_open_module_mgmt)
             self._add_button("Content Management", self.on_open_content_mgmt)
 
-        if self.profile == "Explorer":
-            self._add_button("Diagnostics / Developer", self.on_open_diagnostics)
+        if self.profile in ("Educator", "Explorer"):
+            self._add_button("System Health / Storage", self.on_open_diagnostics)
 
         self._add_button("Settings", self.on_open_settings)
         self._add_button("Quit", self.on_quit)
@@ -884,6 +913,192 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         return str(title or fallback or default)
 
 
+class SystemHealthScreen(QtWidgets.QWidget):
+    def __init__(self, on_back):
+        super().__init__()
+        self.on_back = on_back
+        self.available = CORE_CENTER_AVAILABLE
+        self._task_thread: Optional[QtCore.QThread] = None
+        self._task_worker: Optional[TaskWorker] = None
+        self._pending_initial_refresh = True
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        header = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("System Health / Storage")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header.addWidget(title)
+        header.addStretch()
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self._refresh_report)
+        self.refresh_btn = refresh_btn
+        header.addWidget(refresh_btn)
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        header.addWidget(back_btn)
+        layout.addLayout(header)
+
+        self.status_label = QtWidgets.QLabel()
+        layout.addWidget(self.status_label)
+
+        folders_row = QtWidgets.QHBoxLayout()
+        open_data_btn = QtWidgets.QPushButton("Open data folder")
+        open_data_btn.clicked.connect(lambda: self._open_folder(Path("data")))
+        folders_row.addWidget(open_data_btn)
+        open_store_btn = QtWidgets.QPushButton("Open content store")
+        open_store_btn.clicked.connect(lambda: self._open_folder(Path("content_store")))
+        folders_row.addWidget(open_store_btn)
+        folders_row.addStretch()
+        layout.addLayout(folders_row)
+
+        cleanup_row = QtWidgets.QHBoxLayout()
+        self.purge_btn = QtWidgets.QPushButton("Purge cache")
+        self.purge_btn.clicked.connect(self._purge_cache)
+        cleanup_row.addWidget(self.purge_btn)
+        self.prune_btn = QtWidgets.QPushButton("Prune dumps")
+        self.prune_btn.clicked.connect(self._prune_dumps)
+        cleanup_row.addWidget(self.prune_btn)
+        cleanup_row.addStretch()
+        layout.addLayout(cleanup_row)
+
+        self.report_view = QtWidgets.QPlainTextEdit()
+        self.report_view.setReadOnly(True)
+        self.report_view.setPlaceholderText("Storage report will appear here.")
+        layout.addWidget(self.report_view, stretch=1)
+
+        if not self.available:
+            self._set_status(f"Core Center unavailable: {CORE_CENTER_ERROR or 'not installed'}")
+            self._set_control_enabled(False)
+        else:
+            self._set_status("Ready to run Core Center diagnostics.")
+
+    def prepare(self) -> None:
+        if self.available and self._pending_initial_refresh:
+            self._refresh_report()
+
+    def _set_control_enabled(self, enabled: bool) -> None:
+        self.refresh_btn.setEnabled(enabled)
+        self.purge_btn.setEnabled(enabled)
+        self.prune_btn.setEnabled(enabled)
+
+    def _set_status(self, text: str) -> None:
+        self.status_label.setText(text)
+
+    def _refresh_report(self) -> None:
+        if not self.available or self._task_thread:
+            return
+        self._set_status("Refreshing storage report...")
+
+        def job():
+            ensure_data_roots()
+            registry_path = Path("data/roaming/registry.json")
+            existing = load_registry(registry_path)
+            discovered = discover_components()
+            merged = upsert_records(existing, discovered)
+            save_registry(registry_path, merged)
+            report = generate_report(merged)
+            text = format_report_text(report)
+            return {"text": text}
+
+        self._run_task(job, self._update_report)
+
+    def _purge_cache(self) -> None:
+        if not self.available or self._task_thread:
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Purge cache",
+            "This will delete all files under data/cache/.\nContinue?",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self._set_status("Purging data/cache...")
+
+        def job():
+            ensure_data_roots()
+            return purge_cache(Path("data/cache"))
+
+        self._run_task(job, lambda result: self._show_cleanup_result("Cache purge", result))
+
+    def _prune_dumps(self) -> None:
+        if not self.available or self._task_thread:
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Prune dumps",
+            "Older crash dumps will be removed. Keep going?",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self._set_status("Pruning data/dumps...")
+
+        def job():
+            ensure_data_roots()
+            return prune_dumps(Path("data/dumps"), max_age_days=30, max_total_bytes=50 * 1024 * 1024)
+
+        self._run_task(job, lambda result: self._show_cleanup_result("Dump pruning", result))
+
+    def _update_report(self, result: Dict) -> None:
+        text = result.get("text") or "No data."
+        self.report_view.setPlainText(text)
+        self._set_status("Storage report updated.")
+        self._pending_initial_refresh = False
+
+    def _show_cleanup_result(self, label: str, result: Dict) -> None:
+        bytes_freed = result.get("bytes_freed", 0)
+        removed = len(result.get("removed", []))
+        QtWidgets.QMessageBox.information(
+            self,
+            label,
+            f"{label} complete.\nRemoved entries: {removed}\nBytes freed: {bytes_freed}",
+        )
+        self._set_status(f"{label} finished.")
+        self._refresh_report()
+
+    def _run_task(self, job: Callable[[], Any], callback: Callable[[Any], None]) -> None:
+        worker = TaskWorker(job)
+        thread = QtCore.QThread()
+        self._task_worker = worker
+        self._task_thread = thread
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda result: self._handle_task_finished(result, callback))
+        worker.error.connect(self._handle_task_error)
+        thread.start()
+        self._set_control_enabled(False)
+
+    def _handle_task_finished(self, result: Any, callback: Callable[[Any], None]) -> None:
+        self._teardown_task()
+        try:
+            callback(result)
+        except Exception as exc:  # pragma: no cover - defensive
+            QtWidgets.QMessageBox.warning(self, "System Health", f"Operation failed: {exc}")
+        self._set_control_enabled(True)
+
+    def _handle_task_error(self, error: str) -> None:
+        self._teardown_task()
+        QtWidgets.QMessageBox.warning(self, "System Health", f"Operation failed: {error}")
+        self._set_control_enabled(True)
+        self._set_status("Idle.")
+
+    def _teardown_task(self) -> None:
+        if self._task_thread:
+            self._task_thread.quit()
+            self._task_thread.wait()
+            self._task_thread.deleteLater()
+            self._task_thread = None
+        if self._task_worker:
+            self._task_worker.deleteLater()
+            self._task_worker = None
+
+    def _open_folder(self, path: Path) -> None:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            url = QtCore.QUrl.fromLocalFile(str(path.resolve()))
+            QtGui.QDesktopServices.openUrl(url)
+        except Exception as exc:  # pragma: no cover - defensive
+            QtWidgets.QMessageBox.warning(self, "System Health", f"Unable to open folder: {exc}")
+
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -915,10 +1130,12 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda: self.current_profile,
             self._open_lab,
         )
+        self.system_health = SystemHealthScreen(self._show_main_menu)
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.module_manager)
         self.stacked.addWidget(self.content_browser)
+        self.stacked.addWidget(self.system_health)
         self._show_main_menu()
 
     def _show_module_manager(self):
@@ -965,7 +1182,10 @@ class MainWindow(QtWidgets.QMainWindow):
         PlaceholderDialog("Content Management", "Content management tools coming soon.", self).exec()
 
     def _open_diagnostics(self):
-        PlaceholderDialog("Diagnostics / Developer", "Diagnostics dashboard coming soon.", self).exec()
+        self._dispose_lab_widget()
+        if self.system_health:
+            self.system_health.prepare()
+            self.stacked.setCurrentWidget(self.system_health)
 
     def _quit_app(self):
         app = QtWidgets.QApplication.instance()
