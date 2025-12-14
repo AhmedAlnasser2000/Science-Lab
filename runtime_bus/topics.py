@@ -1,0 +1,42 @@
+"""Topic constants for the runtime bus."""
+
+# UI
+UI_PROFILE_CHANGED = "ui.profile.changed"
+UI_PACK_CHANGED = "ui.pack.changed"
+
+# Content install
+CONTENT_INSTALL_REQUEST = "content.install.request"
+CONTENT_INSTALL_PROGRESS = "content.install.progress"
+CONTENT_INSTALL_COMPLETED = "content.install.completed"
+
+# Labs
+LAB_OPEN_REQUEST = "lab.open.request"
+LAB_RUN_STARTED = "lab.run.started"
+LAB_RUN_STOPPED = "lab.run.stopped"
+LAB_TELEMETRY = "lab.telemetry"
+
+# Core / storage
+CORE_STORAGE_REPORT_REQUEST = "core.storage.report.request"
+CORE_STORAGE_REPORT_READY = "core.storage.report.ready"
+CORE_CLEANUP_STARTED = "core.cleanup.started"
+CORE_CLEANUP_COMPLETED = "core.cleanup.completed"
+
+# Errors
+ERROR_RAISED = "error.raised"
+
+__all__ = [
+    "UI_PROFILE_CHANGED",
+    "UI_PACK_CHANGED",
+    "CONTENT_INSTALL_REQUEST",
+    "CONTENT_INSTALL_PROGRESS",
+    "CONTENT_INSTALL_COMPLETED",
+    "LAB_OPEN_REQUEST",
+    "LAB_RUN_STARTED",
+    "LAB_RUN_STOPPED",
+    "LAB_TELEMETRY",
+    "CORE_STORAGE_REPORT_REQUEST",
+    "CORE_STORAGE_REPORT_READY",
+    "CORE_CLEANUP_STARTED",
+    "CORE_CLEANUP_COMPLETED",
+    "ERROR_RAISED",
+]

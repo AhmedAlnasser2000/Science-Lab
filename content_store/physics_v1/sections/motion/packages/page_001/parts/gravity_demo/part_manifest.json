@@ -19,5 +19,12 @@
       "initial_height_m": 10,
       "time_step_s": 0.05
     }
+  },
+  "x_extensions": {
+    "guides": {
+      "learner": "assets/gravity_guide_learner.md",
+      "educator": "assets/gravity_guide_educator.md",
+      "explorer": "assets/gravity_guide_explorer.md"
+    }
   }
 }
