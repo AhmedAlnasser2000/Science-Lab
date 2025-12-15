@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from .discovery import DATA_ROOTS, compute_disk_usage
+from .storage_manager import summarize_runs
 
 
 def generate_report(registry: List[Dict]) -> Dict:
@@ -10,6 +11,7 @@ def generate_report(registry: List[Dict]) -> Dict:
         name: compute_disk_usage(path) for name, path in DATA_ROOTS.items()
     }
     roots_usage["total"] = sum(roots_usage.values())
+    runs_summary = summarize_runs()
     components = []
     for rec in registry:
         components.append(
@@ -21,8 +23,8 @@ def generate_report(registry: List[Dict]) -> Dict:
                 "disk_usage_bytes": rec.get("disk_usage_bytes"),
                 "install_path": rec.get("install_path"),
             }
-        )
-    return {"roots": roots_usage, "components": components}
+            )
+    return {"roots": roots_usage, "components": components, "runs": runs_summary}
 
 
 def report_json(registry: List[Dict]) -> Dict:
@@ -37,6 +39,16 @@ def format_report_text(report: Dict) -> str:
         if name in roots:
             lines.append(f"  {name}: {roots.get(name, 0)} bytes")
     lines.append("")
+    runs = report.get("runs") or {}
+    total_runs_bytes = runs.get("total_bytes")
+    if total_runs_bytes is not None:
+        lines.append(f"Runs storage: {total_runs_bytes} bytes")
+        labs = runs.get("labs") or {}
+        if labs:
+            lines.append("  Runs per lab:")
+            for lab_id, info in sorted(labs.items()):
+                lines.append(f"    - {lab_id}: {info.get('run_count', 0)} runs")
+        lines.append("")
     lines.append("Components:")
     comps: List[Dict] = report.get("components") or []
     if not comps:

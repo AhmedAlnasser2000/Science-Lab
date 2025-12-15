@@ -7,12 +7,15 @@ try:
 except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
-from . import job_manager
+from . import job_manager, storage_manager
 
 REPORT_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_REQUEST", "core.storage.report.request")
 CLEANUP_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_REQUEST", "core.cleanup.request")
 REPORT_READY_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_READY", "core.storage.report.ready")
 CLEANUP_COMPLETED_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_COMPLETED", "core.cleanup.completed")
+RUN_DIR_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST", "core.storage.allocate_run_dir.request"
+)
 
 
 class _StickyBusProxy:
@@ -70,5 +73,15 @@ def register_core_center_endpoints(bus: Any) -> None:
         print(f"[core_center] cleanup job queued kind={kind} job_id={job_id}")
         return {"ok": True, "job_id": job_id}
 
+    def _handle_run_dir(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        lab_id = payload.get("lab_id")
+        result = storage_manager.allocate_run_dir(lab_id)
+        if not result.get("ok"):
+            return {"ok": False, "error": result.get("error") or "allocate_failed"}
+        return {"ok": True, "run_id": result.get("run_id"), "run_dir": result.get("run_dir")}
+
     bus.register_handler(REPORT_REQUEST_TOPIC, _handle_report)
     bus.register_handler(CLEANUP_REQUEST_TOPIC, _handle_cleanup)
+    if RUN_DIR_REQUEST_TOPIC:
+        bus.register_handler(RUN_DIR_REQUEST_TOPIC, _handle_run_dir)

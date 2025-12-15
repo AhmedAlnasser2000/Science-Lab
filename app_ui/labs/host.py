@@ -1,16 +1,41 @@
 from __future__ import annotations
 
+import json
+import uuid
+from pathlib import Path
+
 from PyQt6 import QtCore, QtWidgets
+
+try:
+    from runtime_bus import topics as BUS_TOPICS
+except Exception:  # pragma: no cover
+    BUS_TOPICS = None
+
+RUN_DIR_REQUEST_TOPIC = (
+    BUS_TOPICS.CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST if BUS_TOPICS else "core.storage.allocate_run_dir.request"
+)
 
 
 class LabHost(QtWidgets.QWidget):
-    """Wraps a lab widget with a markdown-based guide viewer."""
+    """Wraps a lab widget with a markdown-based guide viewer and run context provisioning."""
 
-    def __init__(self, lab_widget: QtWidgets.QWidget, guide_markdown_text: str, reduced_motion: bool):
+    def __init__(
+        self,
+        lab_id: str,
+        lab_widget: QtWidgets.QWidget,
+        guide_markdown_text: str,
+        reduced_motion: bool,
+        *,
+        bus=None,
+    ):
         super().__init__()
+        self.lab_id = lab_id
         self.lab_widget = lab_widget
+        self.bus = bus
         self.reduced_motion = reduced_motion
         self.guide_visible = True
+        self.run_context = self._init_run_context()
+        self._apply_run_context()
 
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -69,3 +94,51 @@ class LabHost(QtWidgets.QWidget):
             self.guide_view.setMarkdown(text)
         except AttributeError:
             self.guide_view.setPlainText(text)
+
+    def get_run_context(self) -> dict:
+        return dict(self.run_context)
+
+    def _apply_run_context(self) -> None:
+        context = dict(self.run_context)
+        if hasattr(self.lab_widget, "set_run_context"):
+            try:
+                self.lab_widget.set_run_context(context)
+            except Exception:
+                pass
+
+    def _init_run_context(self) -> dict:
+        if self.bus and RUN_DIR_REQUEST_TOPIC:
+            try:
+                response = self.bus.request(
+                    RUN_DIR_REQUEST_TOPIC,
+                    {"lab_id": self.lab_id},
+                    source="app_ui",
+                    timeout_ms=1500,
+                )
+            except Exception:
+                response = {"ok": False}
+            if response.get("ok"):
+                return {
+                    "lab_id": self.lab_id,
+                    "run_id": response.get("run_id"),
+                    "run_dir": response.get("run_dir"),
+                    "source": "core_center",
+                }
+        return self._create_local_run_dir()
+
+    def _create_local_run_dir(self) -> dict:
+        run_id = str(uuid.uuid4())
+        base = Path("data/store/runs_local") / self.lab_id
+        run_dir = base / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        meta = {
+            "lab_id": self.lab_id,
+            "run_id": run_id,
+            "timestamp": QtCore.QDateTime.currentDateTimeUtc().toString(QtCore.Qt.DateFormat.ISODate),
+            "source": "app_local",
+        }
+        try:
+            (run_dir / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        return {"lab_id": self.lab_id, "run_id": run_id, "run_dir": str(run_dir.resolve()), "source": "local"}
