@@ -7,7 +7,7 @@ try:
 except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
-from . import job_manager, storage_manager
+from . import job_manager, storage_manager, policy_manager
 
 REPORT_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_REQUEST", "core.storage.report.request")
 CLEANUP_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_REQUEST", "core.cleanup.request")
@@ -15,6 +15,9 @@ REPORT_READY_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_READY", "core.stor
 CLEANUP_COMPLETED_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_COMPLETED", "core.cleanup.completed")
 RUN_DIR_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST", "core.storage.allocate_run_dir.request"
+)
+POLICY_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request"
 )
 
 
@@ -81,7 +84,13 @@ def register_core_center_endpoints(bus: Any) -> None:
             return {"ok": False, "error": result.get("error") or "allocate_failed"}
         return {"ok": True, "run_id": result.get("run_id"), "run_dir": result.get("run_dir")}
 
+    def _handle_policy(envelope) -> Dict[str, object]:  # noqa: ARG001
+        policy = policy_manager.resolve_policy()
+        return {"ok": True, "policy": policy}
+
     bus.register_handler(REPORT_REQUEST_TOPIC, _handle_report)
     bus.register_handler(CLEANUP_REQUEST_TOPIC, _handle_cleanup)
     if RUN_DIR_REQUEST_TOPIC:
         bus.register_handler(RUN_DIR_REQUEST_TOPIC, _handle_run_dir)
+    if POLICY_REQUEST_TOPIC:
+        bus.register_handler(POLICY_REQUEST_TOPIC, _handle_policy)

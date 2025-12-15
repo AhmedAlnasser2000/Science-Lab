@@ -14,6 +14,16 @@ except Exception:  # pragma: no cover
 RUN_DIR_REQUEST_TOPIC = (
     BUS_TOPICS.CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST if BUS_TOPICS else "core.storage.allocate_run_dir.request"
 )
+POLICY_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request") if BUS_TOPICS else "core.policy.get.request"
+
+DEFAULT_POLICY = {
+    "max_concurrent_sims": 1,
+    "low_end_mode": False,
+    "fps_cap": 60,
+    "runs_keep_last_n": 10,
+    "exports_enabled": False,
+    "reduced_motion_enforced": False,
+}
 
 
 class LabHost(QtWidgets.QWidget):
@@ -34,7 +44,10 @@ class LabHost(QtWidgets.QWidget):
         self.bus = bus
         self.reduced_motion = reduced_motion
         self.guide_visible = True
+        self.policy = self._init_policy()
         self.run_context = self._init_run_context()
+        self.run_context.setdefault("policy", self.policy)
+        print(f"[lab_host] policy resolved for {self.lab_id}: {self.policy}")
         self._apply_run_context()
 
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -105,6 +118,23 @@ class LabHost(QtWidgets.QWidget):
                 self.lab_widget.set_run_context(context)
             except Exception:
                 pass
+
+    def _init_policy(self) -> dict:
+        policy = dict(DEFAULT_POLICY)
+        if self.bus and POLICY_REQUEST_TOPIC:
+            try:
+                response = self.bus.request(
+                    POLICY_REQUEST_TOPIC,
+                    {},
+                    source="app_ui",
+                    timeout_ms=1000,
+                )
+            except Exception:
+                response = {"ok": False}
+            if response.get("ok") and isinstance(response.get("policy"), dict):
+                policy.update(response["policy"])
+                return policy
+        return policy
 
     def _init_run_context(self) -> dict:
         if self.bus and RUN_DIR_REQUEST_TOPIC:
