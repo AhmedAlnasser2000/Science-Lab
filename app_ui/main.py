@@ -41,6 +41,44 @@ except Exception as exc:  # pragma: no cover
     CORE_CENTER_ERROR = str(exc)
     CORE_CENTER_BUS_ENDPOINTS = None
 
+BUS_COMM_REPORT_REQUEST = (
+    getattr(BUS_TOPICS, "RUNTIME_BUS_REPORT_REQUEST", "runtime.bus.report.request")
+    if BUS_TOPICS
+    else "runtime.bus.report.request"
+)
+
+if APP_BUS:
+    def _handle_bus_comm_report(envelope):
+        try:
+            stats = APP_BUS.get_stats()
+        except Exception as exc:  # pragma: no cover - defensive
+            return {"ok": False, "error": f"diagnostics_failed: {exc}"}
+        text_lines = [
+            "Runtime Bus Diagnostics",
+            f"Subscribers: {stats.get('subscriber_count', 0)}",
+            f"Request handlers: {stats.get('request_handler_count', 0)}",
+            f"Sticky topics: {stats.get('sticky_topic_count', 0)}",
+        ]
+        sticky = stats.get("sticky_topics") or []
+        if sticky:
+            text_lines.append(f"Sticky list: {', '.join(sticky)}")
+        topics = stats.get("subscriptions_by_topic") or {}
+        if topics:
+            text_lines.append("Subscriptions by topic:")
+            for name, count in sorted(topics.items()):
+                text_lines.append(f"  - {name}: {count}")
+        requests = stats.get("request_topics") or []
+        if requests:
+            text_lines.append("Request handlers:")
+            for topic in sorted(requests):
+                text_lines.append(f"  - {topic}")
+        return {"ok": True, "text": "\n".join(text_lines), "json": stats}
+
+    try:
+        APP_BUS.register_handler(BUS_COMM_REPORT_REQUEST, _handle_bus_comm_report)
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"runtime bus: failed to register diagnostics handler ({exc})")
+
 if APP_BUS and CORE_CENTER_BUS_ENDPOINTS:
     try:
         CORE_CENTER_BUS_ENDPOINTS.register_core_center_endpoints(APP_BUS)
@@ -919,6 +957,8 @@ CORE_JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 
 
 class SystemHealthScreen(QtWidgets.QWidget):
+    cleanup_event = QtCore.pyqtSignal(dict)
+
     def __init__(self, on_back, cleanup_enabled: bool = False, *, bus=None):
         super().__init__()
         self.on_back = on_back
@@ -929,7 +969,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._task_worker: Optional[TaskWorker] = None
         self._pending_initial_refresh = True
         self.pending_report_job: Optional[str] = None
-        self.pending_cleanup_jobs: Dict[str, str] = {}
+        self.pending_cleanup_job_id: Optional[str] = None
+        self.pending_cleanup_kind: Optional[str] = None
+        self._cleanup_running = False
         self._bus_subscriptions: list[str] = []
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -971,6 +1013,54 @@ class SystemHealthScreen(QtWidgets.QWidget):
         cleanup_row.addStretch()
         layout.addLayout(cleanup_row)
 
+        comm_row = QtWidgets.QHBoxLayout()
+        self.comm_btn = QtWidgets.QPushButton("Communication Report")
+        self.comm_btn.clicked.connect(self._show_comm_report)
+        self.comm_btn.setVisible(False)
+        comm_row.addWidget(self.comm_btn)
+        comm_row.addStretch()
+        layout.addLayout(comm_row)
+
+        self.completion_panel = QtWidgets.QFrame()
+        self.completion_panel.setVisible(False)
+        self.completion_panel.setStyleSheet("QFrame { border: 1px solid #ccc; border-radius: 4px; padding: 6px; }")
+        panel_layout = QtWidgets.QHBoxLayout(self.completion_panel)
+        panel_layout.setContentsMargins(8, 4, 8, 4)
+        self.completion_title = QtWidgets.QLabel("")
+        self.completion_details = QtWidgets.QLabel("")
+        self.completion_details.setWordWrap(True)
+        dismiss_btn = QtWidgets.QPushButton("Dismiss")
+        dismiss_btn.setFixedWidth(80)
+        dismiss_btn.clicked.connect(lambda: self.completion_panel.setVisible(False))
+        text_box = QtWidgets.QVBoxLayout()
+        text_box.addWidget(self.completion_title)
+        text_box.addWidget(self.completion_details)
+        panel_layout.addLayout(text_box)
+        panel_layout.addStretch()
+        panel_layout.addWidget(dismiss_btn)
+        layout.addWidget(self.completion_panel)
+
+        self.comm_panel = QtWidgets.QFrame()
+        self.comm_panel.setVisible(False)
+        self.comm_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
+        comm_panel_layout = QtWidgets.QVBoxLayout(self.comm_panel)
+        comm_header = QtWidgets.QHBoxLayout()
+        self.comm_title = QtWidgets.QLabel("Communication Report")
+        self.comm_title.setStyleSheet("font-weight: bold;")
+        self.comm_close = QtWidgets.QPushButton("Dismiss")
+        self.comm_close.setFixedWidth(80)
+        self.comm_close.clicked.connect(lambda: self.comm_panel.setVisible(False))
+        comm_header.addWidget(self.comm_title)
+        comm_header.addStretch()
+        comm_header.addWidget(self.comm_close)
+        comm_panel_layout.addLayout(comm_header)
+        self.comm_text = QtWidgets.QPlainTextEdit()
+        self.comm_text.setReadOnly(True)
+        self.comm_text.setPlaceholderText("Communication report output")
+        self.comm_text.setMaximumHeight(140)
+        comm_panel_layout.addWidget(self.comm_text)
+        layout.addWidget(self.comm_panel)
+
         self.report_view = QtWidgets.QPlainTextEdit()
         self.report_view.setReadOnly(True)
         self.report_view.setPlaceholderText("Storage report will appear here.")
@@ -985,38 +1075,85 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
         self._set_control_enabled(True)
         self._init_bus_subscriptions()
+        self._update_comm_controls()
+        self.cleanup_event.connect(self._handle_cleanup_completed_ui)
 
     def prepare(self) -> None:
         if self.refresh_capability and self._pending_initial_refresh:
             self._refresh_report()
+        self._update_comm_controls()
 
     def _set_control_enabled(self, enabled: bool) -> None:
         enable_refresh = bool(self.refresh_capability and enabled)
         self.refresh_btn.setEnabled(enable_refresh)
         cleanup_available = bool(self.bus or self.direct_available)
-        cleanup_enabled = bool(enabled and cleanup_available)
+        cleanup_enabled = bool(enabled and cleanup_available and not self._cleanup_running)
         self.purge_btn.setEnabled(cleanup_enabled)
         self.prune_btn.setEnabled(cleanup_enabled)
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
 
+    def _update_comm_controls(self) -> None:
+        is_explorer = ui_config.load_experience_profile() == "Explorer"
+        available = bool(self.bus and is_explorer)
+        self.comm_btn.setVisible(available)
+        if not available:
+            self.comm_panel.setVisible(False)
+
+    def _show_comm_report(self) -> None:
+        if not self.bus:
+            QtWidgets.QMessageBox.information(self, "Communication Report", "Runtime bus unavailable.")
+            return
+        self._set_status("Requesting communication report...")
+        try:
+            response = self.bus.request(
+                BUS_COMM_REPORT_REQUEST,
+                {},
+                source="app_ui",
+                timeout_ms=1000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._display_comm_report(f"Request failed: {exc}", ok=False)
+            self._set_status(f"Communication report failed ({exc}).")
+            return
+        if response.get("ok"):
+            text = response.get("text") or "No diagnostics returned."
+            self._display_comm_report(text, ok=True)
+            self._set_status("Communication report updated.")
+        else:
+            error = response.get("error") or "unavailable"
+            self._display_comm_report(f"Communication report unavailable ({error})", ok=False)
+            self._set_status(f"Communication report unavailable ({error}).")
+
+    def _display_comm_report(self, text: str, ok: bool) -> None:
+        color = "#2e7d32" if ok else "#b71c1c"
+        self.comm_title.setStyleSheet(f"font-weight: bold; color: {color};")
+        self.comm_text.setPlainText(text)
+        self.comm_panel.setVisible(True)
+
     def _init_bus_subscriptions(self) -> None:
         if not self.bus:
             return
-        self._subscribe_bus(BUS_REPORT_READY, self._on_report_ready_event)
+        self._subscribe_bus(BUS_REPORT_READY, self._on_report_ready_event, replay_last=True)
         self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
         self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event)
-        self._subscribe_bus(BUS_CLEANUP_COMPLETED, self._on_cleanup_completed_event)
+        self._subscribe_bus(BUS_CLEANUP_COMPLETED, self._on_cleanup_completed_event, replay_last=True)
 
-    def _subscribe_bus(self, topic: Optional[str], handler: Callable[[Any], None]) -> None:
+    def _subscribe_bus(
+        self,
+        topic: Optional[str],
+        handler: Callable[[Any], None],
+        *,
+        replay_last: bool = False,
+    ) -> None:
         if not (self.bus and topic):
             return
 
         def _wrapped(envelope):
             QtCore.QTimer.singleShot(0, lambda env=envelope: handler(env))
 
-        sub_id = self.bus.subscribe(topic, _wrapped)
+        sub_id = self.bus.subscribe(topic, _wrapped, replay_last=replay_last)
         self._bus_subscriptions.append(sub_id)
 
     def _refresh_report(self) -> None:
@@ -1091,6 +1228,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         label = "Cache purge" if kind == "cache" else "Dump pruning"
         self._set_status(f"{label} running...")
+        self._set_cleanup_job_state("direct", kind, running=True)
 
         def job():
             ensure_data_roots()
@@ -1098,11 +1236,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 return purge_cache(Path("data/cache"))
             return prune_dumps(Path("data/dumps"), max_age_days=30, max_total_bytes=50 * 1024 * 1024)
 
-        self._run_task(job, lambda result: self._show_cleanup_result(label, result))
+        self._run_task(job, lambda result: self._show_cleanup_result(label, result, kind))
 
     def _start_cleanup_job(self, kind: str) -> None:
         if not self.bus:
             return
+        print(f"[system_health] cleanup request kind={kind}")
         try:
             response = self.bus.request(
                 BUS_CLEANUP_REQUEST,
@@ -1116,11 +1255,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         if response.get("ok") and response.get("job_id"):
             job_id = response["job_id"]
-            self.pending_cleanup_jobs[job_id] = kind
+            print(f"[system_health] cleanup job_id={job_id}")
+            self._set_cleanup_job_state(job_id, kind, running=True)
             self._set_status(f"{kind.title()} cleanup running...")
         else:
             error = response.get("error") or "unknown"
             self._set_status(f"Cleanup request failed ({error}); running directly.")
+            self._set_cleanup_job_state(None, None, running=False)
             self._trigger_cleanup_direct(kind)
 
     def _trigger_cleanup_direct(self, kind: str) -> None:
@@ -1129,6 +1270,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         label = "Cache purge" if kind == "cache" else "Dump pruning"
         self._set_status(f"{label} running...")
+        self._set_cleanup_job_state("direct", kind, running=True)
 
         def job():
             ensure_data_roots()
@@ -1136,7 +1278,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 return purge_cache(Path("data/cache"))
             return prune_dumps(Path("data/dumps"), max_age_days=30, max_total_bytes=50 * 1024 * 1024)
 
-        self._run_task(job, lambda result: self._show_cleanup_result(label, result))
+        self._run_task(job, lambda result: self._show_cleanup_result(label, result, kind))
 
     def _update_report(self, result: Dict) -> None:
         text = result.get("text") or "No data."
@@ -1144,13 +1286,19 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._set_status("Storage report updated.")
         self._pending_initial_refresh = False
 
-    def _show_cleanup_result(self, label: str, result: Dict) -> None:
+    def _show_cleanup_result(self, label: str, result: Dict, kind: str) -> None:
         bytes_freed = result.get("bytes_freed", 0)
         removed = len(result.get("removed", []))
-        QtWidgets.QMessageBox.information(
-            self,
-            label,
-            f"{label} complete.\nRemoved entries: {removed}\nBytes freed: {bytes_freed}",
+        self._set_cleanup_job_state(None, None, running=False)
+        details = (
+            f"Kind: {kind}\nRemoved entries: {removed}\nBytes freed: {bytes_freed}\n"
+            f"Path: {self._cleanup_path_for_kind(kind)}"
+        )
+        self._show_completion_panel(
+            title=f"{label} completed",
+            details=details,
+            ok=True,
+            removed=result.get("removed"),
         )
         self._set_status(f"{label} finished.")
         self._refresh_report()
@@ -1200,28 +1348,73 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self._set_status(f"Report job failed: {error}")
             QtWidgets.QMessageBox.warning(self, "System Health", f"Report job failed: {error}")
 
+    def _set_cleanup_job_state(self, job_id: Optional[str], kind: Optional[str], running: bool = False) -> None:
+        self.pending_cleanup_job_id = job_id
+        self.pending_cleanup_kind = kind
+        self._cleanup_running = bool(running)
+        self._set_control_enabled(True)
+
     def _on_cleanup_completed_event(self, envelope: Any) -> None:
         payload = getattr(envelope, "payload", None) or {}
+        self.cleanup_event.emit(payload)
+
+    def _handle_cleanup_completed_ui(self, payload: Dict[str, Any]) -> None:
+        if payload is None:
+            return
         job_id = payload.get("job_id")
-        kind = payload.get("kind") or "cleanup"
+        if job_id and self.pending_cleanup_job_id and job_id != self.pending_cleanup_job_id:
+            return
+        kind = payload.get("kind") or self.pending_cleanup_kind or "cleanup"
         ok = payload.get("ok", True)
         freed = payload.get("freed_bytes", 0)
+        path = payload.get("path") or self._cleanup_path_for_kind(kind)
         label = f"{kind.title()} cleanup"
-        if job_id in self.pending_cleanup_jobs:
-            self.pending_cleanup_jobs.pop(job_id, None)
+        self._set_cleanup_job_state(None, None, running=False)
+        removed = None
+        result_block = payload.get("result")
+        if isinstance(result_block, dict):
+            removed = result_block.get("removed")
+        elif "removed" in payload:
+            removed = payload.get("removed")
         if ok:
-            QtWidgets.QMessageBox.information(
-                self,
-                label,
-                f"{label} complete.\nBytes freed: {freed}",
-            )
+            details = f"Kind: {kind}\nBytes freed: {freed}\nPath: {path}"
+            self._show_completion_panel(f"{label} completed", details, ok=True, removed=removed)
             self._set_status(f"{label} finished.")
             if self.refresh_capability and not self.pending_report_job:
                 self._refresh_report()
         else:
             error = payload.get("error") or "failed"
-            QtWidgets.QMessageBox.warning(self, label, f"{label} failed: {error}")
+            details = f"Kind: {kind}\nError: {error}\nPath: {path}"
+            self._show_completion_panel(f"{label} failed", details, ok=False, removed=removed)
             self._set_status(f"{label} failed.")
+
+    def _cleanup_path_for_kind(self, kind: str) -> str:
+        if kind == "cache":
+            return "data/cache"
+        if kind == "dumps":
+            return "data/dumps"
+        return "data"
+
+    def _show_completion_panel(self, title: str, details: str, ok: bool, removed=None) -> None:
+        extra = ""
+        if removed:
+            if isinstance(removed, dict):
+                removed = removed.values()
+            if isinstance(removed, (list, tuple, set)):
+                removed_list = list(removed)
+                if removed_list:
+                    trimmed = removed_list[:5]
+                    extra_lines = "\n".join(f"- {item}" for item in trimmed)
+                    more = len(removed_list) - len(trimmed)
+                    if more > 0:
+                        extra_lines += f"\n- ... (+{more} more)"
+                    extra = f"\nRemoved:\n{extra_lines}"
+        self.completion_title.setText(title)
+        self.completion_details.setText(details + extra)
+        color = "#2e7d32" if ok else "#b71c1c"
+        self.completion_title.setStyleSheet(f"color: {color}; font-weight: bold;")
+        self.completion_panel.setVisible(True)
+        QtCore.QTimer.singleShot(7000, lambda: self.completion_panel.setVisible(False))
 
     def _unsubscribe_all(self) -> None:
         if not self.bus:

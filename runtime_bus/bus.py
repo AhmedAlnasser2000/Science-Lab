@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import uuid
@@ -10,6 +11,7 @@ from typing import Callable, Dict, Optional
 from .messages import MessageEnvelope
 
 logger = logging.getLogger(__name__)
+BUS_DEBUG = os.getenv("PHYSICSLAB_BUS_DEBUG") == "1"
 
 
 def _iso_timestamp() -> str:
@@ -24,12 +26,27 @@ class RuntimeBus:
         self._subscribers: Dict[str, tuple[str, Callable[[MessageEnvelope], None]]] = {}
         self._topic_index: Dict[str, set[str]] = {}
         self._request_handlers: Dict[str, Callable[[MessageEnvelope], Dict[str, object]]] = {}
+        self._sticky_messages: Dict[str, MessageEnvelope] = {}
 
-    def subscribe(self, topic: str, handler: Callable[[MessageEnvelope], None]) -> str:
+    def subscribe(
+        self,
+        topic: str,
+        handler: Callable[[MessageEnvelope], None],
+        *,
+        replay_last: bool = False,
+    ) -> str:
         sub_id = str(uuid.uuid4())
+        sticky_envelope: Optional[MessageEnvelope] = None
         with self._lock:
             self._subscribers[sub_id] = (topic, handler)
             self._topic_index.setdefault(topic, set()).add(sub_id)
+            if replay_last:
+                sticky_envelope = self._sticky_messages.get(topic)
+        if replay_last and sticky_envelope:
+            try:
+                handler(sticky_envelope)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error("runtime_bus sticky replay error on %s: %s", topic, exc)
         return sub_id
 
     def unsubscribe(self, sub_id: str) -> None:
@@ -50,8 +67,16 @@ class RuntimeBus:
         payload: Optional[Dict[str, object]],
         source: str,
         trace_id: Optional[str] = None,
+        *,
+        sticky: bool = False,
     ) -> MessageEnvelope:
         envelope = self._build_envelope(topic, payload, source, trace_id)
+        if sticky:
+            self._record_sticky(topic, envelope)
+        if BUS_DEBUG:
+            print(
+                f"BUS PUBLISH {topic} src={source} trace={envelope.trace_id} payload={_short_payload(envelope.payload)}"
+            )
         handlers = self._copy_handlers(topic)
         for handler in handlers:
             try:
@@ -73,6 +98,10 @@ class RuntimeBus:
             return {"ok": False, "error": "no_handler"}
 
         envelope = self._build_envelope(topic, payload, source, trace_id, target="request")
+        if BUS_DEBUG:
+            print(
+                f"BUS REQUEST {topic} src={source} timeout={timeout_ms} payload={_short_payload(envelope.payload)}"
+            )
         done = threading.Event()
         response: Dict[str, object] = {}
 
@@ -95,6 +124,8 @@ class RuntimeBus:
 
         if not done.wait(timeout_ms / 1000):
             return {"ok": False, "error": "timeout"}
+        if BUS_DEBUG:
+            print(f"BUS REPLY {topic} ok={bool(response.get('ok'))} keys={list(response.keys())}")
         return response
 
     def _build_envelope(
@@ -117,6 +148,25 @@ class RuntimeBus:
             target=target,
         )
 
+    def get_stats(self) -> Dict[str, object]:
+        with self._lock:
+            subs_count = len(self._subscribers)
+            request_topics = list(self._request_handlers.keys())
+            topic_map = {topic: len(ids) for topic, ids in self._topic_index.items()}
+            sticky_topics = list(self._sticky_messages.keys())
+        return {
+            "subscriber_count": subs_count,
+            "subscriptions_by_topic": topic_map,
+            "request_handler_count": len(request_topics),
+            "request_topics": request_topics,
+            "sticky_topic_count": len(sticky_topics),
+            "sticky_topics": sticky_topics,
+        }
+
+    def diagnostics(self) -> Dict[str, object]:
+        """Backward-compatible alias for get_stats."""
+        return self.get_stats()
+
     def _copy_handlers(self, topic: str) -> list[Callable[[MessageEnvelope], None]]:
         with self._lock:
             sub_ids = list(self._topic_index.get(topic, ()))
@@ -129,6 +179,10 @@ class RuntimeBus:
         with self._lock:
             return self._request_handlers.get(topic)
 
+    def _record_sticky(self, topic: str, envelope: MessageEnvelope) -> None:
+        with self._lock:
+            self._sticky_messages[topic] = envelope
+
 
 _GLOBAL_BUS: Optional[RuntimeBus] = None
 _GLOBAL_LOCK = threading.Lock()
@@ -140,3 +194,12 @@ def get_global_bus() -> RuntimeBus:
         if _GLOBAL_BUS is None:
             _GLOBAL_BUS = RuntimeBus()
     return _GLOBAL_BUS
+
+
+def _short_payload(payload: Dict[str, object]) -> str:
+    if not payload:
+        return "{}"
+    text = str(payload)
+    if len(text) > 200:
+        return text[:197] + "..."
+    return text

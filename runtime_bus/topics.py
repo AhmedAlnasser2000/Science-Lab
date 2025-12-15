@@ -30,6 +30,9 @@ CORE_CLEANUP_COMPLETED = "core.cleanup.completed"
 # Errors
 ERROR_RAISED = "error.raised"
 
+# Diagnostics
+RUNTIME_BUS_REPORT_REQUEST = "runtime.bus.report.request"
+
 __all__ = [
     "UI_PROFILE_CHANGED",
     "UI_PACK_CHANGED",
@@ -49,4 +52,5 @@ __all__ = [
     "CORE_CLEANUP_STARTED",
     "CORE_CLEANUP_COMPLETED",
     "ERROR_RAISED",
+    "RUNTIME_BUS_REPORT_REQUEST",
 ]
