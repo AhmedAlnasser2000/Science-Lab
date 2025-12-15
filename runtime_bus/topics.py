@@ -15,9 +15,15 @@ LAB_RUN_STARTED = "lab.run.started"
 LAB_RUN_STOPPED = "lab.run.stopped"
 LAB_TELEMETRY = "lab.telemetry"
 
+# Job lifecycle
+JOB_STARTED = "job.started"
+JOB_PROGRESS = "job.progress"
+JOB_COMPLETED = "job.completed"
+
 # Core / storage
 CORE_STORAGE_REPORT_REQUEST = "core.storage.report.request"
 CORE_STORAGE_REPORT_READY = "core.storage.report.ready"
+CORE_CLEANUP_REQUEST = "core.cleanup.request"
 CORE_CLEANUP_STARTED = "core.cleanup.started"
 CORE_CLEANUP_COMPLETED = "core.cleanup.completed"
 
@@ -34,8 +40,12 @@ __all__ = [
     "LAB_RUN_STARTED",
     "LAB_RUN_STOPPED",
     "LAB_TELEMETRY",
+    "JOB_STARTED",
+    "JOB_PROGRESS",
+    "JOB_COMPLETED",
     "CORE_STORAGE_REPORT_REQUEST",
     "CORE_STORAGE_REPORT_READY",
+    "CORE_CLEANUP_REQUEST",
     "CORE_CLEANUP_STARTED",
     "CORE_CLEANUP_COMPLETED",
     "ERROR_RAISED",

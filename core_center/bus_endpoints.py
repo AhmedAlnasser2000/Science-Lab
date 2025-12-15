@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from .discovery import discover_components, ensure_data_roots
-from .registry import load_registry, save_registry, upsert_records
-from .storage_report import format_report_text, generate_report
+try:
+    from runtime_bus import topics as BUS_TOPICS
+except Exception:  # pragma: no cover
+    BUS_TOPICS = None
 
-REPORT_REQUEST_TOPIC = "core.storage.report.request"
-REPORT_READY_TOPIC = "core.storage.report.ready"
+from . import job_manager
+
+REPORT_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_REQUEST", "core.storage.report.request")
+CLEANUP_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_REQUEST", "core.cleanup.request")
 
 
 def register_core_center_endpoints(bus: Any) -> None:
@@ -22,32 +24,19 @@ def register_core_center_endpoints(bus: Any) -> None:
     setattr(bus, "_core_center_registered", True)
 
     def _handle_report(envelope) -> Dict[str, object]:
-        try:
-            ensure_data_roots()
-            registry_path = Path("data/roaming/registry.json")
-            existing = load_registry(registry_path)
-            discovered = discover_components()
-            merged = upsert_records(existing, discovered)
-            save_registry(registry_path, merged)
-            report = generate_report(merged)
-            text = format_report_text(report)
-            _publish_ready(bus, envelope.trace_id, text, report)
-            return {"ok": True, "text": text, "json": report}
-        except Exception as exc:  # pragma: no cover - defensive
-            return {"ok": False, "error": str(exc)}
+        job_id = job_manager.create_job(job_manager.JOB_REPORT_GENERATE, envelope.payload or {}, bus)
+        return {"ok": True, "job_id": job_id}
+
+    def _handle_cleanup(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        job_type = payload.get("job_type")
+        if job_type not in (
+            job_manager.JOB_CLEANUP_CACHE,
+            job_manager.JOB_CLEANUP_DUMPS,
+        ):
+            return {"ok": False, "error": "unknown_job"}
+        job_id = job_manager.create_job(job_type, payload, bus)
+        return {"ok": True, "job_id": job_id}
 
     bus.register_handler(REPORT_REQUEST_TOPIC, _handle_report)
-
-
-def _publish_ready(bus: Any, trace_id: Optional[str], text: str, payload_json: Dict[str, object]) -> None:
-    if not hasattr(bus, "publish"):
-        return
-    try:
-        bus.publish(
-            REPORT_READY_TOPIC,
-            {"text": text, "json": payload_json},
-            source="core_center",
-            trace_id=trace_id,
-        )
-    except Exception:  # pragma: no cover - defensive
-        return
+    bus.register_handler(CLEANUP_REQUEST_TOPIC, _handle_cleanup)

@@ -898,16 +898,39 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         return str(title or fallback or default)
 
 
+BUS_REPORT_REQUEST = (
+    BUS_TOPICS.CORE_STORAGE_REPORT_REQUEST if BUS_TOPICS else "core.storage.report.request"
+)
+BUS_REPORT_READY = (
+    BUS_TOPICS.CORE_STORAGE_REPORT_READY if BUS_TOPICS else "core.storage.report.ready"
+)
+BUS_CLEANUP_REQUEST = (
+    BUS_TOPICS.CORE_CLEANUP_REQUEST if BUS_TOPICS else "core.cleanup.request"
+)
+BUS_CLEANUP_COMPLETED = (
+    BUS_TOPICS.CORE_CLEANUP_COMPLETED if BUS_TOPICS else "core.cleanup.completed"
+)
+BUS_JOB_COMPLETED = BUS_TOPICS.JOB_COMPLETED if BUS_TOPICS else "job.completed"
+BUS_JOB_PROGRESS = BUS_TOPICS.JOB_PROGRESS if BUS_TOPICS else "job.progress"
+
+CORE_JOB_REPORT = "core.report.generate"
+CORE_JOB_CLEANUP_CACHE = "core.cleanup.cache"
+CORE_JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
+
+
 class SystemHealthScreen(QtWidgets.QWidget):
-    def __init__(self, on_back, bus):
+    def __init__(self, on_back, cleanup_enabled: bool = False, *, bus=None):
         super().__init__()
         self.on_back = on_back
         self.bus = bus
-        self.direct_available = CORE_CENTER_AVAILABLE
+        self.direct_available = bool(cleanup_enabled)
         self.refresh_capability = bool(self.bus or self.direct_available)
         self._task_thread: Optional[QtCore.QThread] = None
         self._task_worker: Optional[TaskWorker] = None
         self._pending_initial_refresh = True
+        self.pending_report_job: Optional[str] = None
+        self.pending_cleanup_jobs: Dict[str, str] = {}
+        self._bus_subscriptions: list[str] = []
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -961,46 +984,77 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self._set_status("Ready to run Core Center diagnostics.")
 
         self._set_control_enabled(True)
+        self._init_bus_subscriptions()
 
     def prepare(self) -> None:
         if self.refresh_capability and self._pending_initial_refresh:
             self._refresh_report()
 
     def _set_control_enabled(self, enabled: bool) -> None:
-        self.refresh_btn.setEnabled(self.refresh_capability and enabled)
-        self.purge_btn.setEnabled(self.direct_available and enabled)
-        self.prune_btn.setEnabled(self.direct_available and enabled)
+        enable_refresh = bool(self.refresh_capability and enabled)
+        self.refresh_btn.setEnabled(enable_refresh)
+        cleanup_available = bool(self.bus or self.direct_available)
+        cleanup_enabled = bool(enabled and cleanup_available)
+        self.purge_btn.setEnabled(cleanup_enabled)
+        self.prune_btn.setEnabled(cleanup_enabled)
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
 
+    def _init_bus_subscriptions(self) -> None:
+        if not self.bus:
+            return
+        self._subscribe_bus(BUS_REPORT_READY, self._on_report_ready_event)
+        self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
+        self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event)
+        self._subscribe_bus(BUS_CLEANUP_COMPLETED, self._on_cleanup_completed_event)
+
+    def _subscribe_bus(self, topic: Optional[str], handler: Callable[[Any], None]) -> None:
+        if not (self.bus and topic):
+            return
+
+        def _wrapped(envelope):
+            QtCore.QTimer.singleShot(0, lambda env=envelope: handler(env))
+
+        sub_id = self.bus.subscribe(topic, _wrapped)
+        self._bus_subscriptions.append(sub_id)
+
     def _refresh_report(self) -> None:
-        if self._task_thread or not self.refresh_capability:
+        if not self.refresh_capability:
+            return
+        if self.bus:
+            if self.pending_report_job:
+                self._set_status(f"Report job already running ({self.pending_report_job}).")
+                return
+            self._set_status("Requesting storage report job...")
+            self._start_report_job_via_bus()
+            return
+        if self._task_thread:
             return
         self._set_status("Refreshing storage report...")
+        self._run_task(self._generate_report_direct, self._update_report)
 
-        if self.bus:
-            self._run_task(self._request_report_via_bus, self._handle_bus_report)
-        else:
-            self._run_task(self._generate_report_direct, self._update_report)
-
-    def _request_report_via_bus(self) -> Dict[str, Any]:
-        topic = (
-            getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_REQUEST", None)
-            or "core.storage.report.request"
-        )
+    def _start_report_job_via_bus(self) -> None:
         if not self.bus:
-            return {"bus_response": {"ok": False, "error": "bus_unavailable"}}
+            return
         try:
             response = self.bus.request(
-                topic,
+                BUS_REPORT_REQUEST,
                 {},
                 source="app_ui",
                 timeout_ms=2000,
             )
         except Exception as exc:  # pragma: no cover - defensive
-            response = {"ok": False, "error": str(exc)}
-        return {"bus_response": response}
+            self._set_status(f"Bus request failed ({exc}); running directly.")
+            self._run_task(self._generate_report_direct, self._update_report)
+            return
+        if response.get("ok") and response.get("job_id"):
+            self.pending_report_job = response["job_id"]
+            self._set_status(f"Report job queued ({self.pending_report_job}).")
+        else:
+            error = response.get("error") or "unknown"
+            self._set_status(f"Report request failed ({error}); running directly.")
+            self._run_task(self._generate_report_direct, self._update_report)
 
     def _generate_report_direct(self) -> Dict[str, Any]:
         ensure_data_roots()
@@ -1013,52 +1067,77 @@ class SystemHealthScreen(QtWidgets.QWidget):
         text = format_report_text(report)
         return {"text": text}
 
-    def _handle_bus_report(self, result: Dict[str, Any]) -> None:
-        response = result.get("bus_response") or {}
-        if response.get("ok"):
-            text = response.get("text") or "No data."
-            self._update_report({"text": text})
-            self._set_status("Storage report updated via runtime bus.")
-            return
-        error = response.get("error") or "unavailable"
-        self.report_view.setPlainText("")
-        self._set_status(f"Core Center unavailable ({error}).")
-
     def _purge_cache(self) -> None:
-        if not self.direct_available or self._task_thread:
-            return
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "Purge cache",
-            "This will delete all files under data/cache/.\nContinue?",
-        )
-        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
-            return
-        self._set_status("Purging data/cache...")
-
-        def job():
-            ensure_data_roots()
-            return purge_cache(Path("data/cache"))
-
-        self._run_task(job, lambda result: self._show_cleanup_result("Cache purge", result))
+        self._trigger_cleanup("cache")
 
     def _prune_dumps(self) -> None:
-        if not self.direct_available or self._task_thread:
+        self._trigger_cleanup("dumps")
+
+    def _trigger_cleanup(self, kind: str) -> None:
+        if not (self.bus or self.direct_available):
+            QtWidgets.QMessageBox.information(self, "Cleanup", "Core Center unavailable.")
             return
         confirm = QtWidgets.QMessageBox.question(
             self,
-            "Prune dumps",
-            "Older crash dumps will be removed. Keep going?",
+            "Cleanup",
+            f"This will clean data/{kind}. Continue?",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
-        self._set_status("Pruning data/dumps...")
+        if self.bus:
+            self._start_cleanup_job(kind)
+            return
+        if self._task_thread:
+            return
+        label = "Cache purge" if kind == "cache" else "Dump pruning"
+        self._set_status(f"{label} running...")
 
         def job():
             ensure_data_roots()
+            if kind == "cache":
+                return purge_cache(Path("data/cache"))
             return prune_dumps(Path("data/dumps"), max_age_days=30, max_total_bytes=50 * 1024 * 1024)
 
-        self._run_task(job, lambda result: self._show_cleanup_result("Dump pruning", result))
+        self._run_task(job, lambda result: self._show_cleanup_result(label, result))
+
+    def _start_cleanup_job(self, kind: str) -> None:
+        if not self.bus:
+            return
+        job_type = CORE_JOB_CLEANUP_CACHE if kind == "cache" else CORE_JOB_CLEANUP_DUMPS
+        try:
+            response = self.bus.request(
+                BUS_CLEANUP_REQUEST,
+                {"job_type": job_type},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._set_status(f"Cleanup request failed ({exc}); running directly.")
+            self._trigger_cleanup_direct(kind)
+            return
+        if response.get("ok") and response.get("job_id"):
+            job_id = response["job_id"]
+            self.pending_cleanup_jobs[job_id] = kind
+            self._set_status(f"{kind.title()} cleanup job queued ({job_id}).")
+        else:
+            error = response.get("error") or "unknown"
+            self._set_status(f"Cleanup request failed ({error}); running directly.")
+            self._trigger_cleanup_direct(kind)
+
+    def _trigger_cleanup_direct(self, kind: str) -> None:
+
+        if self._task_thread:
+            return
+        label = "Cache purge" if kind == "cache" else "Dump pruning"
+        self._set_status(f"{label} running...")
+
+        def job():
+            ensure_data_roots()
+            if kind == "cache":
+                return purge_cache(Path("data/cache"))
+            return prune_dumps(Path("data/dumps"), max_age_days=30, max_total_bytes=50 * 1024 * 1024)
+
+        self._run_task(job, lambda result: self._show_cleanup_result(label, result))
 
     def _update_report(self, result: Dict) -> None:
         text = result.get("text") or "No data."
@@ -1077,7 +1156,79 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._set_status(f"{label} finished.")
         self._refresh_report()
 
+    def _on_report_ready_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        job_id = payload.get("job_id")
+        if self.pending_report_job and job_id and job_id != self.pending_report_job:
+            return
+        text = payload.get("text") or "No data."
+        self.report_view.setPlainText(text)
+        self._pending_initial_refresh = False
+        self.pending_report_job = None
+        self._set_status("Storage report updated via runtime bus.")
+
+    def _on_job_progress_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if payload.get("job_id") != self.pending_report_job:
+            return
+        percent = payload.get("percent")
+        stage = payload.get("stage") or ""
+        try:
+            if percent is not None:
+                value = float(percent)
+                self._set_status(f"Report job {value:.0f}% - {stage}")
+                return
+        except (TypeError, ValueError):
+            pass
+        self._set_status(f"Report job update - {stage}")
+
+    def _on_job_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        job_id = payload.get("job_id")
+        job_type = payload.get("job_type")
+        if job_type == CORE_JOB_REPORT and job_id == self.pending_report_job:
+            if payload.get("ok"):
+                return
+            error = payload.get("error") or "failed"
+            self.pending_report_job = None
+            self._set_status(f"Report job failed: {error}")
+            QtWidgets.QMessageBox.warning(self, "System Health", f"Report job failed: {error}")
+
+    def _on_cleanup_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        job_id = payload.get("job_id")
+        kind = payload.get("kind") or "cleanup"
+        ok = payload.get("ok", True)
+        freed = payload.get("freed_bytes", 0)
+        label = f"{kind.title()} cleanup"
+        if job_id in self.pending_cleanup_jobs:
+            self.pending_cleanup_jobs.pop(job_id, None)
+        if ok:
+            QtWidgets.QMessageBox.information(
+                self,
+                label,
+                f"{label} complete.\nBytes freed: {freed}",
+            )
+            self._set_status(f"{label} finished.")
+        else:
+            error = payload.get("error") or "failed"
+            QtWidgets.QMessageBox.warning(self, label, f"{label} failed: {error}")
+            self._set_status(f"{label} failed.")
+
+    def _unsubscribe_all(self) -> None:
+        if not self.bus:
+            return
+        for sub_id in self._bus_subscriptions:
+            self.bus.unsubscribe(sub_id)
+        self._bus_subscriptions.clear()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self._unsubscribe_all()
+        super().closeEvent(event)
+
     def _run_task(self, job: Callable[[], Any], callback: Callable[[Any], None]) -> None:
+        if self._task_thread:
+            return
         worker = TaskWorker(job)
         thread = QtCore.QThread()
         self._task_worker = worker
@@ -1153,7 +1304,7 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda: self.current_profile,
             self._open_lab,
         )
-        self.system_health = SystemHealthScreen(self._show_main_menu, APP_BUS)
+        self.system_health = SystemHealthScreen(self._show_main_menu, cleanup_enabled=CORE_CENTER_AVAILABLE, bus=APP_BUS)
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.module_manager)
