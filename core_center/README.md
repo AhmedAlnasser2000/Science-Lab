@@ -40,6 +40,13 @@ Components:
   physics [module] content_repo present 4316 bytes @ content_repo\physics_v1
 ```
 
+- Module install/uninstall helper:
+```bash
+python -m core_center.demo_install --module physics_v1 --action install
+python -m core_center.demo_install --module physics_v1 --action uninstall
+```
+- Prints Runtime Bus progress, waits for completion, and confirms the module folder + registry.
+
 ## Notes
 - Uses Python stdlib only.
 - Core Center remains optional and is not wired into any app startup flow yet.
