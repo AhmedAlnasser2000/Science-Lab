@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from .discovery import DATA_ROOTS, compute_disk_usage
+from .registry import summarize_registry
 from .storage_manager import summarize_runs
 
 
@@ -24,7 +25,13 @@ def generate_report(registry: List[Dict]) -> Dict:
                 "install_path": rec.get("install_path"),
             }
             )
-    return {"roots": roots_usage, "components": components, "runs": runs_summary}
+    registry_summary = summarize_registry(registry)
+    return {
+        "roots": roots_usage,
+        "components": components,
+        "runs": runs_summary,
+        "registry_summary": registry_summary,
+    }
 
 
 def report_json(registry: List[Dict]) -> Dict:
@@ -64,3 +71,12 @@ def format_report_text(report: Dict) -> str:
 
 def report_text(registry: List[Dict]) -> str:
     return format_report_text(generate_report(registry))
+    summary = report.get("registry_summary") or {}
+    if summary:
+        lines.append("")
+        lines.append(f"Registry total entries: {summary.get('total', 0)}")
+        by_type = summary.get("by_type") or {}
+        if by_type:
+            lines.append("  By type:")
+            for key, value in sorted(by_type.items()):
+                lines.append(f"    - {key}: {value}")

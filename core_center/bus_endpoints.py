@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict
 
 try:
@@ -8,6 +9,7 @@ except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
 from . import job_manager, storage_manager, policy_manager
+from .registry import load_registry, summarize_registry
 
 REPORT_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_REQUEST", "core.storage.report.request")
 CLEANUP_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_REQUEST", "core.cleanup.request")
@@ -18,6 +20,9 @@ RUN_DIR_REQUEST_TOPIC = getattr(
 )
 POLICY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request"
+)
+REGISTRY_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_REGISTRY_GET_REQUEST", "core.registry.get.request"
 )
 
 
@@ -88,9 +93,17 @@ def register_core_center_endpoints(bus: Any) -> None:
         policy = policy_manager.resolve_policy()
         return {"ok": True, "policy": policy}
 
+    def _handle_registry(envelope) -> Dict[str, object]:  # noqa: ARG001
+        path = Path("data/roaming/registry.json")
+        records = load_registry(path)
+        summary = summarize_registry(records)
+        return {"ok": True, "registry": records, "summary": summary}
+
     bus.register_handler(REPORT_REQUEST_TOPIC, _handle_report)
     bus.register_handler(CLEANUP_REQUEST_TOPIC, _handle_cleanup)
     if RUN_DIR_REQUEST_TOPIC:
         bus.register_handler(RUN_DIR_REQUEST_TOPIC, _handle_run_dir)
     if POLICY_REQUEST_TOPIC:
         bus.register_handler(POLICY_REQUEST_TOPIC, _handle_policy)
+    if REGISTRY_REQUEST_TOPIC:
+        bus.register_handler(REGISTRY_REQUEST_TOPIC, _handle_registry)

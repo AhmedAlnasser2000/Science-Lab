@@ -27,6 +27,8 @@ CORE_CLEANUP_REQUEST = "core.cleanup.request"
 CORE_CLEANUP_STARTED = "core.cleanup.started"
 CORE_CLEANUP_COMPLETED = "core.cleanup.completed"
 CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST = "core.storage.allocate_run_dir.request"
+CORE_POLICY_GET_REQUEST = "core.policy.get.request"
+CORE_REGISTRY_GET_REQUEST = "core.registry.get.request"
 
 # Errors
 ERROR_RAISED = "error.raised"
@@ -53,6 +55,8 @@ __all__ = [
     "CORE_CLEANUP_STARTED",
     "CORE_CLEANUP_COMPLETED",
     "CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST",
+    "CORE_POLICY_GET_REQUEST",
+    "CORE_REGISTRY_GET_REQUEST",
     "ERROR_RAISED",
     "RUNTIME_BUS_REPORT_REQUEST",
 ]

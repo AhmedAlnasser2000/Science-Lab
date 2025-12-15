@@ -3,20 +3,60 @@
     "id": "physics",
     "type": "module",
     "version": "1.0.0",
-    "source": "content_repo",
+    "source": "repo",
     "state": "present",
     "install_path": "content_repo\\physics_v1",
-    "last_seen": "2025-12-15T10:59:43Z",
+    "last_seen": "2025-12-15T11:12:19Z",
     "disk_usage_bytes": 14375
   },
   {
     "id": "unknown",
     "type": "ui_pack",
     "version": "1.0.0",
-    "source": "ui_repo",
+    "source": "repo",
     "state": "present",
     "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth",
     "last_seen": "2025-12-15T10:59:43Z",
     "disk_usage_bytes": 1664
+  },
+  {
+    "id": "default",
+    "type": "ui_pack",
+    "version": "1.0.0",
+    "source": "repo",
+    "state": "present",
+    "install_path": "ui_repo\\ui_v1\\packs\\default",
+    "last_seen": "2025-12-15T11:12:19Z",
+    "disk_usage_bytes": 1274
+  },
+  {
+    "id": "quantum_smooth",
+    "type": "ui_pack",
+    "version": "1.0.0",
+    "source": "repo",
+    "state": "present",
+    "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth",
+    "last_seen": "2025-12-15T11:12:19Z",
+    "disk_usage_bytes": 1664
+  },
+  {
+    "id": "gravity",
+    "type": "lab",
+    "version": null,
+    "source": "app",
+    "state": "present",
+    "install_path": "app_ui\\labs",
+    "last_seen": "2025-12-15T11:12:19Z",
+    "disk_usage_bytes": 8791
+  },
+  {
+    "id": "projectile",
+    "type": "lab",
+    "version": null,
+    "source": "app",
+    "state": "present",
+    "install_path": "app_ui\\labs",
+    "last_seen": "2025-12-15T11:12:19Z",
+    "disk_usage_bytes": 10439
   }
 ]
