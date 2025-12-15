@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import threading
 import uuid
+import shutil
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, List
 
 try:
     from runtime_bus import topics as BUS_TOPICS
@@ -18,6 +19,8 @@ from .storage_report import format_report_text, generate_report
 JOB_REPORT_GENERATE = "core.report.generate"
 JOB_CLEANUP_CACHE = "core.cleanup.cache"
 JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
+JOB_MODULE_INSTALL = "core.module.install"
+JOB_MODULE_UNINSTALL = "core.module.uninstall"
 
 REPORT_READY_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_READY", "core.storage.report.ready")
 CLEANUP_STARTED_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_STARTED", "core.cleanup.started")
@@ -25,6 +28,8 @@ CLEANUP_COMPLETED_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_COMPLETED", "core.cl
 JOB_STARTED_TOPIC = getattr(BUS_TOPICS, "JOB_STARTED", "job.started")
 JOB_PROGRESS_TOPIC = getattr(BUS_TOPICS, "JOB_PROGRESS", "job.progress")
 JOB_COMPLETED_TOPIC = getattr(BUS_TOPICS, "JOB_COMPLETED", "job.completed")
+CONTENT_INSTALL_PROGRESS_TOPIC = getattr(BUS_TOPICS, "CONTENT_INSTALL_PROGRESS", "content.install.progress")
+CONTENT_INSTALL_COMPLETED_TOPIC = getattr(BUS_TOPICS, "CONTENT_INSTALL_COMPLETED", "content.install.completed")
 
 JobHandler = Callable[[Dict[str, Any], "JobContext"], Dict[str, Any]]
 
@@ -143,6 +148,39 @@ def _publish(bus: Any, topic: Optional[str], payload: Dict[str, Any], source: st
         return
 
 
+def _refresh_registry_records() -> List[Dict[str, Any]]:
+    ensure_data_roots()
+    registry_path = Path("data/roaming/registry.json")
+    existing = load_registry(registry_path)
+    discovered = discover_components()
+    merged = upsert_records(existing, discovered)
+    save_registry(registry_path, merged)
+    return merged
+
+
+def _module_progress(ctx: JobContext, module_id: str, percent: float, stage: str) -> None:
+    ctx.progress(percent, stage)
+    ctx.publish(
+        CONTENT_INSTALL_PROGRESS_TOPIC,
+        {"module_id": module_id, "percent": percent, "stage": stage},
+    )
+
+
+def _module_completed(ctx: JobContext, module_id: str, action: str, ok: bool, **extra) -> None:
+    payload = {"module_id": module_id, "action": action, "ok": ok}
+    payload.update(extra)
+    ctx.publish(CONTENT_INSTALL_COMPLETED_TOPIC, payload)
+
+
+def _validate_module_id(payload: Dict[str, Any]) -> str:
+    module_id = str(payload.get("module_id") or "").strip()
+    if not module_id:
+        raise ValueError("module_id_required")
+    if any(sep in module_id for sep in ("/", "\\", "..")):
+        raise ValueError("invalid_module_id")
+    return module_id
+
+
 def _handle_report_job(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
     ctx.progress(5, "preparing")
     ensure_data_roots()
@@ -202,10 +240,71 @@ def _handle_cleanup_dumps(payload: Dict[str, Any], ctx: JobContext) -> Dict[str,
     return {"freed_bytes": freed, "result": result}
 
 
+def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
+    module_id = _validate_module_id(payload)
+    source_dir = Path("content_repo") / module_id
+    if not source_dir.exists() or not source_dir.is_dir():
+        raise FileNotFoundError(f"module not found in repo: {module_id}")
+    staging_dir = Path("data/cache/module_installs") / module_id / ctx.job_id
+    target_dir = Path("content_store") / module_id
+    staging_parent = staging_dir.parent
+    staging_parent.mkdir(parents=True, exist_ok=True)
+    store_parent = target_dir.parent
+    store_parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+        _module_progress(ctx, module_id, 5, "preparing staging")
+        shutil.copytree(source_dir, staging_dir)
+        _module_progress(ctx, module_id, 55, "staged copy complete")
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        shutil.move(str(staging_dir), str(target_dir))
+        _module_progress(ctx, module_id, 80, "installed to store")
+        _refresh_registry_records()
+        _module_progress(ctx, module_id, 95, "registry updated")
+        _module_completed(ctx, module_id, "install", True, install_path=str(target_dir))
+        return {"module_id": module_id, "install_path": str(target_dir)}
+    except Exception as exc:
+        _module_completed(ctx, module_id, "install", False, error=str(exc))
+        raise
+    finally:
+        try:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir, ignore_errors=True)
+        except Exception:
+            pass
+        try:
+            if staging_parent.exists() and not any(staging_parent.iterdir()):
+                staging_parent.rmdir()
+        except Exception:
+            pass
+
+
+def _handle_module_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
+    module_id = _validate_module_id(payload)
+    target_dir = Path("content_store") / module_id
+    if not target_dir.exists() or not target_dir.is_dir():
+        raise FileNotFoundError(f"module not installed: {module_id}")
+    try:
+        _module_progress(ctx, module_id, 10, "removing module")
+        shutil.rmtree(target_dir)
+        _module_progress(ctx, module_id, 70, "removed from store")
+        _refresh_registry_records()
+        _module_progress(ctx, module_id, 95, "registry updated")
+        _module_completed(ctx, module_id, "uninstall", True)
+        return {"module_id": module_id}
+    except Exception as exc:
+        _module_completed(ctx, module_id, "uninstall", False, error=str(exc))
+        raise
+
+
 def _register_builtin_jobs() -> None:
     register_job_handler(JOB_REPORT_GENERATE, _handle_report_job)
     register_job_handler(JOB_CLEANUP_CACHE, _handle_cleanup_cache)
     register_job_handler(JOB_CLEANUP_DUMPS, _handle_cleanup_dumps)
+    register_job_handler(JOB_MODULE_INSTALL, _handle_module_install)
+    register_job_handler(JOB_MODULE_UNINSTALL, _handle_module_uninstall)
 
 
 _register_builtin_jobs()

@@ -24,6 +24,12 @@ POLICY_REQUEST_TOPIC = getattr(
 REGISTRY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_REGISTRY_GET_REQUEST", "core.registry.get.request"
 )
+MODULE_INSTALL_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_CONTENT_MODULE_INSTALL_REQUEST", "core.content.module.install.request"
+)
+MODULE_UNINSTALL_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_CONTENT_MODULE_UNINSTALL_REQUEST", "core.content.module.uninstall.request"
+)
 
 
 class _StickyBusProxy:
@@ -99,6 +105,30 @@ def register_core_center_endpoints(bus: Any) -> None:
         summary = summarize_registry(records)
         return {"ok": True, "registry": records, "summary": summary}
 
+    def _handle_module_install(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        module_id = payload.get("module_id")
+        if not module_id:
+            return {"ok": False, "error": "module_id_required"}
+        job_id = job_manager.create_job(
+            job_manager.JOB_MODULE_INSTALL,
+            {"module_id": module_id},
+            bus=proxy,
+        )
+        return {"ok": True, "job_id": job_id}
+
+    def _handle_module_uninstall(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        module_id = payload.get("module_id")
+        if not module_id:
+            return {"ok": False, "error": "module_id_required"}
+        job_id = job_manager.create_job(
+            job_manager.JOB_MODULE_UNINSTALL,
+            {"module_id": module_id},
+            bus=proxy,
+        )
+        return {"ok": True, "job_id": job_id}
+
     bus.register_handler(REPORT_REQUEST_TOPIC, _handle_report)
     bus.register_handler(CLEANUP_REQUEST_TOPIC, _handle_cleanup)
     if RUN_DIR_REQUEST_TOPIC:
@@ -107,3 +137,7 @@ def register_core_center_endpoints(bus: Any) -> None:
         bus.register_handler(POLICY_REQUEST_TOPIC, _handle_policy)
     if REGISTRY_REQUEST_TOPIC:
         bus.register_handler(REGISTRY_REQUEST_TOPIC, _handle_registry)
+    if MODULE_INSTALL_REQUEST_TOPIC:
+        bus.register_handler(MODULE_INSTALL_REQUEST_TOPIC, _handle_module_install)
+    if MODULE_UNINSTALL_REQUEST_TOPIC:
+        bus.register_handler(MODULE_UNINSTALL_REQUEST_TOPIC, _handle_module_uninstall)

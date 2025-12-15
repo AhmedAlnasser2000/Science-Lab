@@ -29,6 +29,8 @@ CORE_CLEANUP_COMPLETED = "core.cleanup.completed"
 CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST = "core.storage.allocate_run_dir.request"
 CORE_POLICY_GET_REQUEST = "core.policy.get.request"
 CORE_REGISTRY_GET_REQUEST = "core.registry.get.request"
+CORE_CONTENT_MODULE_INSTALL_REQUEST = "core.content.module.install.request"
+CORE_CONTENT_MODULE_UNINSTALL_REQUEST = "core.content.module.uninstall.request"
 
 # Errors
 ERROR_RAISED = "error.raised"
@@ -57,6 +59,8 @@ __all__ = [
     "CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST",
     "CORE_POLICY_GET_REQUEST",
     "CORE_REGISTRY_GET_REQUEST",
+    "CORE_CONTENT_MODULE_INSTALL_REQUEST",
+    "CORE_CONTENT_MODULE_UNINSTALL_REQUEST",
     "ERROR_RAISED",
     "RUNTIME_BUS_REPORT_REQUEST",
 ]
