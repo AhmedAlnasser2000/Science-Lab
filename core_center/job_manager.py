@@ -121,6 +121,8 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
             ok = True
         except Exception as exc:  # pragma: no cover - defensive
             error_msg = str(exc)
+    if not ok and job_type == JOB_REPORT_GENERATE:
+        context.publish(REPORT_READY_TOPIC, {"ok": False, "error": error_msg or "failed"})
     _update_job_state(job_id, {"status": "completed", "result": result if ok else None, "error": error_msg if not ok else None})
     _publish(
         bus,
@@ -154,7 +156,7 @@ def _handle_report_job(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, An
     report = generate_report(merged)
     text = format_report_text(report)
     ctx.progress(95, "ready")
-    ctx.publish(REPORT_READY_TOPIC, {"text": text, "json": report})
+    ctx.publish(REPORT_READY_TOPIC, {"text": text, "json": report, "ok": True})
     return {"text": text, "json": report}
 
 

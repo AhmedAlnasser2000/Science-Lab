@@ -24,18 +24,23 @@ def register_core_center_endpoints(bus: Any) -> None:
     setattr(bus, "_core_center_registered", True)
 
     def _handle_report(envelope) -> Dict[str, object]:
-        job_id = job_manager.create_job(job_manager.JOB_REPORT_GENERATE, envelope.payload or {}, bus)
+        job_id = job_manager.create_job(
+            job_manager.JOB_REPORT_GENERATE,
+            envelope.payload or {},
+            bus=bus,
+        )
         return {"ok": True, "job_id": job_id}
 
     def _handle_cleanup(envelope) -> Dict[str, object]:
         payload = envelope.payload or {}
-        job_type = payload.get("job_type")
-        if job_type not in (
-            job_manager.JOB_CLEANUP_CACHE,
-            job_manager.JOB_CLEANUP_DUMPS,
-        ):
+        kind = (payload.get("kind") or "").lower()
+        if kind == "cache":
+            job_type = job_manager.JOB_CLEANUP_CACHE
+        elif kind == "dumps":
+            job_type = job_manager.JOB_CLEANUP_DUMPS
+        else:
             return {"ok": False, "error": "unknown_job"}
-        job_id = job_manager.create_job(job_type, payload, bus)
+        job_id = job_manager.create_job(job_type, payload, bus=bus)
         return {"ok": True, "job_id": job_id}
 
     bus.register_handler(REPORT_REQUEST_TOPIC, _handle_report)
