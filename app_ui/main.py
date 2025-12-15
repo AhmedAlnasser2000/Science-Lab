@@ -1050,7 +1050,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         if response.get("ok") and response.get("job_id"):
             self.pending_report_job = response["job_id"]
-            self._set_status(f"Report job queued ({self.pending_report_job}).")
+            self._set_status("Generating storage report...")
         else:
             error = response.get("error") or "unknown"
             self._set_status(f"Report request failed ({error}); running directly.")
@@ -1103,11 +1103,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _start_cleanup_job(self, kind: str) -> None:
         if not self.bus:
             return
-        job_type = CORE_JOB_CLEANUP_CACHE if kind == "cache" else CORE_JOB_CLEANUP_DUMPS
         try:
             response = self.bus.request(
                 BUS_CLEANUP_REQUEST,
-                {"job_type": job_type},
+                {"kind": kind},
                 source="app_ui",
                 timeout_ms=2000,
             )
@@ -1118,7 +1117,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if response.get("ok") and response.get("job_id"):
             job_id = response["job_id"]
             self.pending_cleanup_jobs[job_id] = kind
-            self._set_status(f"{kind.title()} cleanup job queued ({job_id}).")
+            self._set_status(f"{kind.title()} cleanup running...")
         else:
             error = response.get("error") or "unknown"
             self._set_status(f"Cleanup request failed ({error}); running directly.")
@@ -1161,11 +1160,18 @@ class SystemHealthScreen(QtWidgets.QWidget):
         job_id = payload.get("job_id")
         if self.pending_report_job and job_id and job_id != self.pending_report_job:
             return
-        text = payload.get("text") or "No data."
-        self.report_view.setPlainText(text)
-        self._pending_initial_refresh = False
+        ok = payload.get("ok", True)
+        if ok:
+            text = payload.get("text") or "No data."
+            self.report_view.setPlainText(text)
+            self._pending_initial_refresh = False
+            self._set_status("Storage report updated via runtime bus.")
+        else:
+            error = payload.get("error") or "failed"
+            self.report_view.setPlainText("")
+            self._set_status(f"Storage report failed: {error}")
+            QtWidgets.QMessageBox.warning(self, "System Health", f"Storage report failed: {error}")
         self.pending_report_job = None
-        self._set_status("Storage report updated via runtime bus.")
 
     def _on_job_progress_event(self, envelope: Any) -> None:
         payload = getattr(envelope, "payload", None) or {}
@@ -1210,6 +1216,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 f"{label} complete.\nBytes freed: {freed}",
             )
             self._set_status(f"{label} finished.")
+            if self.refresh_capability and not self.pending_report_job:
+                self._refresh_report()
         else:
             error = payload.get("error") or "failed"
             QtWidgets.QMessageBox.warning(self, label, f"{label} failed: {error}")
