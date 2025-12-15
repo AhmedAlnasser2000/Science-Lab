@@ -10,6 +10,17 @@ from . import kernel_bridge
 from .labs import registry as lab_registry
 from .labs.host import LabHost
 
+
+def _ensure_safe_font(app: QtWidgets.QApplication, min_point_size: int = 10) -> None:
+    try:
+        font = app.font()
+        point_size = font.pointSize()
+        if point_size is None or point_size <= 0:
+            font.setPointSize(max(1, min_point_size))
+            app.setFont(font)
+    except Exception:
+        pass
+
 try:
     from runtime_bus import topics as BUS_TOPICS
     from runtime_bus.bus import get_global_bus
@@ -168,10 +179,12 @@ def apply_ui_config_styles(app: QtWidgets.QApplication) -> bool:
                 return False
             qss = manager.load_qss(pack)
             manager.apply_qss(app, qss)
+            _ensure_safe_font(app)
             print(f"fallback: UI pack fallback: {pack.id}")
             return True
         qss = manager.load_qss(pack)
         manager.apply_qss(app, qss)
+        _ensure_safe_font(app)
         print(f"success: UI pack applied: {pack.id}")
         return True
     except Exception as exc:
