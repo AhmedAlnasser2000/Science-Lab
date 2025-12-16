@@ -963,6 +963,22 @@ BUS_CLEANUP_COMPLETED = (
 )
 BUS_JOB_COMPLETED = BUS_TOPICS.JOB_COMPLETED if BUS_TOPICS else "job.completed"
 BUS_JOB_PROGRESS = BUS_TOPICS.JOB_PROGRESS if BUS_TOPICS else "job.progress"
+BUS_MODULE_INSTALL_REQUEST = (
+    BUS_TOPICS.CORE_CONTENT_MODULE_INSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.content.module.install.request"
+)
+BUS_MODULE_UNINSTALL_REQUEST = (
+    BUS_TOPICS.CORE_CONTENT_MODULE_UNINSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.content.module.uninstall.request"
+)
+BUS_MODULE_PROGRESS = (
+    BUS_TOPICS.CONTENT_INSTALL_PROGRESS if BUS_TOPICS else "content.install.progress"
+)
+BUS_MODULE_COMPLETED = (
+    BUS_TOPICS.CONTENT_INSTALL_COMPLETED if BUS_TOPICS else "content.install.completed"
+)
 
 CORE_JOB_REPORT = "core.report.generate"
 CORE_JOB_CLEANUP_CACHE = "core.cleanup.cache"
@@ -971,6 +987,8 @@ CORE_JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 
 class SystemHealthScreen(QtWidgets.QWidget):
     cleanup_event = QtCore.pyqtSignal(dict)
+    module_progress_event = QtCore.pyqtSignal(dict)
+    module_completed_event = QtCore.pyqtSignal(dict)
 
     def __init__(self, on_back, cleanup_enabled: bool = False, *, bus=None):
         super().__init__()
@@ -985,6 +1003,11 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.pending_cleanup_job_id: Optional[str] = None
         self.pending_cleanup_kind: Optional[str] = None
         self._cleanup_running = False
+        self._module_job_running = False
+        self.pending_module_job_id: Optional[str] = None
+        self.pending_module_action: Optional[str] = None
+        self.pending_module_id: str = "physics_v1"
+        self._is_explorer = False
         self._bus_subscriptions: list[str] = []
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -1074,6 +1097,35 @@ class SystemHealthScreen(QtWidgets.QWidget):
         comm_panel_layout.addWidget(self.comm_text)
         layout.addWidget(self.comm_panel)
 
+        module_row = QtWidgets.QHBoxLayout()
+        self.install_btn = QtWidgets.QPushButton("Install Physics module (local)")
+        self.install_btn.clicked.connect(lambda: self._start_module_job("install"))
+        self.uninstall_btn = QtWidgets.QPushButton("Uninstall Physics module (local)")
+        self.uninstall_btn.clicked.connect(lambda: self._start_module_job("uninstall"))
+        module_row.addWidget(self.install_btn)
+        module_row.addWidget(self.uninstall_btn)
+        module_row.addStretch()
+        layout.addLayout(module_row)
+
+        self.module_panel = QtWidgets.QFrame()
+        self.module_panel.setVisible(False)
+        self.module_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
+        module_layout = QtWidgets.QVBoxLayout(self.module_panel)
+        module_header = QtWidgets.QHBoxLayout()
+        self.module_title = QtWidgets.QLabel("Module Status")
+        self.module_title.setStyleSheet("font-weight: bold;")
+        module_header.addWidget(self.module_title)
+        module_header.addStretch()
+        module_dismiss = QtWidgets.QPushButton("Dismiss")
+        module_dismiss.setFixedWidth(80)
+        module_dismiss.clicked.connect(lambda: self.module_panel.setVisible(False))
+        module_header.addWidget(module_dismiss)
+        module_layout.addLayout(module_header)
+        self.module_details = QtWidgets.QLabel("")
+        self.module_details.setWordWrap(True)
+        module_layout.addWidget(self.module_details)
+        layout.addWidget(self.module_panel)
+
         self.report_view = QtWidgets.QPlainTextEdit()
         self.report_view.setReadOnly(True)
         self.report_view.setPlaceholderText("Storage report will appear here.")
@@ -1089,6 +1141,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._set_control_enabled(True)
         self._init_bus_subscriptions()
         self._update_comm_controls()
+        self.module_progress_event.connect(self._handle_module_progress_ui)
+        self.module_completed_event.connect(self._handle_module_completed_ui)
         self.cleanup_event.connect(self._handle_cleanup_completed_ui)
 
     def prepare(self) -> None:
@@ -1103,16 +1157,33 @@ class SystemHealthScreen(QtWidgets.QWidget):
         cleanup_enabled = bool(enabled and cleanup_available and not self._cleanup_running)
         self.purge_btn.setEnabled(cleanup_enabled)
         self.prune_btn.setEnabled(cleanup_enabled)
+        module_enabled = bool(
+            enabled and self.bus and self._is_explorer and not self._module_job_running
+        )
+        if hasattr(self, "install_btn"):
+            self.install_btn.setEnabled(module_enabled)
+        if hasattr(self, "uninstall_btn"):
+            self.uninstall_btn.setEnabled(module_enabled)
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
 
     def _update_comm_controls(self) -> None:
-        is_explorer = ui_config.load_experience_profile() == "Explorer"
+        profile = ui_config.load_experience_profile()
+        is_explorer = profile == "Explorer"
+        self._is_explorer = is_explorer
         available = bool(self.bus and is_explorer)
         self.comm_btn.setVisible(available)
         if not available:
             self.comm_panel.setVisible(False)
+        module_available = bool(self.bus and is_explorer)
+        if hasattr(self, "install_btn"):
+            self.install_btn.setVisible(module_available)
+        if hasattr(self, "uninstall_btn"):
+            self.uninstall_btn.setVisible(module_available)
+        if not module_available and hasattr(self, "module_panel"):
+            self.module_panel.setVisible(False)
+        self._set_control_enabled(True)
 
     def _show_comm_report(self) -> None:
         if not self.bus:
@@ -1152,6 +1223,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
         self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event)
         self._subscribe_bus(BUS_CLEANUP_COMPLETED, self._on_cleanup_completed_event, replay_last=True)
+        self._subscribe_bus(BUS_MODULE_PROGRESS, self._on_module_progress_event)
+        self._subscribe_bus(BUS_MODULE_COMPLETED, self._on_module_completed_event)
 
     def _subscribe_bus(
         self,
@@ -1371,6 +1444,14 @@ class SystemHealthScreen(QtWidgets.QWidget):
         payload = getattr(envelope, "payload", None) or {}
         self.cleanup_event.emit(payload)
 
+    def _on_module_progress_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        QtCore.QTimer.singleShot(0, lambda env=payload: self.module_progress_event.emit(env))
+
+    def _on_module_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        QtCore.QTimer.singleShot(0, lambda env=payload: self.module_completed_event.emit(env))
+
     def _handle_cleanup_completed_ui(self, payload: Dict[str, Any]) -> None:
         if payload is None:
             return
@@ -1428,6 +1509,80 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.completion_title.setStyleSheet(f"color: {color}; font-weight: bold;")
         self.completion_panel.setVisible(True)
         QtCore.QTimer.singleShot(7000, lambda: self.completion_panel.setVisible(False))
+
+    def _start_module_job(self, action: str) -> None:
+        if not (self.bus and self._is_explorer):
+            QtWidgets.QMessageBox.information(self, "Module", "Runtime bus unavailable.")
+            return
+        if self._module_job_running:
+            QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            return
+        topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
+        try:
+            response = self.bus.request(
+                topic,
+                {"module_id": self.pending_module_id},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
+            return
+        if not response.get("ok") or not response.get("job_id"):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Module",
+                f"Request failed: {response.get('error') or 'unknown'}",
+            )
+            return
+        self.pending_module_job_id = response["job_id"]
+        self.pending_module_action = action
+        self._module_job_running = True
+        self._show_module_panel(
+            f"{action.title()} requested",
+            "Awaiting progress...",
+            running=True,
+        )
+        self._set_control_enabled(True)
+
+    def _show_module_panel(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
+        color = "#0d47a1"
+        if ok is True:
+            color = "#2e7d32"
+        elif ok is False:
+            color = "#b71c1c"
+        self.module_title.setText(title)
+        self.module_title.setStyleSheet(f"font-weight: bold; color: {color};")
+        self.module_details.setText(details)
+        self.module_panel.setVisible(True)
+
+    def _handle_module_progress_ui(self, payload: Dict[str, Any]) -> None:
+        if not self._module_job_running:
+            return
+        if payload.get("job_id") and payload.get("job_id") != self.pending_module_job_id:
+            return
+        if payload.get("module_id") and payload.get("module_id") != self.pending_module_id:
+            return
+        stage = payload.get("stage") or "Working"
+        percent = payload.get("percent")
+        percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
+        details = f"{self.pending_module_action.title()} {self.pending_module_id}: {percent_text} {stage}".strip()
+        self._show_module_panel("Module Progress", details, running=True)
+
+    def _handle_module_completed_ui(self, payload: Dict[str, Any]) -> None:
+        if payload.get("job_id") and payload.get("job_id") != self.pending_module_job_id:
+            return
+        if payload.get("module_id") and payload.get("module_id") != self.pending_module_id:
+            return
+        ok = bool(payload.get("ok"))
+        action = payload.get("action") or (self.pending_module_action or "module")
+        error = payload.get("error")
+        details = f"{action.title()} {self.pending_module_id}: {'OK' if ok else error or 'failed'}"
+        self._module_job_running = False
+        self.pending_module_job_id = None
+        self.pending_module_action = None
+        self._show_module_panel("Module Result", details, running=False, ok=ok)
+        self._set_control_enabled(True)
 
     def _unsubscribe_all(self) -> None:
         if not self.bus:
