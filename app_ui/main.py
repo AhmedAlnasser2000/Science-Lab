@@ -1963,7 +1963,15 @@ class MainWindow(QtWidgets.QMainWindow):
             if hasattr(widget, "load_part"):
                 widget.load_part(part_id, manifest, detail)
             guide_text = self._load_lab_guide_text(manifest, detail, self.current_profile)
-            host = LabHost(lab_id, widget, guide_text, reduced_motion, bus=APP_BUS)
+            host = LabHost(
+                lab_id,
+                widget,
+                guide_text,
+                reduced_motion,
+                bus=APP_BUS,
+                profile=self.current_profile,
+                plugin=plugin,
+            )
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Lab", f"Failed to open lab: {exc}")
             return

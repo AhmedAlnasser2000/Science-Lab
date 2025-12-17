@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
 
@@ -16,6 +18,7 @@ RUN_DIR_REQUEST_TOPIC = (
     BUS_TOPICS.CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST if BUS_TOPICS else "core.storage.allocate_run_dir.request"
 )
 POLICY_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request") if BUS_TOPICS else "core.policy.get.request"
+LAB_TELEMETRY_TOPIC = BUS_TOPICS.LAB_TELEMETRY if BUS_TOPICS else "lab.telemetry"
 
 DEFAULT_POLICY = {
     "max_concurrent_sims": 1,
@@ -24,6 +27,7 @@ DEFAULT_POLICY = {
     "runs_keep_last_n": 10,
     "exports_enabled": False,
     "reduced_motion_enforced": False,
+    "telemetry_enabled": False,
 }
 
 
@@ -38,21 +42,42 @@ class LabHost(QtWidgets.QWidget):
         reduced_motion: bool,
         *,
         bus=None,
+        profile: str = "Learner",
+        plugin=None,
     ):
         super().__init__()
         self.lab_id = lab_id
         self.lab_widget = lab_widget
         self.bus = bus
         self.reduced_motion = reduced_motion
+        self.profile = profile
+        self.plugin = plugin
         self.guide_visible = True
         self.policy = self._init_policy()
         self.run_context = self._init_run_context()
         self.run_context.setdefault("policy", self.policy)
+        self.run_context.setdefault("profile", self.profile)
         print(f"[lab_host] policy resolved for {self.lab_id}: {self.policy}")
         self._apply_run_context()
+        self.telemetry_timer = QtCore.QTimer(self)
+        self.telemetry_timer.timeout.connect(self._emit_telemetry)
+        self.telemetry_start: Optional[float] = None
+        self.export_actions: List[Dict[str, Any]] = []
 
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
+
+        controls = QtWidgets.QHBoxLayout()
+        self.export_btn = QtWidgets.QPushButton("Export")
+        self.export_btn.clicked.connect(self._show_export_menu)
+        self.export_btn.setVisible(False)
+        controls.addWidget(self.export_btn)
+        self.export_status = QtWidgets.QLabel("")
+        self.export_status.setStyleSheet("color: #4a4a4a; font-size: 12px;")
+        self.export_status.setVisible(False)
+        controls.addWidget(self.export_status)
+        controls.addStretch()
+        main_layout.addLayout(controls)
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         if reduced_motion:
@@ -86,6 +111,9 @@ class LabHost(QtWidgets.QWidget):
         self.splitter.addWidget(self.lab_container)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 2)
+        self.export_actions = self._resolve_export_actions()
+        self._update_export_controls()
+        self._configure_telemetry()
 
     def update_guide(self, markdown_text: str) -> None:
         self._set_guide_text(markdown_text)
@@ -108,6 +136,78 @@ class LabHost(QtWidgets.QWidget):
             self.guide_view.setMarkdown(text)
         except AttributeError:
             self.guide_view.setPlainText(text)
+
+    def _resolve_export_actions(self) -> List[Dict[str, Any]]:
+        actions: List[Dict[str, Any]] = []
+        if not self.policy.get("exports_enabled"):
+            return actions
+        if self.plugin and hasattr(self.plugin, "get_export_actions"):
+            try:
+                plugin_actions = self.plugin.get_export_actions(dict(self.run_context)) or []
+                for entry in plugin_actions:
+                    label = entry.get("label") or entry.get("id")
+                    handler = entry.get("run")
+                    if isinstance(handler, str):
+                        callback = getattr(self.plugin, handler, None)
+                    else:
+                        callback = handler
+                    if callable(callback) and isinstance(label, str):
+                        actions.append({"id": entry.get("id") or label, "label": label, "handler": callback})
+            except Exception:
+                pass
+        if not actions:
+            actions.append(
+                {
+                    "id": "export_run_metadata",
+                    "label": "Export run metadata",
+                    "handler": self._export_run_metadata,
+                }
+            )
+        return actions
+
+    def _update_export_controls(self) -> None:
+        visible = bool(self.export_actions)
+        self.export_btn.setVisible(visible)
+        if not visible:
+            self.export_status.setVisible(False)
+
+    def _show_export_menu(self) -> None:
+        if not self.export_actions:
+            return
+        menu = QtWidgets.QMenu(self)
+        for action in self.export_actions:
+            act = menu.addAction(action["label"])
+            act.triggered.connect(lambda _checked=False, meta=action: self._invoke_export_action(meta))
+        menu.exec(self.export_btn.mapToGlobal(self.export_btn.rect().center()))
+
+    def _invoke_export_action(self, action: Dict[str, Any]) -> None:
+        handler = action.get("handler")
+        if isinstance(handler, str) and self.plugin:
+            handler = getattr(self.plugin, handler, None)
+        if not callable(handler):
+            self._set_export_status(f"{action.get('label', 'Export')} unavailable", ok=False)
+            return
+        try:
+            handler(dict(self.run_context))
+            self._set_export_status(f"{action.get('label', 'Export')} completed", ok=True)
+        except Exception as exc:
+            self._set_export_status(f"{action.get('label', 'Export')} failed: {exc}", ok=False)
+
+    def _set_export_status(self, text: str, ok: bool) -> None:
+        color = "#2e7d32" if ok else "#b71c1c"
+        self.export_status.setStyleSheet(f"color: {color}; font-size: 12px;")
+        self.export_status.setText(text)
+        self.export_status.setVisible(True)
+
+    def _export_run_metadata(self, context: dict) -> None:
+        run_dir = Path(context.get("run_dir") or "")
+        if not run_dir:
+            raise RuntimeError("run directory unavailable")
+        run_dir.mkdir(parents=True, exist_ok=True)
+        snapshot = dict(context)
+        snapshot.pop("policy", None)
+        target = run_dir / f"export_snapshot_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
+        target.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
 
     def get_run_context(self) -> dict:
         return dict(self.run_context)
@@ -229,3 +329,42 @@ class LabHost(QtWidgets.QWidget):
             path.rmdir()
         except Exception:
             pass
+
+    def _configure_telemetry(self) -> None:
+        self.telemetry_timer.stop()
+        self.telemetry_start = None
+        if not (
+            self.bus
+            and self.policy.get("telemetry_enabled")
+            and self.profile == "Explorer"
+            and self.plugin
+        ):
+            return
+        interval = 500
+        if self.policy.get("low_end_mode") or self.reduced_motion:
+            interval = 2000
+        self.telemetry_start = time.monotonic()
+        self.telemetry_timer.start(interval)
+
+    def _emit_telemetry(self) -> None:
+        if not (self.bus and self.plugin):
+            return
+        try:
+            snapshot = self.plugin.get_telemetry_snapshot(dict(self.run_context))
+        except Exception:
+            snapshot = None
+        if not snapshot:
+            return
+        if self.telemetry_start is None:
+            self.telemetry_start = time.monotonic()
+        elapsed = time.monotonic() - self.telemetry_start
+        payload = {
+            "lab_id": self.lab_id,
+            "run_id": self.run_context.get("run_id"),
+            "t": elapsed,
+            "snapshot": snapshot,
+        }
+        try:
+            self.bus.publish(LAB_TELEMETRY_TOPIC, payload, source="app_ui")
+        except Exception:
+            self.telemetry_timer.stop()

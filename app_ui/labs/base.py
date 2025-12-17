@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Iterable, Protocol
+from typing import Callable, Iterable, Optional, Protocol
 
 from PyQt6 import QtWidgets
 
@@ -26,6 +26,14 @@ class LabPlugin(ABC):
 
     def supports_profiles(self) -> Iterable[str]:
         return ("Learner", "Educator", "Explorer")
+
+    def get_export_actions(self, context: dict) -> Iterable[dict]:
+        """Optional export actions. Default: none."""
+        return ()
+
+    def get_telemetry_snapshot(self, context: dict) -> Optional[dict]:
+        """Optional telemetry snapshot. Default: no telemetry."""
+        return None
 
     @abstractmethod
     def create_widget(

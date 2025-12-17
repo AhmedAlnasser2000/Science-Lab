@@ -14,6 +14,7 @@ DEFAULT_POLICY = {
     "runs_keep_last_n": 10,
     "exports_enabled": False,
     "reduced_motion_enforced": False,
+    "telemetry_enabled": False,
 }
 
 

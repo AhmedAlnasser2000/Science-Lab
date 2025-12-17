@@ -1,5 +1,148 @@
 [
   {
+    "job_id": "dd09f6cb-fb78-42ab-9454-75013f472f6c",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:58.764640+00:00",
+    "finished_at": "2025-12-17T06:26:58.776588+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "e3d2d68a-ddb8-44bd-a601-33a513adbf9c",
+    "job_type": "core.cleanup.cache",
+    "source": "core_center",
+    "status": "running",
+    "started_at": "2025-12-17T06:26:58.760447+00:00",
+    "finished_at": null,
+    "ok": null,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "134cb65b-ff26-4993-ac7f-d3d7b5808bfe",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:50.876157+00:00",
+    "finished_at": "2025-12-17T06:26:50.885478+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "c9710f1c-158b-46ab-9388-a6bdbb4a05a6",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "failed",
+    "started_at": "2025-12-17T06:26:46.699297+00:00",
+    "finished_at": "2025-12-17T06:26:46.700594+00:00",
+    "ok": false,
+    "error": "module not installed: physics_v1",
+    "result_summary": null
+  },
+  {
+    "job_id": "6e29bae2-c740-49a0-a6bb-d418daa913af",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:45.755521+00:00",
+    "finished_at": "2025-12-17T06:26:45.771728+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "936466ef-2ddc-4930-94eb-4f4e555fc2b4",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:45.171353+00:00",
+    "finished_at": "2025-12-17T06:26:45.218185+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "edb78d6b-e032-4ca9-8966-0f5a00760fa7",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:44.827554+00:00",
+    "finished_at": "2025-12-17T06:26:44.873850+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "6ae94237-52c3-446f-a7d0-9af429fa26dd",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:44.499667+00:00",
+    "finished_at": "2025-12-17T06:26:44.545960+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "ad048538-660a-4f9b-aea0-a6b07db4d6bb",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:44.155744+00:00",
+    "finished_at": "2025-12-17T06:26:44.200590+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "469dc704-7146-4d92-a0d5-ae64fc1c5cdd",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:43.739440+00:00",
+    "finished_at": "2025-12-17T06:26:43.786497+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "4e23e3d9-c94b-48cf-a10f-c545773c6b80",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:42.891388+00:00",
+    "finished_at": "2025-12-17T06:26:42.936964+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "2a581799-827d-4604-bd9f-8a1334218db4",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:41.780061+00:00",
+    "finished_at": "2025-12-17T06:26:41.821899+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "67e34570-74fc-4a62-afb7-992f5cef0286",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:26:31.771705+00:00",
+    "finished_at": "2025-12-17T06:26:31.782795+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
     "job_id": "20b584ad-06bb-4c56-85cb-8b25b39c3757",
     "job_type": "core.module.uninstall",
     "source": "core_center",
