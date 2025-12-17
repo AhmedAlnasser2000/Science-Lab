@@ -46,24 +46,14 @@ def _record_key(rec: RegistryRecord) -> Tuple[str, str, str]:
     )
 
 
-def upsert_records(
-    existing: List[RegistryRecord],
-    new: List[RegistryRecord],
-    *,
-    drop_missing: bool = False,
-) -> List[RegistryRecord]:
+def upsert_records(existing: List[RegistryRecord], new: List[RegistryRecord]) -> List[RegistryRecord]:
     merged: Dict[Tuple[str, str, str], RegistryRecord] = {}
-    new_map: Dict[Tuple[str, str, str], RegistryRecord] = {}
-    for rec in new:
-        normalized = _normalize_record(rec)
-        new_map[_record_key(normalized)] = normalized
     for rec in existing:
         normalized = _normalize_record(rec)
-        key = _record_key(normalized)
-        if drop_missing and key not in new_map:
-            continue
-        merged[key] = normalized
-    merged.update(new_map)
+        merged[_record_key(normalized)] = normalized
+    for rec in new:
+        normalized = _normalize_record(rec)
+        merged[_record_key(normalized)] = normalized
     return list(merged.values())
 
 
