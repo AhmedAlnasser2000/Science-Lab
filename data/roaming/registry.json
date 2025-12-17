@@ -6,18 +6,8 @@
     "source": "repo",
     "state": "present",
     "install_path": "content_repo\\physics_v1",
-    "last_seen": "2025-12-17T04:03:25Z",
+    "last_seen": "2025-12-17T04:53:40Z",
     "disk_usage_bytes": 14375
-  },
-  {
-    "id": "unknown",
-    "type": "ui_pack",
-    "version": "1.0.0",
-    "source": "repo",
-    "state": "present",
-    "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth",
-    "last_seen": "2025-12-15T10:59:43Z",
-    "disk_usage_bytes": 1664
   },
   {
     "id": "default",
@@ -26,7 +16,7 @@
     "source": "repo",
     "state": "present",
     "install_path": "ui_repo\\ui_v1\\packs\\default",
-    "last_seen": "2025-12-17T04:03:25Z",
+    "last_seen": "2025-12-17T04:53:40Z",
     "disk_usage_bytes": 1274
   },
   {
@@ -36,7 +26,7 @@
     "source": "repo",
     "state": "present",
     "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth",
-    "last_seen": "2025-12-17T04:03:25Z",
+    "last_seen": "2025-12-17T04:53:40Z",
     "disk_usage_bytes": 1664
   },
   {
@@ -46,7 +36,7 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-17T04:03:25Z",
+    "last_seen": "2025-12-17T04:53:40Z",
     "disk_usage_bytes": 8791
   },
   {
@@ -56,17 +46,7 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-17T04:03:25Z",
+    "last_seen": "2025-12-17T04:53:40Z",
     "disk_usage_bytes": 10439
-  },
-  {
-    "id": "physics",
-    "type": "module",
-    "version": "1.0.0",
-    "source": "store",
-    "state": "present",
-    "install_path": "content_store\\physics_v1",
-    "last_seen": "2025-12-17T04:03:25Z",
-    "disk_usage_bytes": 14375
   }
 ]

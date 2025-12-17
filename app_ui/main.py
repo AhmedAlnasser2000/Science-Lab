@@ -1,4 +1,8 @@
+import json
+import os
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -97,6 +101,24 @@ if APP_BUS and CORE_CENTER_BUS_ENDPOINTS:
         print(f"runtime bus: failed to register core_center endpoints ({exc})")
 
 RECOMMENDED_PART_SEQUENCE = ["text_intro", "gravity_demo"]
+DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+DEBUG_LOG_ENABLED = bool(
+    os.getenv("PHYSICSLAB_UI_DEBUG") == "1" or os.getenv("PHYSICSLAB_BUS_DEBUG") == "1"
+)
+
+
+def _append_debug_log(record: Dict[str, Any]) -> None:
+    if not DEBUG_LOG_ENABLED:
+        return
+    try:
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = dict(record)
+        payload.setdefault("timestamp", int(time.time() * 1000))
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _log_file:
+            _log_file.write(json.dumps(payload) + "\n")
+    except Exception as exc:  # pragma: no cover - debug aid
+        print(f"[ui_debug] log write failed: {exc!r}", flush=True)
+
 PROFILE_GUIDE_KEYS = {
     "Learner": "learner",
     "Educator": "educator",
@@ -985,6 +1007,24 @@ CORE_JOB_CLEANUP_CACHE = "core.cleanup.cache"
 CORE_JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 
 
+class _BusDispatchBridge(QtCore.QObject):
+    envelope_dispatched = QtCore.pyqtSignal(object, object)
+
+    def __init__(self, parent: Optional[QtCore.QObject] = None):
+        super().__init__(parent)
+        self.envelope_dispatched.connect(
+            self._invoke_handler,
+            QtCore.Qt.ConnectionType.QueuedConnection,
+        )
+
+    @QtCore.pyqtSlot(object, object)
+    def _invoke_handler(self, handler: Callable[[Any], None], envelope: Any) -> None:
+        try:
+            handler(envelope)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+
 class SystemHealthScreen(QtWidgets.QWidget):
     cleanup_event = QtCore.pyqtSignal(dict)
     module_progress_event = QtCore.pyqtSignal(dict)
@@ -1009,6 +1049,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.pending_module_id: str = "physics_v1"
         self._is_explorer = False
         self._bus_subscriptions: list[str] = []
+        self._bus_dispatch_bridge = _BusDispatchBridge(self)
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -1237,7 +1278,24 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
 
         def _wrapped(envelope):
-            QtCore.QTimer.singleShot(0, lambda env=envelope: handler(env))
+            handler_name = getattr(handler, "__name__", repr(handler))
+            # region agent log
+            _append_debug_log(
+                {
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H1",
+                    "location": "app_ui.main:SystemHealthScreen._subscribe_bus._wrapped",
+                    "message": "bus envelope received",
+                    "data": {
+                        "topic": topic,
+                        "handler": handler_name,
+                        "thread": threading.current_thread().name,
+                    },
+                }
+            )
+            # endregion
+            self._bus_dispatch_bridge.envelope_dispatched.emit(handler, envelope)
 
         sub_id = self.bus.subscribe(topic, _wrapped, replay_last=replay_last)
         self._bus_subscriptions.append(sub_id)
@@ -1284,7 +1342,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         registry_path = Path("data/roaming/registry.json")
         existing = load_registry(registry_path)
         discovered = discover_components()
-        merged = upsert_records(existing, discovered)
+        merged = upsert_records(existing, discovered, drop_missing=True)
         save_registry(registry_path, merged)
         report = generate_report(merged)
         text = format_report_text(report)
@@ -1409,6 +1467,23 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _on_job_progress_event(self, envelope: Any) -> None:
         payload = getattr(envelope, "payload", None) or {}
+        # region agent log
+        _append_debug_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H1",
+                "location": "app_ui.main:SystemHealthScreen._on_job_progress_event",
+                "message": "job progress envelope",
+                "data": {
+                    "payload_job": payload.get("job_id"),
+                    "pending_job": self.pending_report_job,
+                    "percent": payload.get("percent"),
+                    "thread": threading.current_thread().name,
+                },
+            }
+        )
+        # endregion
         if payload.get("job_id") != self.pending_report_job:
             return
         percent = payload.get("percent")
@@ -1446,6 +1521,23 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _on_module_progress_event(self, envelope: Any) -> None:
         payload = getattr(envelope, "payload", None) or {}
+        # region agent log
+        _append_debug_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H1",
+                "location": "app_ui.main:SystemHealthScreen._on_module_progress_event",
+                "message": "module progress envelope",
+                "data": {
+                    "payload_job": payload.get("job_id"),
+                    "pending_job": self.pending_module_job_id,
+                    "module_id": payload.get("module_id"),
+                    "thread": threading.current_thread().name,
+                },
+            }
+        )
+        # endregion
         QtCore.QTimer.singleShot(0, lambda env=payload: self.module_progress_event.emit(env))
 
     def _on_module_completed_event(self, envelope: Any) -> None:
@@ -1458,6 +1550,23 @@ class SystemHealthScreen(QtWidgets.QWidget):
         job_id = payload.get("job_id")
         if job_id and self.pending_cleanup_job_id and job_id != self.pending_cleanup_job_id:
             return
+        # region agent log
+        _append_debug_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H2",
+                "location": "app_ui.main:SystemHealthScreen._handle_cleanup_completed_ui",
+                "message": "cleanup completion payload accepted",
+                "data": {
+                    "job_id": job_id,
+                    "kind": payload.get("kind"),
+                    "pending_job": self.pending_cleanup_job_id,
+                    "thread": threading.current_thread().name,
+                },
+            }
+        )
+        # endregion
         kind = payload.get("kind") or self.pending_cleanup_kind or "cleanup"
         ok = payload.get("ok", True)
         freed = payload.get("freed_bytes", 0)
@@ -1563,6 +1672,23 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         if payload.get("module_id") and payload.get("module_id") != self.pending_module_id:
             return
+        # region agent log
+        _append_debug_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H2",
+                "location": "app_ui.main:SystemHealthScreen._handle_module_progress_ui",
+                "message": "module progress payload applied",
+                "data": {
+                    "job_id": payload.get("job_id"),
+                    "module_id": payload.get("module_id"),
+                    "percent": payload.get("percent"),
+                    "thread": threading.current_thread().name,
+                },
+            }
+        )
+        # endregion
         stage = payload.get("stage") or "Working"
         percent = payload.get("percent")
         percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
@@ -1807,6 +1933,16 @@ def main():
     profile = ui_config.load_experience_profile()
     print(f"Experience profile: {profile}")
     app = QtWidgets.QApplication(sys.argv)
+    _append_debug_log(
+        {
+            "sessionId": "debug-session",
+            "runId": "pre-fix",
+            "hypothesisId": "H0",
+            "location": "app_ui.main:main",
+            "message": "BOOT main() reached",
+            "data": {"profile": profile},
+        }
+    )
     apply_ui_config_styles(app)
     window = MainWindow(profile)
     window.show()

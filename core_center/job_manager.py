@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import threading
-import uuid
+import json
+import os
 import shutil
+import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, List
 
@@ -21,6 +24,26 @@ JOB_CLEANUP_CACHE = "core.cleanup.cache"
 JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 JOB_MODULE_INSTALL = "core.module.install"
 JOB_MODULE_UNINSTALL = "core.module.uninstall"
+
+DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+CORE_DEBUG_LOG_ENABLED = bool(
+    os.getenv("PHYSICSLAB_CORE_DEBUG") == "1"
+    or os.getenv("PHYSICSLAB_UI_DEBUG") == "1"
+    or os.getenv("PHYSICSLAB_BUS_DEBUG") == "1"
+)
+
+
+def _append_job_debug_log(record: Dict[str, Any]) -> None:
+    if not CORE_DEBUG_LOG_ENABLED:
+        return
+    try:
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = dict(record)
+        payload.setdefault("timestamp", int(time.time() * 1000))
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _log_file:
+            _log_file.write(json.dumps(payload) + "\n")
+    except Exception as exc:  # pragma: no cover - debug aid
+        print(f"[core_debug] log write failed: {exc!r}", flush=True)
 
 REPORT_READY_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_READY", "core.storage.report.ready")
 CLEANUP_STARTED_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_STARTED", "core.cleanup.started")
@@ -153,7 +176,23 @@ def _refresh_registry_records() -> List[Dict[str, Any]]:
     registry_path = Path("data/roaming/registry.json")
     existing = load_registry(registry_path)
     discovered = discover_components()
-    merged = upsert_records(existing, discovered)
+    merged = upsert_records(existing, discovered, drop_missing=True)
+    # region agent log
+    _append_job_debug_log(
+        {
+            "sessionId": "debug-session",
+            "runId": "pre-fix",
+            "hypothesisId": "H3",
+            "location": "core_center.job_manager:_refresh_registry_records",
+            "message": "registry refresh aggregation",
+            "data": {
+                "existing": len(existing),
+                "discovered": len(discovered),
+                "merged": len(merged),
+            },
+        }
+    )
+    # endregion
     save_registry(registry_path, merged)
     return merged
 

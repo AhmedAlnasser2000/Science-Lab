@@ -13,7 +13,7 @@ def main() -> None:
         registry_path = Path("data/roaming/registry.json")
         existing = load_registry(registry_path)
         discovered = discover_components()
-        merged = upsert_records(existing, discovered)
+        merged = upsert_records(existing, discovered, drop_missing=True)
         save_registry(registry_path, merged)
         print(report_text(merged))
         # Optional future JSON output:
