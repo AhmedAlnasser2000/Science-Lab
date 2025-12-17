@@ -816,6 +816,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
                             "part_id": part.get("part_id"),
                             "status": part.get("status"),
                             "reason": part.get("reason"),
+                            "lab_id": (part.get("lab") or {}).get("lab_id"),
                         },
                     )
                     pkg_item.addChild(part_item)
@@ -933,7 +934,20 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         content = manifest.get("content") or {}
         asset = content.get("asset_path")
         behavior = manifest.get("behavior") or {}
-        lab_id = manifest.get("lab_id")
+        lab_id = None
+        detail_lab = (detail.get("lab") if isinstance(detail, dict) else None)
+        if isinstance(detail_lab, dict):
+            candidate = detail_lab.get("lab_id")
+            if isinstance(candidate, str) and candidate.strip():
+                lab_id = candidate.strip()
+        if not lab_id:
+            x_ext = manifest.get("x_extensions")
+            if isinstance(x_ext, dict):
+                lab_info = x_ext.get("lab")
+                if isinstance(lab_info, dict):
+                    candidate = lab_info.get("lab_id")
+                    if isinstance(candidate, str) and candidate.strip():
+                        lab_id = candidate.strip()
         if not lab_id and behavior.get("preset") == "gravity-demo":
             lab_id = "gravity"
         if not lab_id and self.current_part_id == "gravity_demo":

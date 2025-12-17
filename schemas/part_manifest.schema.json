@@ -118,5 +118,82 @@
       }
     }
   ],
+  "$defs": {
+    "lab_extension": {
+      "type": "object",
+      "description": "Optional lab metadata used by the runtime to launch interactive labs.",
+      "properties": {
+        "lab_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recommended_profile": {
+          "type": "string",
+          "enum": [
+            "Learner",
+            "Educator",
+            "Explorer"
+          ]
+        }
+      },
+      "required": [
+        "lab_id"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "x_extensions": {
+            "type": "object",
+            "properties": {
+              "lab": {}
+            },
+            "required": [
+              "lab"
+            ]
+          }
+        },
+        "required": [
+          "x_extensions"
+        ]
+      },
+      "then": {
+        "properties": {
+          "x_extensions": {
+            "type": "object",
+            "properties": {
+              "lab": {
+                "$ref": "#/$defs/lab_extension"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "part_type": {
+            "const": "simulation"
+          }
+        },
+        "required": [
+          "part_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "behavior"
+        ]
+      }
+    }
+  ],
   "additionalProperties": false
 }

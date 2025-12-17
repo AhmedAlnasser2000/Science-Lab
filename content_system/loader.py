@@ -50,6 +50,26 @@ def _collect_asset_paths(manifest: Dict[str, Any]) -> List[str]:
     return assets
 
 
+def _extract_lab_metadata(manifest: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    x_ext = manifest.get("x_extensions")
+    if not isinstance(x_ext, dict):
+        return None
+    lab_ext = x_ext.get("lab")
+    if not isinstance(lab_ext, dict):
+        return None
+    lab_id = lab_ext.get("lab_id")
+    if not isinstance(lab_id, str) or not lab_id.strip():
+        return None
+    info: Dict[str, Any] = {"lab_id": lab_id.strip()}
+    entry = lab_ext.get("entry")
+    if isinstance(entry, str) and entry.strip():
+        info["entry"] = entry.strip()
+    recommended = lab_ext.get("recommended_profile")
+    if isinstance(recommended, str):
+        info["recommended_profile"] = recommended
+    return info
+
+
 def _safe_relative(path: Path, base: Path) -> Optional[Path]:
     try:
         return path.relative_to(base)
@@ -245,14 +265,16 @@ def list_tree() -> Dict[str, Any]:
                     continue
 
                 status, reason = _compute_part_status(part_manifest_path, repo_manifest)
-                package_entry["parts"].append(
-                    {
-                        "part_id": repo_manifest.get("part_id"),
-                        "title": repo_manifest.get("title"),
-                        "status": status,
-                        "reason": reason,
-                    }
-                )
+                part_entry = {
+                    "part_id": repo_manifest.get("part_id"),
+                    "title": repo_manifest.get("title"),
+                    "status": status,
+                    "reason": reason,
+                }
+                lab_info = _extract_lab_metadata(repo_manifest)
+                if lab_info:
+                    part_entry["lab"] = lab_info
+                package_entry["parts"].append(part_entry)
 
             section_entry["packages"].append(package_entry)
 
@@ -297,7 +319,9 @@ def get_part(part_id: str) -> Dict[str, Any]:
             "store": str(STORE_BASE / asset),
         }
 
-    return {
+    lab_info = _extract_lab_metadata(repo_manifest)
+
+    result = {
         "status": status,
         "reason": reason,
         "manifest": repo_manifest,
@@ -307,6 +331,9 @@ def get_part(part_id: str) -> Dict[str, Any]:
             "assets": asset_paths,
         },
     }
+    if lab_info:
+        result["lab"] = lab_info
+    return result
 
 
 def download_part(part_id: str) -> Dict[str, Any]:

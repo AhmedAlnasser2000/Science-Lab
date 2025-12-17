@@ -27,6 +27,7 @@ V3 builds on the V1 scaffold by wiring a local runtime bus, optional Core Center
 - Experience Profiles + Reduced Motion saved in `data/roaming/` and applied live.
 - System Health (Educator/Explorer) shows storage report, cleanup, install/uninstall controls with live progress.
 - LabHost injects guide markdown, run-dir paths, and resolved policy into labs without coupling labs to Core Center.
+- Parts that launch labs declare `x_extensions.lab` (`lab_id`, optional `entry` and `recommended_profile`); the UI uses this metadata when available and falls back to the legacy preset-based inference for older packs.
 
 ## Runtime State Files
 - `data/roaming/policy.json` – optional overrides (schema: `schemas/policy.schema.json`)
