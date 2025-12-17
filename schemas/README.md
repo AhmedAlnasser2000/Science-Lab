@@ -21,3 +21,10 @@ Subject Module → Section → Package → Part (use these names exactly).
 - Use the `$id` or local relative paths in `$schema` to validate each JSON file.
 - Keep ids lowercase with dashes/underscores to satisfy the `identifier` pattern.
 - Extend cautiously via `x_extensions`; richer debugging can live in `details` on diagnostics.
+
+## Runtime State Schemas (V3)
+The `schemas/` folder now also includes lightweight schemas for runtime state files under `data/roaming/`:
+- `policy.schema.json` – best-effort validation for policy overrides (`policy.json`). All fields are optional overrides; schema is permissive to allow future keys.
+- `registry.schema.json` – best-effort validation for the unified registry (`registry.json`). Accepts either a top-level array or an object with an `entries` array plus summary keys.
+
+These runtime schemas are informational (not enforced inside the app) and are intended to help contributors understand the shapes of the generated files while keeping room for evolution.

@@ -1,0 +1,27 @@
+{
+  "$schema": "../../schemas/mode_profile.schema.json",
+  "schema_version": "1.0.0",
+  "content_version": "1.0.0",
+  "mode_id": "primary",
+  "display_name": "Primary Mode",
+  "description": "Offline-first, sandboxed delivery for PhysicsLab V1 content.",
+  "capabilities": {
+    "supported_content_types": [
+      "markdown",
+      "simulation"
+    ],
+    "supports_offline": true,
+    "supports_touch": true
+  },
+  "limits": {
+    "max_sections": 8,
+    "max_packages_per_section": 12,
+    "max_parts_per_package": 12,
+    "max_asset_kb": 512
+  },
+  "security": {
+    "sandboxed": true,
+    "network_access": "blocked",
+    "file_system_access": "read-only"
+  }
+}

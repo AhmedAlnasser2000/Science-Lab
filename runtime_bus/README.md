@@ -38,3 +38,25 @@ response = bus.request(
 ```
 
 All operations are local/thread-safe and never perform I/O. Use `logging` configuration to capture warning/error lines emitted when handlers raise.
+
+## Topics Used in V3
+
+- **Runtime**
+  - `runtime.bus.report.request`
+- **Core / Governor**
+  - `core.storage.report.request`
+  - `core.cleanup.request`
+  - `core.storage.allocate_run_dir.request`
+  - `core.policy.get.request`
+  - `core.registry.get.request`
+  - `core.content.module.install.request`
+  - `core.content.module.uninstall.request`
+- **Content job events**
+  - `content.install.progress`
+  - `content.install.completed`
+- **Job lifecycle**
+  - `job.started`
+  - `job.progress`
+  - `job.completed`
+
+All request topics expect structured replies: handlers return `{"ok": True, ...}` on success or `{"ok": False, "error": "<reason>"}` on failure. Callers should always check the `ok` flag before using other fields.
