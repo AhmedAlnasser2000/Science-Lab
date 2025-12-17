@@ -61,6 +61,9 @@ BUS_COMM_REPORT_REQUEST = (
     if BUS_TOPICS
     else "runtime.bus.report.request"
 )
+BUS_JOBS_LIST_REQUEST = (
+    BUS_TOPICS.CORE_JOBS_LIST_REQUEST if BUS_TOPICS else "core.jobs.list.request"
+)
 
 if APP_BUS:
     def _handle_bus_comm_report(envelope):
@@ -1094,7 +1097,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         layout.addLayout(cleanup_row)
 
         comm_row = QtWidgets.QHBoxLayout()
-        self.comm_btn = QtWidgets.QPushButton("Communication Report")
+        self.comm_btn = QtWidgets.QPushButton("Job History")
         self.comm_btn.clicked.connect(self._show_comm_report)
         self.comm_btn.setVisible(False)
         comm_row.addWidget(self.comm_btn)
@@ -1228,28 +1231,40 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _show_comm_report(self) -> None:
         if not self.bus:
-            QtWidgets.QMessageBox.information(self, "Communication Report", "Runtime bus unavailable.")
+            QtWidgets.QMessageBox.information(self, "Job History", "Runtime bus unavailable.")
             return
-        self._set_status("Requesting communication report...")
+        self._set_status("Requesting recent jobs...")
         try:
             response = self.bus.request(
-                BUS_COMM_REPORT_REQUEST,
-                {},
+                BUS_JOBS_LIST_REQUEST,
+                {"limit": 10},
                 source="app_ui",
-                timeout_ms=1000,
+                timeout_ms=2000,
             )
         except Exception as exc:  # pragma: no cover - defensive
             self._display_comm_report(f"Request failed: {exc}", ok=False)
-            self._set_status(f"Communication report failed ({exc}).")
+            self._set_status(f"Job history request failed ({exc}).")
             return
         if response.get("ok"):
-            text = response.get("text") or "No diagnostics returned."
+            jobs = response.get("jobs") or []
+            lines = []
+            for job in jobs[:10]:
+                status = (job.get("status") or "unknown").upper()
+                job_type = job.get("job_type") or "?"
+                started = job.get("started_at") or "-"
+                finished = job.get("finished_at") or "-"
+                ok_flag = job.get("ok")
+                state = "pending" if ok_flag is None else ("ok" if ok_flag else f"err:{job.get('error','')}")
+                summary = job.get("result_summary")
+                summary_text = f" | {summary}" if summary else ""
+                lines.append(f"{status:<9} {job_type:<20} start {started} end {finished} [{state}]{summary_text}")
+            text = "\n".join(lines) if lines else "No recent jobs."
             self._display_comm_report(text, ok=True)
-            self._set_status("Communication report updated.")
+            self._set_status("Job history updated.")
         else:
             error = response.get("error") or "unavailable"
-            self._display_comm_report(f"Communication report unavailable ({error})", ok=False)
-            self._set_status(f"Communication report unavailable ({error}).")
+            self._display_comm_report(f"Job history unavailable ({error}).", ok=False)
+            self._set_status(f"Job history unavailable ({error}).")
 
     def _display_comm_report(self, text: str, ok: bool) -> None:
         color = "#2e7d32" if ok else "#b71c1c"

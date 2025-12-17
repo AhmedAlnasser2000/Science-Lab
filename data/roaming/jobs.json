@@ -1,0 +1,101 @@
+[
+  {
+    "job_id": "20b584ad-06bb-4c56-85cb-8b25b39c3757",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:11:13.652457+00:00",
+    "finished_at": "2025-12-17T06:11:13.663175+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "71f48303-53e7-4982-a15d-9e337492938a",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:10:57.633673+00:00",
+    "finished_at": "2025-12-17T06:10:57.643694+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "ebf1ec6c-9f87-4402-9bff-5312d6eb9c8d",
+    "job_type": "core.cleanup.cache",
+    "source": "core_center",
+    "status": "running",
+    "started_at": "2025-12-17T06:10:57.631737+00:00",
+    "finished_at": null,
+    "ok": null,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "ff3b6dc8-3231-4fa6-851e-fcb5b4d852f3",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:10:53.266910+00:00",
+    "finished_at": "2025-12-17T06:10:53.277513+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "47dbbf4b-4f14-4964-bf1a-8b6311d947a1",
+    "job_type": "core.cleanup.dumps",
+    "source": "core_center",
+    "status": "running",
+    "started_at": "2025-12-17T06:10:53.263874+00:00",
+    "finished_at": null,
+    "ok": null,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "24497559-f620-4bdc-95ad-620ccfb1d603",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:10:45.987665+00:00",
+    "finished_at": "2025-12-17T06:10:45.998388+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "5092ea71-6771-4b4a-955c-bf7375c8ffa3",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:10:43.819798+00:00",
+    "finished_at": "2025-12-17T06:10:43.830953+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "60ab892b-214f-4e8b-aeb6-87bf879a6221",
+    "job_type": "core.cleanup.cache",
+    "source": "core_center",
+    "status": "running",
+    "started_at": "2025-12-17T06:10:43.815995+00:00",
+    "finished_at": null,
+    "ok": null,
+    "error": null,
+    "result_summary": null
+  },
+  {
+    "job_id": "49f429c1-e7cd-419c-9e30-498c12246861",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:10:38.963540+00:00",
+    "finished_at": "2025-12-17T06:10:38.974658+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  }
+]

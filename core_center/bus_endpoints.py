@@ -30,6 +30,8 @@ MODULE_INSTALL_REQUEST_TOPIC = getattr(
 MODULE_UNINSTALL_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_CONTENT_MODULE_UNINSTALL_REQUEST", "core.content.module.uninstall.request"
 )
+JOBS_LIST_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_JOBS_LIST_REQUEST", "core.jobs.list.request")
+JOBS_GET_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_JOBS_GET_REQUEST", "core.jobs.get.request")
 
 
 class _StickyBusProxy:
@@ -132,6 +134,22 @@ def register_core_center_endpoints(bus: Any) -> None:
         )
         return {"ok": True, "job_id": job_id}
 
+    def _handle_jobs_list(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        limit = payload.get("limit")
+        jobs = job_manager.get_job_history(limit=limit)
+        return {"ok": True, "jobs": jobs}
+
+    def _handle_jobs_get(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        job_id = payload.get("job_id")
+        if not job_id:
+            return {"ok": False, "error": "job_id_required"}
+        record = job_manager.get_job_record(job_id)
+        if not record:
+            return {"ok": False, "error": "job_not_found"}
+        return {"ok": True, "job": record}
+
     bus.register_handler(REPORT_REQUEST_TOPIC, _handle_report)
     bus.register_handler(CLEANUP_REQUEST_TOPIC, _handle_cleanup)
     if RUN_DIR_REQUEST_TOPIC:
@@ -144,3 +162,7 @@ def register_core_center_endpoints(bus: Any) -> None:
         bus.register_handler(MODULE_INSTALL_REQUEST_TOPIC, _handle_module_install)
     if MODULE_UNINSTALL_REQUEST_TOPIC:
         bus.register_handler(MODULE_UNINSTALL_REQUEST_TOPIC, _handle_module_uninstall)
+    if JOBS_LIST_REQUEST_TOPIC:
+        bus.register_handler(JOBS_LIST_REQUEST_TOPIC, _handle_jobs_list)
+    if JOBS_GET_REQUEST_TOPIC:
+        bus.register_handler(JOBS_GET_REQUEST_TOPIC, _handle_jobs_get)

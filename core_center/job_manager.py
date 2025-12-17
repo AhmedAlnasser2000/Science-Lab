@@ -6,8 +6,9 @@ import shutil
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, List
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     from runtime_bus import topics as BUS_TOPICS
@@ -24,6 +25,8 @@ JOB_CLEANUP_CACHE = "core.cleanup.cache"
 JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 JOB_MODULE_INSTALL = "core.module.install"
 JOB_MODULE_UNINSTALL = "core.module.uninstall"
+JOB_HISTORY_LIMIT = 50
+JOB_HISTORY_PATH = Path("data/roaming/jobs.json")
 
 DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
 CORE_DEBUG_LOG_ENABLED = bool(
@@ -135,6 +138,7 @@ def cancel_job(job_id: str) -> bool:
 
 def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, source: str) -> None:
     _update_job_state(job_id, {"status": "running"})
+    _record_job_start(job_id, job_type, source)
     _publish(bus, JOB_STARTED_TOPIC, {"job_id": job_id, "job_type": job_type}, source)
     handler = _JOB_HANDLERS.get(job_type)
     context = JobContext(job_id, job_type, bus, source)
@@ -152,6 +156,7 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
     if not ok and job_type == JOB_REPORT_GENERATE:
         context.publish(REPORT_READY_TOPIC, {"ok": False, "error": error_msg or "failed"})
     _update_job_state(job_id, {"status": "completed", "result": result if ok else None, "error": error_msg if not ok else None})
+    _record_job_completion(job_id, job_type, source, ok, error_msg, result if ok else None)
     _publish(
         bus,
         JOB_COMPLETED_TOPIC,
@@ -336,6 +341,109 @@ def _handle_module_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[s
     except Exception as exc:
         _module_completed(ctx, module_id, "uninstall", False, error=str(exc))
         raise
+
+
+def get_job_history(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    entries = _load_job_history()
+    if limit is not None:
+        try:
+            max_items = max(1, int(limit))
+            return entries[:max_items]
+        except (TypeError, ValueError):
+            return entries[: limit or len(entries)]
+    return entries
+
+
+def get_job_record(job_id: str) -> Optional[Dict[str, Any]]:
+    if not job_id:
+        return None
+    for entry in _load_job_history():
+        if entry.get("job_id") == job_id:
+            return entry
+    return None
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _load_job_history() -> List[Dict[str, Any]]:
+    if not JOB_HISTORY_PATH.exists():
+        return []
+    try:
+        data = json.loads(JOB_HISTORY_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return data
+    except Exception:
+        return []
+    return []
+
+
+def _save_job_history(entries: List[Dict[str, Any]]) -> None:
+    ensure_data_roots()
+    JOB_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    JOB_HISTORY_PATH.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+
+
+def _upsert_job_record(record: Dict[str, Any]) -> None:
+    entries = _load_job_history()
+    job_id = record.get("job_id")
+    updated = False
+    for idx, entry in enumerate(entries):
+        if entry.get("job_id") == job_id:
+            new_entry = dict(entry)
+            for key, value in record.items():
+                if value is not None or key not in new_entry:
+                    new_entry[key] = value
+            entries[idx] = new_entry
+            updated = True
+            break
+    if not updated:
+        entries.insert(0, record)
+    trimmed = entries[:JOB_HISTORY_LIMIT]
+    _save_job_history(trimmed)
+
+
+def _record_job_start(job_id: str, job_type: str, source: str) -> None:
+    record = {
+        "job_id": job_id,
+        "job_type": job_type,
+        "source": source,
+        "status": "running",
+        "started_at": _now_iso(),
+        "finished_at": None,
+        "ok": None,
+        "error": None,
+        "result_summary": None,
+    }
+    _upsert_job_record(record)
+
+
+def _record_job_completion(
+    job_id: str,
+    job_type: str,
+    source: str,
+    ok: bool,
+    error: Optional[str],
+    result: Optional[Dict[str, Any]],
+) -> None:
+    status = "completed" if ok else "failed"
+    summary = None
+    if isinstance(result, dict):
+        summary_value = result.get("summary")
+        if isinstance(summary_value, str):
+            summary = summary_value[:200]
+    record = {
+        "job_id": job_id,
+        "job_type": job_type,
+        "source": source,
+        "status": status,
+        "finished_at": _now_iso(),
+        "ok": bool(ok),
+        "error": error or None,
+        "result_summary": summary,
+    }
+    _upsert_job_record(record)
 
 
 def _register_builtin_jobs() -> None:
