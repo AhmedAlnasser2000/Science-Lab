@@ -1049,6 +1049,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.pending_module_id: str = "physics_v1"
         self._is_explorer = False
         self._bus_subscriptions: list[str] = []
+        self._bus_subscribed = False
+        self._module_signals_connected = False
+        self._connect_ui_signals()
         self._bus_dispatch_bridge = _BusDispatchBridge(self)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -1182,9 +1185,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._set_control_enabled(True)
         self._init_bus_subscriptions()
         self._update_comm_controls()
-        self.module_progress_event.connect(self._handle_module_progress_ui)
-        self.module_completed_event.connect(self._handle_module_completed_ui)
-        self.cleanup_event.connect(self._handle_cleanup_completed_ui)
 
     def prepare(self) -> None:
         if self.refresh_capability and self._pending_initial_refresh:
@@ -1258,7 +1258,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.comm_panel.setVisible(True)
 
     def _init_bus_subscriptions(self) -> None:
-        if not self.bus:
+        if not self.bus or self._bus_subscribed:
             return
         self._subscribe_bus(BUS_REPORT_READY, self._on_report_ready_event, replay_last=True)
         self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
@@ -1266,6 +1266,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._subscribe_bus(BUS_CLEANUP_COMPLETED, self._on_cleanup_completed_event, replay_last=True)
         self._subscribe_bus(BUS_MODULE_PROGRESS, self._on_module_progress_event)
         self._subscribe_bus(BUS_MODULE_COMPLETED, self._on_module_completed_event)
+        self._bus_subscribed = True
 
     def _subscribe_bus(
         self,
@@ -1299,6 +1300,14 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
         sub_id = self.bus.subscribe(topic, _wrapped, replay_last=replay_last)
         self._bus_subscriptions.append(sub_id)
+
+    def _connect_ui_signals(self) -> None:
+        if self._module_signals_connected:
+            return
+        self.module_progress_event.connect(self._handle_module_progress_ui)
+        self.module_completed_event.connect(self._handle_module_completed_ui)
+        self.cleanup_event.connect(self._handle_cleanup_completed_ui)
+        self._module_signals_connected = True
 
     def _refresh_report(self) -> None:
         if not self.refresh_capability:
@@ -1538,11 +1547,11 @@ class SystemHealthScreen(QtWidgets.QWidget):
             }
         )
         # endregion
-        QtCore.QTimer.singleShot(0, lambda env=payload: self.module_progress_event.emit(env))
+        self.module_progress_event.emit(payload)
 
     def _on_module_completed_event(self, envelope: Any) -> None:
         payload = getattr(envelope, "payload", None) or {}
-        QtCore.QTimer.singleShot(0, lambda env=payload: self.module_completed_event.emit(env))
+        self.module_completed_event.emit(payload)
 
     def _handle_cleanup_completed_ui(self, payload: Dict[str, Any]) -> None:
         if payload is None:
@@ -1627,6 +1636,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
             return
         topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
+        self._set_module_job_state(job_id=None, action=action, running=True)
+        self._show_module_panel(
+            f"{action.title()} starting",
+            f"{action.title()} {self.pending_module_id}: requesting job...",
+            running=True,
+        )
         try:
             response = self.bus.request(
                 topic,
@@ -1635,24 +1650,24 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 timeout_ms=2000,
             )
         except Exception as exc:  # pragma: no cover - defensive
+            self._set_module_job_state(job_id=None, action=None, running=False)
             QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
             return
         if not response.get("ok") or not response.get("job_id"):
+            self._set_module_job_state(job_id=None, action=None, running=False)
             QtWidgets.QMessageBox.warning(
                 self,
                 "Module",
                 f"Request failed: {response.get('error') or 'unknown'}",
             )
             return
-        self.pending_module_job_id = response["job_id"]
-        self.pending_module_action = action
-        self._module_job_running = True
+        job_id = str(response["job_id"])
+        self._set_module_job_state(job_id=job_id, action=action, running=True)
         self._show_module_panel(
-            f"{action.title()} requested",
-            "Awaiting progress...",
+            "Module job queued",
+            f"{action.title()} {self._format_module_job_label()}: awaiting progress",
             running=True,
         )
-        self._set_control_enabled(True)
 
     def _show_module_panel(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
         color = "#0d47a1"
@@ -1665,12 +1680,33 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.module_details.setText(details)
         self.module_panel.setVisible(True)
 
+    def _set_module_job_state(self, *, job_id: Optional[str], action: Optional[str], running: bool) -> None:
+        self.pending_module_job_id = job_id
+        self.pending_module_action = action
+        self._module_job_running = bool(running)
+        self._set_control_enabled(True)
+
+    def _is_active_module_payload(self, payload: Dict[str, Any]) -> bool:
+        if not payload:
+            return False
+        if not self.pending_module_job_id:
+            return False
+        job_id = payload.get("job_id")
+        if job_id and job_id != self.pending_module_job_id:
+            return False
+        module_id = payload.get("module_id")
+        if module_id and module_id != self.pending_module_id:
+            return False
+        return True
+
+    def _format_module_job_label(self) -> str:
+        job_id = self.pending_module_job_id or ""
+        if job_id:
+            return f"{self.pending_module_id} (job {job_id[:8]})"
+        return self.pending_module_id
+
     def _handle_module_progress_ui(self, payload: Dict[str, Any]) -> None:
-        if not self._module_job_running:
-            return
-        if payload.get("job_id") and payload.get("job_id") != self.pending_module_job_id:
-            return
-        if payload.get("module_id") and payload.get("module_id") != self.pending_module_id:
+        if not self._is_active_module_payload(payload):
             return
         # region agent log
         _append_debug_log(
@@ -1692,23 +1728,25 @@ class SystemHealthScreen(QtWidgets.QWidget):
         stage = payload.get("stage") or "Working"
         percent = payload.get("percent")
         percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
-        details = f"{self.pending_module_action.title()} {self.pending_module_id}: {percent_text} {stage}".strip()
+        action = (self.pending_module_action or "module").title()
+        details = f"{action} {self._format_module_job_label()}: {percent_text} {stage}".strip()
         self._show_module_panel("Module Progress", details, running=True)
 
     def _handle_module_completed_ui(self, payload: Dict[str, Any]) -> None:
-        if payload.get("job_id") and payload.get("job_id") != self.pending_module_job_id:
-            return
-        if payload.get("module_id") and payload.get("module_id") != self.pending_module_id:
+        if not self._is_active_module_payload(payload):
             return
         ok = bool(payload.get("ok"))
         action = payload.get("action") or (self.pending_module_action or "module")
         error = payload.get("error")
-        details = f"{action.title()} {self.pending_module_id}: {'OK' if ok else error or 'failed'}"
-        self._module_job_running = False
-        self.pending_module_job_id = None
-        self.pending_module_action = None
-        self._show_module_panel("Module Result", details, running=False, ok=ok)
-        self._set_control_enabled(True)
+        summary = "OK" if ok else error or "failed"
+        job_label = self._format_module_job_label()
+        self._set_module_job_state(job_id=None, action=None, running=False)
+        self._show_module_panel(
+            "Module Result",
+            f"{action.title()} {job_label}: {summary}",
+            running=False,
+            ok=ok,
+        )
 
     def _unsubscribe_all(self) -> None:
         if not self.bus:
@@ -1716,6 +1754,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         for sub_id in self._bus_subscriptions:
             self.bus.unsubscribe(sub_id)
         self._bus_subscriptions.clear()
+        self._bus_subscribed = False
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self._unsubscribe_all()
