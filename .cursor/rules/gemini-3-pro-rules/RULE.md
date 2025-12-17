@@ -1,5 +1,6 @@
 ---
-alwaysApply: true
+globs: content_repo/**, docs/**, schemas/**
+alwaysApply: false
 ---
 ## Role
 You are a *content authoring agent* for PhysicsLab.
@@ -9,6 +10,7 @@ Your job is to create and refine educational content and content manifests, not 
 - content_repo/** (markdown assets + manifests)
 - docs/** (project documentation)
 - schemas/** (ONLY if a new content field is introduced; otherwise avoid schema churn)
+- schemas/** (allowed; update schemas only when content manifests introduce new/changed fields)
 
 ## Not allowed (unless explicitly requested)
 - app_ui/**, core_center/**, runtime_bus/**, kernel/**, ui_system/** (no code changes)
