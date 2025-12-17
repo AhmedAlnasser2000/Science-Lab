@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6 import QtCore, QtWidgets
@@ -171,4 +172,60 @@ class LabHost(QtWidgets.QWidget):
             (run_dir / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         except OSError:
             pass
+        try:
+            (run_dir / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        keep_raw = self.policy.get("runs_keep_last_n", DEFAULT_POLICY["runs_keep_last_n"])
+        try:
+            keep_value = int(keep_raw)
+        except (TypeError, ValueError):
+            keep_value = DEFAULT_POLICY["runs_keep_last_n"]
+        self._enforce_local_retention(base, keep_value)
         return {"lab_id": self.lab_id, "run_id": run_id, "run_dir": str(run_dir.resolve()), "source": "local"}
+
+    def _enforce_local_retention(self, lab_root: Path, keep_last_n: int) -> None:
+        keep = max(1, keep_last_n)
+        if not lab_root.exists():
+            return
+        entries = []
+        for child in lab_root.iterdir():
+            if not child.is_dir():
+                continue
+            ts = self._run_dir_timestamp(child)
+            entries.append((ts, child))
+        entries.sort(key=lambda item: item[0], reverse=True)
+        for _, path in entries[keep:]:
+            self._safe_remove_dir(path)
+
+    def _run_dir_timestamp(self, path: Path) -> float:
+        meta_path = path / "run.json"
+        if meta_path.exists():
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+                stamp = data.get("timestamp")
+                if isinstance(stamp, str):
+                    return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                pass
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def _safe_remove_dir(self, path: Path) -> None:
+        for child in path.iterdir():
+            try:
+                if child.is_symlink():
+                    child.unlink()
+                    continue
+                if child.is_dir():
+                    self._safe_remove_dir(child)
+                elif child.exists():
+                    child.unlink()
+            except Exception:
+                continue
+        try:
+            path.rmdir()
+        except Exception:
+            pass

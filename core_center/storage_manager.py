@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from .discovery import DATA_ROOTS, compute_disk_usage, ensure_data_roots
 
@@ -23,7 +23,10 @@ def _runs_root() -> Path:
     return runs
 
 
-def allocate_run_dir(lab_id: str) -> Dict[str, object]:
+DEFAULT_KEEP_LAST = 10
+
+
+def allocate_run_dir(lab_id: str, keep_last_n: int | None = None) -> Dict[str, object]:
     """Allocate a dedicated run directory for the provided lab."""
     if not lab_id:
         return {"ok": False, "error": "lab_id_required"}
@@ -43,6 +46,8 @@ def allocate_run_dir(lab_id: str) -> Dict[str, object]:
         (run_dir / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     except OSError:
         return {"ok": False, "error": "write_failed"}
+    keep = DEFAULT_KEEP_LAST if keep_last_n is None else max(1, int(keep_last_n))
+    enforce_run_retention(runs_root, safe_lab, keep)
     return {"ok": True, "lab_id": lab_id, "run_id": run_id, "run_dir": str(run_dir.resolve())}
 
 
@@ -72,19 +77,18 @@ def list_runs(lab_id: str) -> List[Dict[str, object]]:
     return runs
 
 
-def prune_runs(lab_id: str, keep_last_n: int = 5) -> Dict[str, object]:
-    safe_lab = _sanitize_id(lab_id)
-    lab_root = _runs_root() / safe_lab
-    if keep_last_n <= 0:
-        keep_last_n = 0
-    runs = list_runs(lab_id)
-    if keep_last_n >= len(runs):
+def enforce_run_retention(runs_root: Path, lab_id: str, keep_last_n: int) -> Dict[str, object]:
+    keep = max(1, keep_last_n)
+    lab_root = runs_root / lab_id
+    if not lab_root.exists():
         return {"freed_bytes": 0, "removed_runs": []}
-    to_remove = runs[keep_last_n:]
+    entries = _collect_run_entries(lab_root)
+    if len(entries) <= keep:
+        return {"freed_bytes": 0, "removed_runs": []}
+    to_remove = entries[keep:]
     removed: List[str] = []
     freed = 0
-    for run in to_remove:
-        path = Path(run.get("path") or lab_root / (run.get("run_id") or ""))
+    for run_id, path in to_remove:
         if not path.exists() or not path.is_dir():
             continue
         try:
@@ -93,7 +97,7 @@ def prune_runs(lab_id: str, keep_last_n: int = 5) -> Dict[str, object]:
             pass
         try:
             _remove_tree(path)
-            removed.append(str(path))
+            removed.append(run_id)
         except Exception:
             continue
     return {"freed_bytes": freed, "removed_runs": removed}
@@ -101,15 +105,27 @@ def prune_runs(lab_id: str, keep_last_n: int = 5) -> Dict[str, object]:
 
 def summarize_runs() -> Dict[str, object]:
     runs_root = _runs_root()
-    summary: Dict[str, object] = {"total_bytes": compute_disk_usage(runs_root), "labs": {}}
+    summary: Dict[str, object] = {"total_bytes": 0, "labs": {}}
     if not runs_root.exists():
         return summary
+    total = 0
     for lab_dir in runs_root.iterdir():
         if not lab_dir.is_dir():
             continue
         lab_id = lab_dir.name
-        run_count = sum(1 for child in lab_dir.iterdir() if child.is_dir())
-        summary["labs"][lab_id] = {"run_count": run_count}
+        bytes_used = 0
+        run_count = 0
+        for run_dir in lab_dir.iterdir():
+            if not run_dir.is_dir():
+                continue
+            run_count += 1
+            try:
+                bytes_used += compute_disk_usage(run_dir)
+            except Exception:
+                continue
+        total += bytes_used
+        summary["labs"][lab_id] = {"run_count": run_count, "bytes": bytes_used}
+    summary["total_bytes"] = total
     return summary
 
 
@@ -119,14 +135,59 @@ def _sanitize_id(name: str) -> str:
 
 def _remove_tree(path: Path) -> None:
     for child in path.iterdir():
-        if child.is_dir():
-            _remove_tree(child)
-        else:
-            try:
+        try:
+            if child.is_symlink():
                 child.unlink()
-            except Exception:
-                pass
+                continue
+            if child.is_dir():
+                _remove_tree(child)
+            elif child.exists():
+                child.unlink()
+        except Exception:
+            continue
     try:
-        path.rmdir()
+        if not path.is_symlink():
+            path.rmdir()
     except Exception:
         pass
+
+
+def _collect_run_entries(lab_root: Path) -> List[Tuple[str, Path]]:
+    entries: List[Tuple[str, Path]] = []
+    for child in lab_root.iterdir():
+        if not child.is_dir() or child.is_symlink():
+            continue
+        meta_path = child / "run.json"
+        ts_value: float | None = None
+        if meta_path.exists():
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+                stamp = data.get("timestamp")
+                if isinstance(stamp, str):
+                    ts_value = datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                ts_value = None
+        if ts_value is None:
+            try:
+                ts_value = child.stat().st_mtime
+            except OSError:
+                ts_value = 0.0
+        entries.append((child.name, child.resolve()))
+    entries.sort(key=lambda item: _entry_sort_key(item[1]), reverse=True)
+    return entries
+
+
+def _entry_sort_key(path: Path) -> float:
+    meta_path = path / "run.json"
+    if meta_path.exists():
+        try:
+            data = json.loads(meta_path.read_text(encoding="utf-8"))
+            stamp = data.get("timestamp")
+            if isinstance(stamp, str):
+                return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            pass
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0

@@ -54,7 +54,9 @@ def format_report_text(report: Dict) -> str:
         if labs:
             lines.append("  Runs per lab:")
             for lab_id, info in sorted(labs.items()):
-                lines.append(f"    - {lab_id}: {info.get('run_count', 0)} runs")
+                run_count = info.get("run_count", 0)
+                bytes_used = info.get("bytes", 0)
+                lines.append(f"    - {lab_id}: {run_count} runs, {bytes_used} bytes")
         lines.append("")
     lines.append("Components:")
     comps: List[Dict] = report.get("components") or []

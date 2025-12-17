@@ -90,7 +90,10 @@ def register_core_center_endpoints(bus: Any) -> None:
     def _handle_run_dir(envelope) -> Dict[str, object]:
         payload = envelope.payload or {}
         lab_id = payload.get("lab_id")
-        result = storage_manager.allocate_run_dir(lab_id)
+        policy = policy_manager.resolve_policy()
+        keep_value = policy.get("runs_keep_last_n")
+        keep_last_n = keep_value if isinstance(keep_value, int) and keep_value >= 0 else None
+        result = storage_manager.allocate_run_dir(lab_id, keep_last_n=keep_last_n)
         if not result.get("ok"):
             return {"ok": False, "error": result.get("error") or "allocate_failed"}
         return {"ok": True, "run_id": result.get("run_id"), "run_dir": result.get("run_dir")}
