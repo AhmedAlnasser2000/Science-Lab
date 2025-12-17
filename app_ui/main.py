@@ -718,8 +718,10 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         header.addWidget(back_btn)
         layout.addLayout(header)
 
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
-        layout.addWidget(splitter, stretch=1)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        layout.addWidget(self.splitter, stretch=1)
+        self._splitter_initialized = False
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setHeaderLabels(["Item", "Status"])
@@ -729,9 +731,9 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.tree.setMinimumWidth(260)
+        self.tree.setMinimumWidth(360)
         self.tree.itemSelectionChanged.connect(self._on_selection)
-        splitter.addWidget(self.tree)
+        self.splitter.addWidget(self.tree)
 
         detail_widget = QtWidgets.QWidget()
         detail_layout = QtWidgets.QVBoxLayout(detail_widget)
@@ -766,13 +768,30 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         self.viewer.setPlaceholderText("Open a part to preview markdown content.")
         detail_layout.addWidget(self.viewer, stretch=1)
 
-        splitter.addWidget(detail_widget)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
+        self.splitter.addWidget(detail_widget)
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 5)
 
         self.progress_dialog: Optional[QtWidgets.QProgressDialog] = None
         self.install_thread: Optional[QtCore.QThread] = None
         self.refresh_tree()
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        if self._splitter_initialized:
+            return
+        self._splitter_initialized = True
+
+        def apply_sizes():
+            if not self.splitter:
+                return
+            total = max(self.splitter.width(), 900)
+            left = max(int(total * 0.38), 340)
+            right = max(total - left, 500)
+            self.splitter.setSizes([left, right])
+
+        if self.isVisible():
+            QtCore.QTimer.singleShot(0, apply_sizes)
 
     def set_profile(self, profile: str) -> None:
         self.debug_label.setVisible(profile == "Explorer" and bool(self.debug_label.text()))

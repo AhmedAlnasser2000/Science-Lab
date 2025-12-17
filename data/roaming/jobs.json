@@ -1,5 +1,16 @@
 [
   {
+    "job_id": "33ddd143-153b-471b-824a-643b38142fde",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "completed",
+    "started_at": "2025-12-17T06:39:59.722918+00:00",
+    "finished_at": "2025-12-17T06:39:59.733823+00:00",
+    "ok": true,
+    "error": null,
+    "result_summary": null
+  },
+  {
     "job_id": "dd09f6cb-fb78-42ab-9454-75013f472f6c",
     "job_type": "core.report.generate",
     "source": "core_center",

@@ -1,0 +1,495 @@
+﻿Folder PATH listing for volume Windows
+Volume serial number is 6AC9-54CD
+C:.
+|   .gitignore
+|   README.md
+|   
++---.cursor
+|       debug.log
+|       
++---app_ui
+|   |   config.py
+|   |   kernel_bridge.py
+|   |   main.py
+|   |   README.md
+|   |   __init__.py
+|   |   
+|   +---labs
+|   |   |   base.py
+|   |   |   gravity_lab.py
+|   |   |   host.py
+|   |   |   projectile_lab.py
+|   |   |   registry.py
+|   |   |   __init__.py
+|   |   |   
+|   |   \---__pycache__
+|   |           base.cpython-314.pyc
+|   |           gravity_lab.cpython-314.pyc
+|   |           host.cpython-314.pyc
+|   |           projectile_lab.cpython-314.pyc
+|   |           registry.cpython-314.pyc
+|   |           __init__.cpython-314.pyc
+|   |           
+|   \---__pycache__
+|           config.cpython-314.pyc
+|           kernel_bridge.cpython-314.pyc
+|           main.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---content_repo
+|   \---physics_v1
+|       |   diagnostic_event_example.json
+|       |   mode_profile.json
+|       |   module_manifest.json
+|       |   
+|       +---assets
+|       |       electricity_charge_intro.md
+|       |       gravity_demo.md
+|       |       gravity_guide_educator.md
+|       |       gravity_guide_explorer.md
+|       |       gravity_guide_learner.md
+|       |       optics_light_intro.md
+|       |       projectile_demo.md
+|       |       projectile_guide_educator.md
+|       |       projectile_guide_explorer.md
+|       |       projectile_guide_learner.md
+|       |       text_intro.md
+|       |       vectors_intro.md
+|       |       
+|       \---sections
+|           +---electricity
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       \---page_001
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               \---charge_intro
+|           |                       part_manifest.json
+|           |                       
+|           +---motion
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       +---page_001
+|           |       |   |   package_manifest.json
+|           |       |   |   
+|           |       |   \---parts
+|           |       |       +---gravity_demo
+|           |       |       |       part_manifest.json
+|           |       |       |       
+|           |       |       \---text_intro
+|           |       |               part_manifest.json
+|           |       |               
+|           |       \---page_002
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               \---projectile_demo
+|           |                       part_manifest.json
+|           |                       
+|           +---optics
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       \---page_001
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               \---light_intro
+|           |                       part_manifest.json
+|           |                       
+|           \---vectors
+|               |   section_manifest.json
+|               |   
+|               \---packages
+|                   \---page_001
+|                       |   package_manifest.json
+|                       |   
+|                       \---parts
+|                           \---vectors_intro
+|                                   part_manifest.json
+|                                   
++---content_store
+|   \---physics_v1
+|       +---assets
+|       |       gravity_demo.md
+|       |       gravity_guide_educator.md
+|       |       gravity_guide_explorer.md
+|       |       gravity_guide_learner.md
+|       |       
+|       \---sections
+|           \---motion
+|               \---packages
+|                   \---page_001
+|                       \---parts
+|                           \---gravity_demo
+|                                   part_manifest.json
+|                                   
++---content_system
+|   |   demo_print_tree.py
+|   |   loader.py
+|   |   README.md
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           demo_print_tree.cpython-314.pyc
+|           loader.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---core_center
+|   |   bus_endpoints.py
+|   |   cleanup.py
+|   |   demo_install.py
+|   |   demo_report.py
+|   |   discovery.py
+|   |   job_manager.py
+|   |   policy_manager.py
+|   |   README.md
+|   |   registry.py
+|   |   storage_manager.py
+|   |   storage_report.py
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           bus_endpoints.cpython-314.pyc
+|           cleanup.cpython-314.pyc
+|           demo_install.cpython-314.pyc
+|           demo_report.cpython-314.pyc
+|           discovery.cpython-314.pyc
+|           job_manager.cpython-314.pyc
+|           policy_manager.cpython-314.pyc
+|           registry.cpython-314.pyc
+|           storage_manager.cpython-314.pyc
+|           storage_report.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---data
+|   +---cache
+|   +---dumps
+|   +---roaming
+|   |       experience_profile.json
+|   |       jobs.json
+|   |       registry.json
+|   |       ui_config.json
+|   |       
+|   \---store
+|       \---runs
+|           +---gravity
+|           |   +---4865968c-bc8d-41b9-bd8c-270dd922e102
+|           |   |       run.json
+|           |   |       
+|           |   +---53710484-e4b1-431b-a753-c5319c422dd7
+|           |   |       run.json
+|           |   |       
+|           |   +---606899e4-34fd-4a4f-9057-dbd66079e6fe
+|           |   |       run.json
+|           |   |       
+|           |   +---68b01eb9-4eff-4bc1-86d5-8fc0e9f6264d
+|           |   |       run.json
+|           |   |       
+|           |   +---80483c16-5ba8-4cb3-a66c-5ff44761feb5
+|           |   |       run.json
+|           |   |       
+|           |   \---d45fe70d-7ef5-4d8d-a9db-646e1e65501d
+|           |           run.json
+|           |           
+|           \---projectile
+|               +---5020ea51-044d-486c-9398-8cd8b81c3895
+|               |       run.json
+|               |       
+|               +---92f62b67-16f4-431b-bc24-167489a30280
+|               |       run.json
+|               |       
+|               \---ee74fdc2-b308-42dc-871d-0cf7dd32f52b
+|                       run.json
+|                       
++---diagnostics
+|       README.md
+|       __init__.py
+|       
++---docs
+|       core_center_plan.md
+|       repo_tree.txt
+|       v3_overview.md
+|       
++---kernel
+|   |   Cargo.lock
+|   |   Cargo.toml
+|   |   README.md
+|   |   
+|   +---include
+|   |       physicslab_kernel.h
+|   |       
+|   +---src
+|   |       lib.rs
+|   |       
+|   +---target
+|   |   |   .rustc_info.json
+|   |   |   CACHEDIR.TAG
+|   |   |   
+|   |   +---debug
+|   |   |   |   .cargo-lock
+|   |   |   |   
+|   |   |   +---.fingerprint
+|   |   |   |   +---physicslab_kernel-404082a215dafc3c
+|   |   |   |   |       dep-test-integration-test-integration
+|   |   |   |   |       invoked.timestamp
+|   |   |   |   |       test-integration-test-integration
+|   |   |   |   |       test-integration-test-integration.json
+|   |   |   |   |       
+|   |   |   |   +---physicslab_kernel-cca7a08c0216c2c1
+|   |   |   |   |       dep-lib-physicslab_kernel
+|   |   |   |   |       invoked.timestamp
+|   |   |   |   |       lib-physicslab_kernel
+|   |   |   |   |       lib-physicslab_kernel.json
+|   |   |   |   |       output-lib-physicslab_kernel
+|   |   |   |   |       
+|   |   |   |   \---physicslab_kernel-cf0c70d00859c676
+|   |   |   |           dep-test-lib-physicslab_kernel
+|   |   |   |           invoked.timestamp
+|   |   |   |           output-test-lib-physicslab_kernel
+|   |   |   |           test-lib-physicslab_kernel
+|   |   |   |           test-lib-physicslab_kernel.json
+|   |   |   |           
+|   |   |   +---build
+|   |   |   +---deps
+|   |   |   |       integration-404082a215dafc3c.d
+|   |   |   |       libintegration-404082a215dafc3c.rmeta
+|   |   |   |       libphysicslab_kernel-cca7a08c0216c2c1.rmeta
+|   |   |   |       libphysicslab_kernel-cf0c70d00859c676.rmeta
+|   |   |   |       physicslab_kernel-cca7a08c0216c2c1.d
+|   |   |   |       physicslab_kernel-cf0c70d00859c676.d
+|   |   |   |       
+|   |   |   +---examples
+|   |   |   \---incremental
+|   |   |       +---integration-123t6nquy3w2v
+|   |   |       |   |   s-hdv34fr4xn-1gtqhl4.lock
+|   |   |       |   |   
+|   |   |       |   \---s-hdv34fr4xn-1gtqhl4-8gftn67r4vbnbeso17m71vjfn
+|   |   |       |           dep-graph.bin
+|   |   |       |           query-cache.bin
+|   |   |       |           work-products.bin
+|   |   |       |           
+|   |   |       +---physicslab_kernel-0bre7m6u8z4xa
+|   |   |       |   |   s-hdv5jb2p9i-1spmh51.lock
+|   |   |       |   |   s-hdw8l1adrb-14q20co.lock
+|   |   |       |   |   
+|   |   |       |   +---s-hdv5jb2p9i-1spmh51-7ke4saybd3g77prvr7e4cdfcz
+|   |   |       |   |       dep-graph.bin
+|   |   |       |   |       query-cache.bin
+|   |   |       |   |       work-products.bin
+|   |   |       |   |       
+|   |   |       |   \---s-hdw8l1adrb-14q20co-7ke4saybd3g77prvr7e4cdfcz
+|   |   |       |           dep-graph.bin
+|   |   |       |           query-cache.bin
+|   |   |       |           work-products.bin
+|   |   |       |           
+|   |   |       \---physicslab_kernel-0piv87iukiysq
+|   |   |           |   s-hdv5jb2p9a-0m3evi1.lock
+|   |   |           |   s-hdw8l1adrf-0ybhh51.lock
+|   |   |           |   
+|   |   |           +---s-hdv5jb2p9a-0m3evi1-eko4293q05miguq3zlf8ctjyx
+|   |   |           |       dep-graph.bin
+|   |   |           |       query-cache.bin
+|   |   |           |       work-products.bin
+|   |   |           |       
+|   |   |           \---s-hdw8l1adrf-0ybhh51-eko4293q05miguq3zlf8ctjyx
+|   |   |                   dep-graph.bin
+|   |   |                   query-cache.bin
+|   |   |                   work-products.bin
+|   |   |                   
+|   |   +---flycheck0
+|   |   |       stderr
+|   |   |       stdout
+|   |   |       
+|   |   +---release
+|   |   |   |   .cargo-lock
+|   |   |   |   physicslab_kernel.d
+|   |   |   |   physicslab_kernel.dll
+|   |   |   |   physicslab_kernel.dll.exp
+|   |   |   |   physicslab_kernel.dll.lib
+|   |   |   |   physicslab_kernel.pdb
+|   |   |   |   
+|   |   |   +---.fingerprint
+|   |   |   |   \---physicslab_kernel-f8be7e11124befa9
+|   |   |   |           dep-lib-physicslab_kernel
+|   |   |   |           invoked.timestamp
+|   |   |   |           lib-physicslab_kernel
+|   |   |   |           lib-physicslab_kernel.json
+|   |   |   |           output-lib-physicslab_kernel
+|   |   |   |           
+|   |   |   +---build
+|   |   |   +---deps
+|   |   |   |       physicslab_kernel.d
+|   |   |   |       physicslab_kernel.dll
+|   |   |   |       physicslab_kernel.dll.exp
+|   |   |   |       physicslab_kernel.dll.lib
+|   |   |   |       physicslab_kernel.pdb
+|   |   |   |       
+|   |   |   +---examples
+|   |   |   \---incremental
+|   |   \---tmp
+|   \---tests
+|           integration.rs
+|           
++---runtime_bus
+|   |   bus.py
+|   |   demo_bus.py
+|   |   messages.py
+|   |   README.md
+|   |   topics.py
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           bus.cpython-314.pyc
+|           demo_bus.cpython-314.pyc
+|           messages.cpython-314.pyc
+|           topics.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---schemas
+|       common.schema.json
+|       diagnostic_event.schema.json
+|       mode_profile.schema.json
+|       module_manifest.schema.json
+|       package_manifest.schema.json
+|       part_manifest.schema.json
+|       policy.schema.json
+|       README.md
+|       registry.schema.json
+|       section_manifest.schema.json
+|       
++---test_rust
+|   |   .gitignore
+|   |   Cargo.lock
+|   |   Cargo.toml
+|   |   
+|   +---.git
+|   |       COMMIT_EDITMSG
+|   |       
+|   +---src
+|   |       main.rs
+|   |       
+|   \---target
+|       |   .rustc_info.json
+|       |   CACHEDIR.TAG
+|       |   
+|       +---debug
+|       |   |   .cargo-lock
+|       |   |   test_rust.d
+|       |   |   test_rust.exe
+|       |   |   test_rust.pdb
+|       |   |   
+|       |   +---.fingerprint
+|       |   |   +---test_rust-009232b86f3304cf
+|       |   |   |       bin-test_rust
+|       |   |   |       bin-test_rust.json
+|       |   |   |       dep-bin-test_rust
+|       |   |   |       invoked.timestamp
+|       |   |   |       
+|       |   |   +---test_rust-c984f3e35eac9163
+|       |   |   |       bin-test_rust
+|       |   |   |       bin-test_rust.json
+|       |   |   |       dep-bin-test_rust
+|       |   |   |       invoked.timestamp
+|       |   |   |       
+|       |   |   \---test_rust-df0cbf3aabc76496
+|       |   |           dep-test-bin-test_rust
+|       |   |           invoked.timestamp
+|       |   |           test-bin-test_rust
+|       |   |           test-bin-test_rust.json
+|       |   |           
+|       |   +---build
+|       |   +---deps
+|       |   |       libtest_rust-c984f3e35eac9163.rmeta
+|       |   |       libtest_rust-df0cbf3aabc76496.rmeta
+|       |   |       test_rust-c984f3e35eac9163.d
+|       |   |       test_rust-df0cbf3aabc76496.d
+|       |   |       test_rust.1x2xd0qrqza8airu2gz1z9e71.14zivf9.rcgu.o
+|       |   |       test_rust.3s83it93sw84db3n7smtpg2fa.14zivf9.rcgu.o
+|       |   |       test_rust.507u5lak9i92ionnh0ap9vqe6.14zivf9.rcgu.o
+|       |   |       test_rust.5pj2kja2l1adnngramtde4d9f.14zivf9.rcgu.o
+|       |   |       test_rust.6z7xs4rx34op5e3l1eyra2y1e.14zivf9.rcgu.o
+|       |   |       test_rust.78ara4do86xv2aoldskueiz6f.14zivf9.rcgu.o
+|       |   |       test_rust.cdvho7r1td4am9vhco3ou28mq.14zivf9.rcgu.o
+|       |   |       test_rust.d
+|       |   |       test_rust.exe
+|       |   |       test_rust.pdb
+|       |   |       
+|       |   +---examples
+|       |   \---incremental
+|       |       +---test_rust-0w1ihk1syftr5
+|       |       |   |   s-hdv0ge5znj-1v6jv71.lock
+|       |       |   |   
+|       |       |   \---s-hdv0ge5znj-1v6jv71-3wk68rrqvtpy4d6toel5dk70i
+|       |       |           dep-graph.bin
+|       |       |           query-cache.bin
+|       |       |           work-products.bin
+|       |       |           
+|       |       +---test_rust-1hvoirhh5gy81
+|       |       |   |   s-hdv0cqiofi-02wrr2k.lock
+|       |       |   |   s-hdv0jvvzj7-0umos5g.lock
+|       |       |   |   
+|       |       |   +---s-hdv0cqiofi-02wrr2k-6ctkltusfu3ymbhegso84bexz
+|       |       |   |       1x2xd0qrqza8airu2gz1z9e71.o
+|       |       |   |       3s83it93sw84db3n7smtpg2fa.o
+|       |       |   |       507u5lak9i92ionnh0ap9vqe6.o
+|       |       |   |       5pj2kja2l1adnngramtde4d9f.o
+|       |       |   |       78ara4do86xv2aoldskueiz6f.o
+|       |       |   |       cdvho7r1td4am9vhco3ou28mq.o
+|       |       |   |       dep-graph.bin
+|       |       |   |       query-cache.bin
+|       |       |   |       work-products.bin
+|       |       |   |       
+|       |       |   \---s-hdv0jvvzj7-0umos5g-6ctkltusfu3ymbhegso84bexz
+|       |       |           1x2xd0qrqza8airu2gz1z9e71.o
+|       |       |           3s83it93sw84db3n7smtpg2fa.o
+|       |       |           507u5lak9i92ionnh0ap9vqe6.o
+|       |       |           5pj2kja2l1adnngramtde4d9f.o
+|       |       |           78ara4do86xv2aoldskueiz6f.o
+|       |       |           cdvho7r1td4am9vhco3ou28mq.o
+|       |       |           dep-graph.bin
+|       |       |           query-cache.bin
+|       |       |           work-products.bin
+|       |       |           
+|       |       \---test_rust-2e2vn1azn86ni
+|       |           |   s-hdv0ge5qnh-06fphcw.lock
+|       |           |   
+|       |           \---s-hdv0ge5qnh-06fphcw-4aspzpdlkqwjc1rseswm1txzr
+|       |                   dep-graph.bin
+|       |                   query-cache.bin
+|       |                   work-products.bin
+|       |                   
+|       +---flycheck0
+|       |       stderr
+|       |       stdout
+|       |       
+|       \---flycheck1
+|               stderr
+|               stdout
+|               
++---ui_repo
+|   \---ui_v1
+|       \---packs
+|           +---default
+|           |       default.qss
+|           |       ui_pack_manifest.json
+|           |       
+|           \---quantum_smooth
+|                   quantum.qss
+|                   ui_pack_manifest.json
+|                   
++---ui_store
+\---ui_system
+    |   demo_apply.py
+    |   manager.py
+    |   README.md
+    |   __init__.py
+    |   
+    \---__pycache__
+            demo_apply.cpython-314.pyc
+            manager.cpython-314.pyc
+            __init__.cpython-314.pyc
+            
