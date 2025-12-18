@@ -4,9 +4,10 @@ import math
 import random
 from typing import Callable, Dict
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .base import LabPlugin
+from ._viz_canvas import VizCanvas
 
 
 class VectorAddLabPlugin(LabPlugin):
@@ -68,6 +69,10 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         grid.addWidget(self.b_ang, 1, 3)
         layout.addLayout(grid)
 
+        self.canvas = VizCanvas()
+        self.canvas.setMinimumHeight(320)
+        layout.addWidget(self.canvas)
+
         buttons = QtWidgets.QHBoxLayout()
         self.run_btn = QtWidgets.QPushButton("Run")
         self.run_btn.clicked.connect(self._toggle_run)
@@ -80,6 +85,10 @@ class VectorAddLabWidget(QtWidgets.QWidget):
 
         self.result_label = QtWidgets.QLabel("Resultant: pending")
         layout.addWidget(self.result_label)
+
+        for spin in (self.a_mag, self.a_ang, self.b_mag, self.b_ang):
+            spin.valueChanged.connect(self._step_once)
+        self._step_once()
 
     def load_part(self, part_id: str, manifest: Dict, detail: Dict) -> None:
         manifest = manifest or {}
@@ -98,6 +107,7 @@ class VectorAddLabWidget(QtWidgets.QWidget):
 
     def set_profile(self, profile: str) -> None:
         self.profile = profile
+        self._step_once()
 
     def stop_simulation(self) -> None:
         self.timer.stop()
@@ -132,7 +142,27 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         mag = math.hypot(rx, ry)
         ang = math.degrees(math.atan2(ry, rx)) if mag > 0 else 0.0
         self.result_label.setText(f"Resultant: {mag:.2f} @ {ang:.1f}° (Rx={rx:.2f}, Ry={ry:.2f})")
+        self._update_canvas(ax, ay, bx, by, rx, ry)
 
     def _components(self, magnitude: float, angle_deg: float) -> tuple[float, float]:
         rad = math.radians(angle_deg)
         return magnitude * math.cos(rad), magnitude * math.sin(rad)
+
+    def _update_canvas(self, ax: float, ay: float, bx: float, by: float, rx: float, ry: float) -> None:
+        max_extent = max(
+            6.0,
+            abs(ax),
+            abs(ay),
+            abs(bx),
+            abs(by),
+            abs(rx),
+            abs(ry),
+        )
+        span = max_extent * 1.4
+        world = {"xmin": -span, "xmax": span, "ymin": -span, "ymax": span}
+        vectors = [
+            {"start": (0.0, 0.0), "end": (ax, ay), "label": "A", "color": QtGui.QColor("#63c2ff")},
+            {"start": (0.0, 0.0), "end": (bx, by), "label": "B", "color": QtGui.QColor("#8ef29f")},
+            {"start": (0.0, 0.0), "end": (rx, ry), "label": "R", "color": QtGui.QColor("#ffc857"), "width": 2.6},
+        ]
+        self.canvas.set_scene_data({"kind": "vector", "world": world, "vectors": vectors})

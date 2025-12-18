@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional
+import math
+from typing import Callable, Dict
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .base import LabPlugin
+from ._viz_canvas import VizCanvas
 
 
 class ElectricFieldLabPlugin(LabPlugin):
@@ -79,6 +81,12 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         self.status_label.setStyleSheet("font-size: 14px;")
         layout.addWidget(self.status_label)
 
+        self.canvas = VizCanvas()
+        self.canvas.setMinimumHeight(320)
+        layout.addWidget(self.canvas)
+
+        self._update_field()
+
     def load_part(self, part_id: str, manifest: Dict, detail: Dict) -> None:
         manifest = manifest or {}
         detail = detail or {}
@@ -96,6 +104,7 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
 
     def set_profile(self, profile: str) -> None:
         self.profile = profile
+        self._update_canvas()
 
     def stop_simulation(self) -> None:
         self.timer.stop()
@@ -150,3 +159,49 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
             e_field = -1e7
         self.field_value = e_field
         self.status_label.setText(f"Field: {e_field:,.2f} N/C at r={r:.2f} m")
+        self._update_canvas()
+
+    def _field_vectors(self) -> list[dict]:
+        vectors = []
+        spacing = 2.0
+        coords = [c * spacing for c in range(-3, 4)]
+        for x in coords:
+            for y in coords:
+                if abs(x) < 0.2 and abs(y) < 0.2:
+                    continue
+                r2 = x * x + y * y
+                r = math.sqrt(r2)
+                if r < 1e-3:
+                    continue
+                base = abs(self.charge_c) / max(0.4, r2)
+                length = min(2.4, 0.9 * base + 0.35)
+                dir_x = x / r
+                dir_y = y / r
+                sign = 1.0 if self.charge_c >= 0 else -1.0
+                end = (x + sign * dir_x * length, y + sign * dir_y * length)
+                color = QtGui.QColor("#7de3ff") if self.charge_c >= 0 else QtGui.QColor("#ffb4a4")
+                label = None
+                vectors.append({"start": (x, y), "end": end, "color": color, "label": label})
+        return vectors
+
+    def _update_canvas(self) -> None:
+        world = {"xmin": -8.0, "xmax": 8.0, "ymin": -8.0, "ymax": 8.0}
+        show_values = self.profile.lower() in ("educator", "explorer")
+        vectors = self._field_vectors()
+        samples = []
+        if show_values:
+            sample_pts = [(-6.0, 0.0), (0.0, 6.0), (6.0, -2.0)]
+            for px, py in sample_pts:
+                r2 = px * px + py * py
+                if r2 < 1e-3:
+                    continue
+                e_mag = self.k_const * self.charge_c / max(0.1, r2)
+                samples.append({"pos": (px, py), "text": f"{e_mag/1e3:.1f}k N/C"})
+        scene = {
+            "kind": "field",
+            "world": world,
+            "vectors": vectors,
+            "show_values": show_values,
+            "samples": samples,
+        }
+        self.canvas.set_scene_data(scene)
