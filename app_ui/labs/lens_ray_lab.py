@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import json
 import math
+import time
+import traceback
+from pathlib import Path
 from typing import Callable, Dict
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+
+
+def _agent_log(payload: Dict[str, object]) -> None:
+    # region agent log
+    try:
+        data = dict(payload)
+        data.setdefault("timestamp", int(time.time() * 1000))
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _log_file:
+            _log_file.write(json.dumps(data) + "\n")
+    except Exception:
+        pass
+    # endregion
+
 from .base import LabPlugin
-from ._viz_canvas import VizCanvas
+from .renderkit import AssetResolver, AssetCache, RenderCanvas, primitives
 
 
 class LensRayLabPlugin(LabPlugin):
@@ -28,6 +47,9 @@ class LensRayLabWidget(QtWidgets.QWidget):
         self.get_profile = get_profile
         self.profile = get_profile()
         self.reduced_motion = False
+        self.resolver = AssetResolver()
+        self.cache = AssetCache()
+        self._step_n = 0
 
         self.focal_length = 10.0
         self.object_distance = 25.0
@@ -37,7 +59,7 @@ class LensRayLabWidget(QtWidgets.QWidget):
 
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(700)
-        self.timer.timeout.connect(self._step)
+        self.timer.timeout.connect(self._on_step)
 
         layout = QtWidgets.QVBoxLayout(self)
         header = QtWidgets.QHBoxLayout()
@@ -91,15 +113,14 @@ class LensRayLabWidget(QtWidgets.QWidget):
         grid.addWidget(self.n2_spin, 4, 1)
         layout.addLayout(grid)
 
-        self.canvas = VizCanvas()
-        self.canvas.setMinimumHeight(320)
+        self.canvas = RenderCanvas(self.resolver, self.cache)
         layout.addWidget(self.canvas)
 
         buttons = QtWidgets.QHBoxLayout()
         self.run_btn = QtWidgets.QPushButton("Run")
-        self.run_btn.clicked.connect(self._toggle_run)
+        self.run_btn.clicked.connect(self._on_run)
         self.step_btn = QtWidgets.QPushButton("Step")
-        self.step_btn.clicked.connect(self._step)
+        self.step_btn.clicked.connect(self._on_step)
         buttons.addWidget(self.run_btn)
         buttons.addWidget(self.step_btn)
         buttons.addStretch()
@@ -123,6 +144,11 @@ class LensRayLabWidget(QtWidgets.QWidget):
         self.input_angle_deg = float(params.get("input_angle_deg", self.input_angle_deg))
         self.n1 = float(params.get("n1", self.n1))
         self.n2 = float(params.get("n2", self.n2))
+        try:
+            self.resolver = AssetResolver.from_detail(detail, Path("content_store/physics_v1"))
+            self.canvas.resolver = self.resolver
+        except Exception:
+            pass
         self._sync_controls()
         self._update_status("Loaded lens parameters.")
         self._step()
@@ -165,8 +191,40 @@ class LensRayLabWidget(QtWidgets.QWidget):
         else:
             self.timer.start()
             self.run_btn.setText("Pause")
+        _agent_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H3",
+                "location": "lens_ray_lab:_toggle_run",
+                "message": "run toggled",
+                "data": {"active": self.timer.isActive(), "reduced_motion": self.reduced_motion},
+            }
+        )
 
-    def _step(self) -> None:
+    def _on_run(self) -> None:
+        try:
+            if not self.timer.isActive():
+                self._step_n += 1
+                status = self._step()
+                self._update_status(f"Running... step {self._step_n} | {status}")
+                self.canvas.update()
+            self._toggle_run()
+        except Exception as exc:
+            traceback.print_exc()
+            self.status_label.setText(f"Error: {exc}")
+
+    def _on_step(self) -> None:
+        try:
+            self._step_n += 1
+            status = self._step()
+            self._update_status(f"Step {self._step_n}: {status}")
+            self.canvas.update()
+        except Exception as exc:
+            traceback.print_exc()
+            self.status_label.setText(f"Error: {exc}")
+
+    def _step(self) -> str:
         angle_rad = math.radians(self.input_angle_deg)
         dir_inc = (math.sin(angle_rad), math.cos(angle_rad))
         inc_start = (-dir_inc[0] * 8.0, -dir_inc[1] * 8.0)
@@ -177,7 +235,7 @@ class LensRayLabWidget(QtWidgets.QWidget):
         refracted_end = None
         if self.n2 <= 0:
             self._update_status("n2 must be > 0")
-            return
+            return "n2 must be > 0"
 
         sin_t = (self.n1 * math.sin(angle_rad)) / self.n2
         if abs(sin_t) > 1.0:
@@ -212,7 +270,96 @@ class LensRayLabWidget(QtWidgets.QWidget):
         else:
             scene["refracted"] = {"start": (0.0, 0.0), "end": refracted_end, "label": "θt"}
 
-        self.canvas.set_scene_data(scene)
+        self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
+
+        def layer_grid(p: QtGui.QPainter, ctx):
+            primitives.draw_grid(p, ctx)
+            primitives.draw_axes(p, ctx)
+
+        def layer_lens(p: QtGui.QPainter, ctx):
+            primitives.draw_svg_sprite(
+                p,
+                ctx,
+                "assets/lab_viz/lens.svg",
+                (0.0, 0.0),
+                (2.0, world["ymax"] - world["ymin"]),
+                tint_role=QtGui.QPalette.ColorRole.Highlight,
+            )
+
+        def layer_rays(p: QtGui.QPainter, ctx):
+            primitives.draw_arrow_sprite(
+                p,
+                ctx,
+                scene["incident"]["start"],
+                scene["incident"]["end"],
+                label="θi",
+                color_role=QtGui.QPalette.ColorRole.Link,
+            )
+            if scene.get("refracted"):
+                primitives.draw_arrow_sprite(
+                    p,
+                    ctx,
+                    scene["refracted"]["start"],
+                    scene["refracted"]["end"],
+                    label="θt",
+                    color_role=QtGui.QPalette.ColorRole.Highlight,
+                )
+            if scene.get("reflected"):
+                primitives.draw_arrow_sprite(
+                    p,
+                    ctx,
+                    scene["reflected"]["start"],
+                    scene["reflected"]["end"],
+                    label="refl",
+                    color_role=QtGui.QPalette.ColorRole.BrightText,
+                )
+            # boundary and normal
+            p.save()
+            p.setPen(QtGui.QPen(QtGui.QColor("#6f7ba5"), 2))
+            p.drawLine(
+                ctx.world_to_screen(QtCore.QPointF(world["xmin"], 0)),
+                ctx.world_to_screen(QtCore.QPointF(world["xmax"], 0)),
+            )
+            p.setPen(QtGui.QPen(QtGui.QColor("#9099c4"), 1, QtCore.Qt.PenStyle.DashLine))
+            p.drawLine(
+                ctx.world_to_screen(QtCore.QPointF(0, world["ymin"])),
+                ctx.world_to_screen(QtCore.QPointF(0, world["ymax"])),
+            )
+            p.restore()
+
+        def layer_text(p: QtGui.QPainter, ctx):
+            base = ctx.world_to_screen(QtCore.QPointF(world["xmax"] * 0.55, world["ymax"] * 0.75))
+            p.save()
+            p.setPen(ctx.palette.color(QtGui.QPalette.ColorRole.Text))
+            p.drawText(base, f"θi={scene['overlays']['theta_i']:.1f}°")
+            if tir:
+                p.drawText(base + QtCore.QPointF(0, 18), "TIR")
+            elif theta_t_deg is not None:
+                p.drawText(base + QtCore.QPointF(0, 18), f"θt={theta_t_deg:.1f}°")
+            p.restore()
+
+        self.canvas.set_layers([layer_grid, layer_lens, layer_rays, layer_text])
+        _agent_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H4",
+                "location": "lens_ray_lab:_step",
+                "message": "step executed",
+                "data": {
+                    "input_angle_deg": self.input_angle_deg,
+                    "n1": self.n1,
+                    "n2": self.n2,
+                    "tir": tir,
+                    "theta_t_deg": theta_t_deg,
+                },
+            }
+        )
+        if tir:
+            return "Total internal reflection"
+        if theta_t_deg is None:
+            return "Computed"
+        return f"θt={theta_t_deg:.1f}°"
 
     def _update_status(self, text: str) -> None:
         self.status_label.setText(text)

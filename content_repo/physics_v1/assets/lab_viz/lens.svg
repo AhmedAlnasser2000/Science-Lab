@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="200" viewBox="0 0 80 200">
+  <defs>
+    <linearGradient id="lensGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop stop-color="#b5d9ff" stop-opacity="0.55" offset="0%"/>
+      <stop stop-color="#72a7ff" stop-opacity="0.65" offset="50%"/>
+      <stop stop-color="#b5d9ff" stop-opacity="0.55" offset="100%"/>
+    </linearGradient>
+  </defs>
+  <path d="M10 10 C40 40 40 160 10 190 L70 190 C40 160 40 40 70 10 Z" fill="url(#lensGrad)" stroke="#8fb5ff" stroke-width="3"/>
+</svg>
+

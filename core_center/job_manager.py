@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import threading
 import uuid
 import shutil
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, List
 
@@ -37,6 +40,7 @@ _JOB_HANDLERS: Dict[str, JobHandler] = {}
 _RUNNING_JOBS: Dict[str, threading.Thread] = {}
 _JOB_STATE: Dict[str, Dict[str, Any]] = {}
 _LOCK = threading.Lock()
+JOB_HISTORY_PATH = Path("data/roaming/jobs.json")
 
 
 class JobContext:
@@ -88,6 +92,7 @@ def _create_job_impl(job_type: str, payload: Optional[Dict[str, Any]], *, bus: A
         _JOB_STATE[job_id] = {
             "job_id": job_id,
             "job_type": job_type,
+            "source": source,
             "status": "pending",
             "progress": 0.0,
             "result": None,
@@ -111,7 +116,8 @@ def cancel_job(job_id: str) -> bool:
 
 
 def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, source: str) -> None:
-    _update_job_state(job_id, {"status": "running"})
+    started_at = _now_iso()
+    _update_job_state(job_id, {"status": "running", "started_at": started_at})
     _publish(bus, JOB_STARTED_TOPIC, {"job_id": job_id, "job_type": job_type}, source)
     handler = _JOB_HANDLERS.get(job_type)
     context = JobContext(job_id, job_type, bus, source)
@@ -128,7 +134,18 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
             error_msg = str(exc)
     if not ok and job_type == JOB_REPORT_GENERATE:
         context.publish(REPORT_READY_TOPIC, {"ok": False, "error": error_msg or "failed"})
-    _update_job_state(job_id, {"status": "completed", "result": result if ok else None, "error": error_msg if not ok else None})
+    finished_at = _now_iso()
+    _update_job_state(
+        job_id,
+        {
+            "status": "completed",
+            "finished_at": finished_at,
+            "result": result if ok else None,
+            "error": error_msg if not ok else None,
+            "ok": ok,
+            "result_summary": _summarize_result(result) if ok else None,
+        },
+    )
     _publish(
         bus,
         JOB_COMPLETED_TOPIC,
@@ -137,6 +154,8 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
     )
     with _LOCK:
         _RUNNING_JOBS.pop(job_id, None)
+        snapshot = dict(_JOB_STATE.get(job_id, {}))
+    _persist_job_record(snapshot)
 
 
 def _publish(bus: Any, topic: Optional[str], payload: Dict[str, Any], source: str) -> None:
@@ -146,6 +165,87 @@ def _publish(bus: Any, topic: Optional[str], payload: Dict[str, Any], source: st
         bus.publish(topic, payload, source=source, trace_id=None)
     except Exception:  # pragma: no cover - defensive
         return
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _summarize_result(result: Dict[str, Any]) -> Optional[str]:
+    if not result:
+        return None
+    try:
+        text = result.get("text")
+        if isinstance(text, str) and text:
+            return text[:120]
+    except Exception:
+        pass
+    return None
+
+
+def _safe_load_history() -> List[Dict[str, Any]]:
+    ensure_data_roots()
+    path = JOB_HISTORY_PATH
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, list):
+            return data
+    except json.JSONDecodeError:
+        bad_path = path.with_suffix(path.suffix + f".bad.{int(time.time())}")
+        try:
+            path.rename(bad_path)
+        except Exception:
+            pass
+        return []
+    except Exception:
+        return []
+    return []
+
+
+def _persist_job_record(record: Dict[str, Any]) -> None:
+    try:
+        records = _safe_load_history()
+        job_id = record.get("job_id")
+        if job_id:
+            records = [r for r in records if r.get("job_id") != job_id]
+        records.append(record)
+        # keep most recent 200 by started time desc
+        records = sorted(
+            records,
+            key=lambda r: r.get("started_at") or "",
+            reverse=True,
+        )[:200]
+        JOB_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with JOB_HISTORY_PATH.open("w", encoding="utf-8") as fh:
+            json.dump(records, fh, indent=2)
+    except Exception:
+        # defensive: never raise
+        pass
+
+
+def get_job_history(*, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    records = _safe_load_history()
+    ordered = sorted(records, key=lambda r: r.get("started_at") or "", reverse=True)
+    if limit is not None:
+        try:
+            n = int(limit)
+            if n >= 0:
+                ordered = ordered[:n]
+        except Exception:
+            pass
+    return ordered
+
+
+def get_job_record(job_id: str) -> Optional[Dict[str, Any]]:
+    if not job_id:
+        return None
+    for rec in _safe_load_history():
+        if rec.get("job_id") == job_id:
+            return rec
+    return None
 
 
 def _refresh_registry_records() -> List[Dict[str, Any]]:

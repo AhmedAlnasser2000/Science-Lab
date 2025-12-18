@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import json
 import math
+import time
+import traceback
+from pathlib import Path
 from typing import Callable, Dict
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+
+
+def _agent_log(payload: Dict[str, object]) -> None:
+    # region agent log
+    try:
+        data = dict(payload)
+        data.setdefault("timestamp", int(time.time() * 1000))
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _log_file:
+            _log_file.write(json.dumps(data) + "\n")
+    except Exception:
+        pass
+    # endregion
+
 from .base import LabPlugin
-from ._viz_canvas import VizCanvas
+from .renderkit import AssetResolver, AssetCache, RenderCanvas, primitives
 
 
 class ElectricFieldLabPlugin(LabPlugin):
@@ -28,14 +47,17 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         self.get_profile = get_profile
         self.profile = get_profile()
         self.reduced_motion = False
+        self.resolver = AssetResolver()
+        self.cache = AssetCache()
 
         self.k_const = 8.99e9
         self.charge_c = 1.0
         self.distance_m = 1.0
         self.field_value = 0.0
+        self._step_n = 0
 
         self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self._step)
+        self.timer.timeout.connect(self._on_step)
         self.timer.setInterval(600)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -69,9 +91,9 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
 
         buttons = QtWidgets.QHBoxLayout()
         self.run_btn = QtWidgets.QPushButton("Run")
-        self.run_btn.clicked.connect(self._toggle_run)
+        self.run_btn.clicked.connect(self._on_run)
         self.step_btn = QtWidgets.QPushButton("Step")
-        self.step_btn.clicked.connect(self._step)
+        self.step_btn.clicked.connect(self._on_step)
         buttons.addWidget(self.run_btn)
         buttons.addWidget(self.step_btn)
         buttons.addStretch()
@@ -81,8 +103,7 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         self.status_label.setStyleSheet("font-size: 14px;")
         layout.addWidget(self.status_label)
 
-        self.canvas = VizCanvas()
-        self.canvas.setMinimumHeight(320)
+        self.canvas = RenderCanvas(self.resolver, self.cache)
         layout.addWidget(self.canvas)
 
         self._update_field()
@@ -98,6 +119,11 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
             params = {}
         self.charge_c = float(params.get("charge_c", 1.0))
         self.distance_m = float(params.get("distance_m", 1.0))
+        try:
+            self.resolver = AssetResolver.from_detail(detail, Path("content_store/physics_v1"))
+            self.canvas.resolver = self.resolver
+        except Exception:
+            pass
         self._sync_sliders()
         self._update_labels()
         self._update_field()
@@ -134,6 +160,28 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         self.distance_m = max(0.1, value / 10.0)
         self._update_field()
 
+    def _on_run(self) -> None:
+        try:
+            if not self.timer.isActive():
+                self._step_n += 1
+                self._step()
+                self.status_label.setText(f"Running... step {self._step_n} | Field: {self.field_value:,.2f} N/C")
+                self.canvas.update()
+            self._toggle_run()
+        except Exception as exc:
+            traceback.print_exc()
+            self.status_label.setText(f"Error: {exc}")
+
+    def _on_step(self) -> None:
+        try:
+            self._step_n += 1
+            self._step()
+            self.status_label.setText(f"Step {self._step_n}: Field {self.field_value:,.2f} N/C")
+            self.canvas.update()
+        except Exception as exc:
+            traceback.print_exc()
+            self.status_label.setText(f"Error: {exc}")
+
     def _toggle_run(self) -> None:
         if self.timer.isActive():
             self.timer.stop()
@@ -141,12 +189,32 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         else:
             self.timer.start()
             self.run_btn.setText("Pause")
+        _agent_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H3",
+                "location": "electric_field_lab:_toggle_run",
+                "message": "run toggled",
+                "data": {"active": self.timer.isActive(), "reduced_motion": self.reduced_motion},
+            }
+        )
 
     def _step(self) -> None:
         # In reduced motion, keep gentle updates.
         jitter = 0.0 if self.reduced_motion else 0.05
         self.distance_m = max(0.1, self.distance_m + jitter)
         self._update_field()
+        _agent_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H4",
+                "location": "electric_field_lab:_step",
+                "message": "step executed",
+                "data": {"distance_m": self.distance_m, "field_value": self.field_value, "jitter": jitter},
+            }
+        )
 
     def _update_field(self) -> None:
         self._update_labels()
@@ -198,10 +266,49 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
                 e_mag = self.k_const * self.charge_c / max(0.1, r2)
                 samples.append({"pos": (px, py), "text": f"{e_mag/1e3:.1f}k N/C"})
         scene = {
-            "kind": "field",
             "world": world,
             "vectors": vectors,
             "show_values": show_values,
             "samples": samples,
         }
-        self.canvas.set_scene_data(scene)
+        self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
+
+        def layer_grid(p: QtGui.QPainter, ctx):
+            primitives.draw_grid(p, ctx, step=2.0)
+            primitives.draw_axes(p, ctx)
+
+        def layer_charge(p: QtGui.QPainter, ctx):
+            asset = "assets/lab_viz/charge_plus.svg" if self.charge_c >= 0 else "assets/lab_viz/charge_minus.svg"
+            primitives.draw_svg_sprite(
+                p,
+                ctx,
+                asset,
+                (0.0, 0.0),
+                (2.2, 2.2),
+                tint_role=QtGui.QPalette.ColorRole.Highlight,
+            )
+
+        def layer_vectors(p: QtGui.QPainter, ctx):
+            color = QtGui.QColor("#7de3ff") if self.charge_c >= 0 else QtGui.QColor("#ffb4a4")
+            for vec in vectors:
+                primitives.draw_arrow_sprite(
+                    p,
+                    ctx,
+                    vec["start"],
+                    vec["end"],
+                    color=color,
+                    label=None,
+                    asset_rel_path="assets/lab_viz/field_arrow.svg",
+                )
+
+        def layer_samples(p: QtGui.QPainter, ctx):
+            if not show_values:
+                return
+            p.save()
+            p.setPen(ctx.palette.color(QtGui.QPalette.ColorRole.Text))
+            for sample in samples:
+                pos = ctx.world_to_screen(QtCore.QPointF(*sample["pos"]))
+                p.drawText(pos + QtCore.QPointF(6, -6), sample["text"])
+            p.restore()
+
+        self.canvas.set_layers([layer_grid, layer_charge, layer_vectors, layer_samples])

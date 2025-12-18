@@ -1,13 +1,33 @@
 from __future__ import annotations
 
+import json
 import math
 import random
+import time
+import traceback
 from typing import Callable, Dict
+
+from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+
+
+def _agent_log(payload: Dict[str, object]) -> None:
+    # region agent log
+    try:
+        data = dict(payload)
+        data.setdefault("timestamp", int(time.time() * 1000))
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _log_file:
+            _log_file.write(json.dumps(data) + "\n")
+    except Exception:
+        pass
+    # endregion
+
 from .base import LabPlugin
-from ._viz_canvas import VizCanvas
+from .renderkit import AssetResolver, AssetCache, RenderCanvas, primitives
 
 
 class VectorAddLabPlugin(LabPlugin):
@@ -29,10 +49,13 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         self.get_profile = get_profile
         self.profile = get_profile()
         self.reduced_motion = False
+        self.resolver = AssetResolver()
+        self.cache = AssetCache()
+        self._step_n = 0
 
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(500)
-        self.timer.timeout.connect(self._tick)
+        self.timer.timeout.connect(self._on_step)
 
         layout = QtWidgets.QVBoxLayout(self)
         header = QtWidgets.QHBoxLayout()
@@ -69,15 +92,14 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         grid.addWidget(self.b_ang, 1, 3)
         layout.addLayout(grid)
 
-        self.canvas = VizCanvas()
-        self.canvas.setMinimumHeight(320)
+        self.canvas = RenderCanvas(self.resolver, self.cache)
         layout.addWidget(self.canvas)
 
         buttons = QtWidgets.QHBoxLayout()
         self.run_btn = QtWidgets.QPushButton("Run")
-        self.run_btn.clicked.connect(self._toggle_run)
+        self.run_btn.clicked.connect(self._on_run)
         self.step_btn = QtWidgets.QPushButton("Step")
-        self.step_btn.clicked.connect(self._step_once)
+        self.step_btn.clicked.connect(self._on_step)
         buttons.addWidget(self.run_btn)
         buttons.addWidget(self.step_btn)
         buttons.addStretch()
@@ -87,8 +109,9 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         layout.addWidget(self.result_label)
 
         for spin in (self.a_mag, self.a_ang, self.b_mag, self.b_ang):
-            spin.valueChanged.connect(self._step_once)
-        self._step_once()
+            spin.valueChanged.connect(self._on_step)
+        initial = self._step_once()
+        self._set_result_text(initial, prefix="Resultant")
 
     def load_part(self, part_id: str, manifest: Dict, detail: Dict) -> None:
         manifest = manifest or {}
@@ -99,15 +122,22 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         params = behavior.get("parameters") or {}
         if not isinstance(params, dict):
             params = {}
+        try:
+            self.resolver = AssetResolver.from_detail(detail, Path("content_store/physics_v1"))
+            self.canvas.resolver = self.resolver
+        except Exception:
+            pass
         self.a_mag.setValue(float(params.get("a_mag", 5.0)))
         self.a_ang.setValue(float(params.get("a_ang", 0.0)))
         self.b_mag.setValue(float(params.get("b_mag", 5.0)))
         self.b_ang.setValue(float(params.get("b_ang", 90.0)))
-        self._step_once()
+        result = self._step_once()
+        self._set_result_text(result, prefix="Resultant")
 
     def set_profile(self, profile: str) -> None:
         self.profile = profile
-        self._step_once()
+        result = self._step_once()
+        self._set_result_text(result, prefix="Resultant")
 
     def stop_simulation(self) -> None:
         self.timer.stop()
@@ -127,22 +157,67 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         else:
             self.timer.start()
             self.run_btn.setText("Pause")
+        _agent_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H3",
+                "location": "vector_add_lab:_toggle_run",
+                "message": "run toggled",
+                "data": {"active": self.timer.isActive(), "reduced_motion": self.reduced_motion},
+            }
+        )
 
-    def _tick(self) -> None:
-        if not self.reduced_motion:
-            # Small jitter for variety
-            for spin in (self.a_ang, self.b_ang):
-                spin.setValue(spin.value() + random.uniform(-1.0, 1.0))
-        self._step_once()
+    def _on_run(self) -> None:
+        try:
+            if not self.timer.isActive():
+                self._step_n += 1
+                result = self._step_once()
+                self._set_result_text(result, prefix=f"Running step {self._step_n}")
+                self.canvas.update()
+            self._toggle_run()
+        except Exception as exc:
+            traceback.print_exc()
+            self.result_label.setText(f"Error: {exc}")
 
-    def _step_once(self) -> None:
+    def _on_step(self) -> None:
+        try:
+            if not self.reduced_motion:
+                for spin in (self.a_ang, self.b_ang):
+                    spin.setValue(spin.value() + random.uniform(-1.0, 1.0))
+            self._step_n += 1
+            result = self._step_once()
+            self._set_result_text(result, prefix=f"Step {self._step_n}")
+            self.canvas.update()
+        except Exception as exc:
+            traceback.print_exc()
+            self.result_label.setText(f"Error: {exc}")
+
+    def _step_once(self) -> Dict[str, float]:
         ax, ay = self._components(self.a_mag.value(), self.a_ang.value())
         bx, by = self._components(self.b_mag.value(), self.b_ang.value())
         rx, ry = ax + bx, ay + by
         mag = math.hypot(rx, ry)
         ang = math.degrees(math.atan2(ry, rx)) if mag > 0 else 0.0
-        self.result_label.setText(f"Resultant: {mag:.2f} @ {ang:.1f}° (Rx={rx:.2f}, Ry={ry:.2f})")
         self._update_canvas(ax, ay, bx, by, rx, ry)
+        _agent_log(
+            {
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H4",
+                "location": "vector_add_lab:_step_once",
+                "message": "step executed",
+                "data": {"a": (ax, ay), "b": (bx, by), "r": (rx, ry), "mag": mag, "ang": ang},
+            }
+        )
+        return {"mag": mag, "ang": ang, "rx": rx, "ry": ry}
+
+    def _set_result_text(self, result: Dict[str, float], *, prefix: str) -> None:
+        mag = result.get("mag", 0.0)
+        ang = result.get("ang", 0.0)
+        rx = result.get("rx", 0.0)
+        ry = result.get("ry", 0.0)
+        self.result_label.setText(f"{prefix}: {mag:.2f} @ {ang:.1f}° (Rx={rx:.2f}, Ry={ry:.2f})")
 
     def _components(self, magnitude: float, angle_deg: float) -> tuple[float, float]:
         rad = math.radians(angle_deg)
@@ -160,9 +235,27 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         )
         span = max_extent * 1.4
         world = {"xmin": -span, "xmax": span, "ymin": -span, "ymax": span}
+        self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
+
         vectors = [
-            {"start": (0.0, 0.0), "end": (ax, ay), "label": "A", "color": QtGui.QColor("#63c2ff")},
-            {"start": (0.0, 0.0), "end": (bx, by), "label": "B", "color": QtGui.QColor("#8ef29f")},
-            {"start": (0.0, 0.0), "end": (rx, ry), "label": "R", "color": QtGui.QColor("#ffc857"), "width": 2.6},
+            {"start": (0.0, 0.0), "end": (ax, ay), "label": "A", "role": QtGui.QPalette.ColorRole.Link},
+            {"start": (0.0, 0.0), "end": (bx, by), "label": "B", "role": QtGui.QPalette.ColorRole.Text},
+            {"start": (0.0, 0.0), "end": (rx, ry), "label": "R", "role": QtGui.QPalette.ColorRole.Highlight},
         ]
-        self.canvas.set_scene_data({"kind": "vector", "world": world, "vectors": vectors})
+
+        def layer_grid(p: QtGui.QPainter, ctx):
+            primitives.draw_grid(p, ctx)
+            primitives.draw_axes(p, ctx)
+
+        def layer_vectors(p: QtGui.QPainter, ctx):
+            for vec in vectors:
+                primitives.draw_arrow_sprite(
+                    p,
+                    ctx,
+                    vec["start"],
+                    vec["end"],
+                    label=vec["label"],
+                    color_role=vec["role"],
+                )
+
+        self.canvas.set_layers([layer_grid, layer_vectors])
