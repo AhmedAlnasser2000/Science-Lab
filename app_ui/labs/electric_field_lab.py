@@ -80,8 +80,14 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         layout.addWidget(self.status_label)
 
     def load_part(self, part_id: str, manifest: Dict, detail: Dict) -> None:
-        behavior = (manifest or {}).get("behavior", {}) if isinstance(manifest, dict) else {}
-        params = behavior.get("parameters") if isinstance(behavior, dict) else {}
+        manifest = manifest or {}
+        detail = detail or {}
+        behavior = manifest.get("behavior") or {}
+        if not isinstance(behavior, dict):
+            behavior = {}
+        params = behavior.get("parameters") or {}
+        if not isinstance(params, dict):
+            params = {}
         self.charge_c = float(params.get("charge_c", 1.0))
         self.distance_m = float(params.get("distance_m", 1.0))
         self._sync_sliders()

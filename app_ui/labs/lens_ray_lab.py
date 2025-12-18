@@ -87,8 +87,14 @@ class LensRayLabWidget(QtWidgets.QWidget):
         layout.addWidget(self.status_label)
 
     def load_part(self, part_id: str, manifest: Dict, detail: Dict) -> None:
-        behavior = (manifest or {}).get("behavior", {}) if isinstance(manifest, dict) else {}
-        params = behavior.get("parameters") if isinstance(behavior, dict) else {}
+        manifest = manifest or {}
+        detail = detail or {}
+        behavior = manifest.get("behavior") or {}
+        if not isinstance(behavior, dict):
+            behavior = {}
+        params = behavior.get("parameters") or {}
+        if not isinstance(params, dict):
+            params = {}
         self.focal_length = float(params.get("focal_length_cm", self.focal_length))
         self.object_distance = float(params.get("object_distance_cm", self.object_distance))
         self.input_angle_deg = float(params.get("input_angle_deg", self.input_angle_deg))
