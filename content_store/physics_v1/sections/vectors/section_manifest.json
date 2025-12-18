@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../../schemas/section_manifest.schema.json",
+  "schema_version": "1.0.0",
+  "content_version": "1.0.0",
+  "module_id": "physics",
+  "section_id": "vectors",
+  "title": "Vectors",
+  "description": "Representation of vectors and their components.",
+  "packages": [
+    {
+      "package_id": "page_001",
+      "title": "Vectors Page 001",
+      "manifest_path": "packages/page_001/package_manifest.json",
+      "order": 1
+    }
+  ]
+}

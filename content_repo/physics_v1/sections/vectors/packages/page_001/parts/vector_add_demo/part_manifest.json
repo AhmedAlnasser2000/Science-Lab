@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../../../../../../schemas/part_manifest.schema.json",
+  "schema_version": "1.0.0",
+  "content_version": "1.0.0",
+  "module_id": "physics",
+  "section_id": "vectors",
+  "package_id": "page_001",
+  "part_id": "vector_add_demo",
+  "title": "Vector Addition Lab",
+  "part_type": "simulation",
+  "content": {
+    "asset_path": "assets/vector_add_demo.md",
+    "format": "markdown"
+  },
+  "x_extensions": {
+    "guides": {
+      "learner": "assets/vector_add_guide_learner.md",
+      "educator": "assets/vector_add_guide_educator.md",
+      "explorer": "assets/vector_add_guide_explorer.md"
+    },
+    "lab": {
+      "lab_id": "vector_add"
+    }
+  }
+}

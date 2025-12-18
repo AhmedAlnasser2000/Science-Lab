@@ -6,8 +6,8 @@
     "source": "repo",
     "state": "present",
     "install_path": "content_repo\\physics_v1",
-    "last_seen": "2025-12-17T06:39:59Z",
-    "disk_usage_bytes": 14470
+    "last_seen": "2025-12-18T11:29:32Z",
+    "disk_usage_bytes": 19899
   },
   {
     "id": "default",
@@ -16,7 +16,7 @@
     "source": "repo",
     "state": "present",
     "install_path": "ui_repo\\ui_v1\\packs\\default",
-    "last_seen": "2025-12-17T06:39:59Z",
+    "last_seen": "2025-12-18T11:29:32Z",
     "disk_usage_bytes": 1274
   },
   {
@@ -26,7 +26,7 @@
     "source": "repo",
     "state": "present",
     "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth",
-    "last_seen": "2025-12-17T06:39:59Z",
+    "last_seen": "2025-12-18T11:29:32Z",
     "disk_usage_bytes": 1664
   },
   {
@@ -36,7 +36,7 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-17T06:39:59Z",
+    "last_seen": "2025-12-18T11:29:33Z",
     "disk_usage_bytes": 8791
   },
   {
@@ -46,7 +46,37 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-17T06:39:59Z",
+    "last_seen": "2025-12-18T11:29:33Z",
     "disk_usage_bytes": 10439
+  },
+  {
+    "id": "electric_field",
+    "type": "lab",
+    "version": null,
+    "source": "app",
+    "state": "present",
+    "install_path": "app_ui\\labs",
+    "last_seen": "2025-12-18T11:29:33Z",
+    "disk_usage_bytes": 5290
+  },
+  {
+    "id": "lens_ray",
+    "type": "lab",
+    "version": null,
+    "source": "app",
+    "state": "present",
+    "install_path": "app_ui\\labs",
+    "last_seen": "2025-12-18T11:29:33Z",
+    "disk_usage_bytes": 5608
+  },
+  {
+    "id": "vector_add",
+    "type": "lab",
+    "version": null,
+    "source": "app",
+    "state": "present",
+    "install_path": "app_ui\\labs",
+    "last_seen": "2025-12-18T11:29:33Z",
+    "disk_usage_bytes": 4834
   }
 ]

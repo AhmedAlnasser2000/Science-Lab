@@ -4,6 +4,9 @@ from typing import Dict, Optional
 
 from .gravity_lab import GravityLabPlugin
 from .projectile_lab import ProjectileLabPlugin
+from .electric_field_lab import ElectricFieldLabPlugin
+from .lens_ray_lab import LensRayLabPlugin
+from .vector_add_lab import VectorAddLabPlugin
 from .base import LabPlugin
 
 _REGISTRY: Dict[str, LabPlugin] = {}
@@ -15,6 +18,9 @@ def _register(plugin: LabPlugin) -> None:
 
 _register(GravityLabPlugin())
 _register(ProjectileLabPlugin())
+_register(ElectricFieldLabPlugin())
+_register(LensRayLabPlugin())
+_register(VectorAddLabPlugin())
 
 
 def get_lab(lab_id: str) -> Optional[LabPlugin]:
