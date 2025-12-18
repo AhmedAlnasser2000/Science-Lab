@@ -1021,6 +1021,9 @@ BUS_CLEANUP_COMPLETED = (
 )
 BUS_JOB_COMPLETED = BUS_TOPICS.JOB_COMPLETED if BUS_TOPICS else "job.completed"
 BUS_JOB_PROGRESS = BUS_TOPICS.JOB_PROGRESS if BUS_TOPICS else "job.progress"
+BUS_REGISTRY_REQUEST = (
+    BUS_TOPICS.CORE_REGISTRY_GET_REQUEST if BUS_TOPICS else "core.registry.get.request"
+)
 BUS_MODULE_INSTALL_REQUEST = (
     BUS_TOPICS.CORE_CONTENT_MODULE_INSTALL_REQUEST
     if BUS_TOPICS
@@ -1039,6 +1042,8 @@ BUS_MODULE_COMPLETED = (
 )
 
 CORE_JOB_REPORT = "core.report.generate"
+CORE_JOB_MODULE_INSTALL = "core.module.install"
+CORE_JOB_MODULE_UNINSTALL = "core.module.uninstall"
 CORE_JOB_CLEANUP_CACHE = "core.cleanup.cache"
 CORE_JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 
@@ -1855,6 +1860,766 @@ class SystemHealthScreen(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "System Health", f"Unable to open folder: {exc}")
 
 
+class ModuleManagementScreen(QtWidgets.QWidget):
+    def __init__(self, on_back, *, bus=None):
+        super().__init__()
+        self.on_back = on_back
+        self.bus = bus
+        self._bus_dispatch_bridge = _BusDispatchBridge(self)
+        self._bus_subscriptions: list[str] = []
+        self.modules: list[Dict[str, Any]] = []
+        self.pending_job_id: Optional[str] = None
+        self.pending_module_id: Optional[str] = None
+        self.pending_action: Optional[str] = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        header = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Module Management")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header.addWidget(title)
+        header.addStretch()
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self._refresh_registry)
+        header.addWidget(refresh_btn)
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        header.addWidget(back_btn)
+        layout.addLayout(header)
+
+        self.status_label = QtWidgets.QLabel()
+        layout.addWidget(self.status_label)
+
+        self.table = QtWidgets.QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Module ID", "Repo?", "Store?", "Size", "Actions"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
+        layout.addWidget(self.table, stretch=1)
+
+        self.progress_panel = QtWidgets.QFrame()
+        self.progress_panel.setVisible(False)
+        self.progress_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
+        pp_layout = QtWidgets.QHBoxLayout(self.progress_panel)
+        pp_layout.setContentsMargins(8, 4, 8, 4)
+        self.progress_title = QtWidgets.QLabel("")
+        self.progress_details = QtWidgets.QLabel("")
+        self.progress_details.setWordWrap(True)
+        dismiss_btn = QtWidgets.QPushButton("Dismiss")
+        dismiss_btn.setFixedWidth(80)
+        dismiss_btn.clicked.connect(lambda: self.progress_panel.setVisible(False))
+        text_box = QtWidgets.QVBoxLayout()
+        text_box.addWidget(self.progress_title)
+        text_box.addWidget(self.progress_details)
+        pp_layout.addLayout(text_box)
+        pp_layout.addStretch()
+        pp_layout.addWidget(dismiss_btn)
+        layout.addWidget(self.progress_panel)
+
+        self._init_bus_subscriptions()
+        self._refresh_registry()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self._unsubscribe_all()
+        super().closeEvent(event)
+
+    def _set_status(self, text: str) -> None:
+        self.status_label.setText(text)
+
+    def _init_bus_subscriptions(self) -> None:
+        if not self.bus or self._bus_subscriptions:
+            return
+        self._subscribe_bus(BUS_MODULE_PROGRESS, self._on_module_progress_event)
+        self._subscribe_bus(BUS_MODULE_COMPLETED, self._on_module_completed_event)
+        self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
+        self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event)
+
+    def _subscribe_bus(self, topic: Optional[str], handler: Callable[[Any], None]) -> None:
+        if not (self.bus and topic):
+            return
+
+        def _wrapped(envelope):
+            self._bus_dispatch_bridge.envelope_dispatched.emit(handler, envelope)
+
+        sub_id = self.bus.subscribe(topic, _wrapped, replay_last=False)
+        self._bus_subscriptions.append(sub_id)
+
+    def _unsubscribe_all(self) -> None:
+        if not self.bus:
+            return
+        for sub_id in self._bus_subscriptions:
+            self.bus.unsubscribe(sub_id)
+        self._bus_subscriptions.clear()
+
+    def _refresh_registry(self) -> None:
+        records = None
+        reason = ""
+        if self.bus:
+            self._set_status("Requesting registry via runtime bus...")
+            records, reason = self._fetch_registry_via_bus()
+        if records is None:
+            records, reason = self._fetch_registry_direct()
+        if records is None:
+            self.modules = []
+            self._populate_table()
+            self._set_status(reason or "Registry unavailable.")
+            return
+        self.modules = self._build_module_rows(records)
+        self._populate_table()
+        self._set_status(reason or "Registry loaded.")
+
+    def _fetch_registry_via_bus(self) -> tuple[Optional[list], str]:
+        if not self.bus:
+            return None, "Runtime bus unavailable."
+        try:
+            response = self.bus.request(
+                BUS_REGISTRY_REQUEST,
+                {},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            return None, f"Registry request failed: {exc}"
+        if response.get("ok"):
+            return response.get("registry") or [], "Registry refreshed via runtime bus."
+        return None, f"Registry request failed: {response.get('error') or 'unknown'}"
+
+    def _fetch_registry_direct(self) -> tuple[Optional[list], str]:
+        if not CORE_CENTER_AVAILABLE:
+            return None, "Core Center unavailable."
+        try:
+            ensure_data_roots()
+            registry_path = Path("data/roaming/registry.json")
+            existing = load_registry(registry_path)
+            discovered = discover_components()
+            merged = upsert_records(existing, discovered)
+            save_registry(registry_path, merged)
+            return merged, "Registry refreshed locally."
+        except Exception as exc:  # pragma: no cover - defensive
+            return None, f"Registry read failed: {exc}"
+
+    def _build_module_rows(self, records: list) -> list[Dict[str, Any]]:
+        modules: Dict[str, Dict[str, Any]] = {}
+        for rec in records:
+            if str(rec.get("type")) != "module":
+                continue
+            module_id = str(rec.get("id") or "").strip()
+            if not module_id:
+                continue
+            entry = modules.setdefault(
+                module_id,
+                {
+                    "id": module_id,
+                    "repo": False,
+                    "store": False,
+                    "repo_size": None,
+                    "store_size": None,
+                },
+            )
+            source = str(rec.get("source") or "")
+            size = rec.get("disk_usage_bytes")
+            if source == "repo":
+                entry["repo"] = True
+                entry["repo_size"] = size
+            elif source == "store":
+                entry["store"] = True
+                entry["store_size"] = size
+        result = []
+        for module_id, entry in modules.items():
+            size = entry.get("store_size") or entry.get("repo_size") or 0
+            size_text = f"{size/1024/1024:.1f} MB" if size else ""
+            result.append(
+                {
+                    "id": module_id,
+                    "repo": bool(entry.get("repo")),
+                    "store": bool(entry.get("store")),
+                    "size": size,
+                    "size_text": size_text,
+                }
+            )
+        return sorted(result, key=lambda x: x["id"])
+
+    def _populate_table(self) -> None:
+        self.table.setRowCount(len(self.modules))
+        for row, mod in enumerate(self.modules):
+            mod_id = mod.get("id") or ""
+            repo = "Yes" if mod.get("repo") else "No"
+            store = "Yes" if mod.get("store") else "No"
+            size_text = mod.get("size_text") or ""
+
+            self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(mod_id))
+            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(repo))
+            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(store))
+            self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(size_text))
+
+            actions_widget = QtWidgets.QWidget()
+            actions_layout = QtWidgets.QHBoxLayout(actions_widget)
+            actions_layout.setContentsMargins(0, 0, 0, 0)
+            install_btn = QtWidgets.QPushButton("Install")
+            uninstall_btn = QtWidgets.QPushButton("Uninstall")
+            install_btn.setEnabled(bool(mod.get("repo")))
+            uninstall_btn.setEnabled(bool(mod.get("store")))
+            install_btn.clicked.connect(lambda _=False, m=mod_id: self._start_job("install", m))
+            uninstall_btn.clicked.connect(lambda _=False, m=mod_id: self._start_job("uninstall", m))
+            actions_layout.addWidget(install_btn)
+            actions_layout.addWidget(uninstall_btn)
+            self.table.setCellWidget(row, 4, actions_widget)
+
+        self.table.resizeRowsToContents()
+
+    def _start_job(self, action: str, module_id: str) -> None:
+        if not self.bus:
+            QtWidgets.QMessageBox.information(self, "Module", "Runtime bus unavailable.")
+            return
+        if self.pending_job_id:
+            QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            return
+        topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
+        self._set_job_state(job_id=None, module_id=module_id, action=action, running=True)
+        self._show_progress_panel(
+            f"{action.title()} requested",
+            f"{action.title()} {module_id}: requesting job...",
+            running=True,
+        )
+        try:
+            response = self.bus.request(
+                topic,
+                {"module_id": module_id},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
+            return
+        if not response.get("ok") or not response.get("job_id"):
+            self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Module",
+                f"Request failed: {response.get('error') or 'unknown'}",
+            )
+            return
+        job_id = str(response["job_id"])
+        self._set_job_state(job_id=job_id, module_id=module_id, action=action, running=True)
+        self._show_progress_panel(
+            "Module job queued",
+            f"{action.title()} {module_id}: awaiting progress (job {job_id[:8]})",
+            running=True,
+        )
+
+    def _is_active_payload(self, payload: Dict[str, Any]) -> bool:
+        if not payload:
+            return False
+        job_id = payload.get("job_id")
+        module_id = payload.get("module_id")
+        if self.pending_job_id and job_id and job_id != self.pending_job_id:
+            return False
+        if self.pending_module_id and module_id and module_id != self.pending_module_id:
+            return False
+        if not (self.pending_job_id or self.pending_module_id):
+            return False
+        return True
+
+    def _on_module_progress_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if not self._is_active_payload(payload):
+            return
+        self._handle_progress_payload(payload)
+
+    def _on_job_progress_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if payload.get("job_type") not in (CORE_JOB_MODULE_INSTALL, CORE_JOB_MODULE_UNINSTALL):
+            return
+        if not self._is_active_payload(payload):
+            return
+        self._handle_progress_payload(payload)
+
+    def _handle_progress_payload(self, payload: Dict[str, Any]) -> None:
+        stage = payload.get("stage") or "Working"
+        percent = payload.get("percent")
+        percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
+        module_id = payload.get("module_id") or self.pending_module_id or "module"
+        action = (self.pending_action or "module").title()
+        details = f"{action} {module_id}: {percent_text} {stage}".strip()
+        self._show_progress_panel("Module Progress", details, running=True)
+        self._set_status(details)
+
+    def _on_module_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if not self._is_active_payload(payload):
+            return
+        ok = bool(payload.get("ok"))
+        error = payload.get("error")
+        module_id = payload.get("module_id") or self.pending_module_id or "module"
+        action = payload.get("action") or self.pending_action or "module"
+        summary = "OK" if ok else error or "failed"
+        self._show_progress_panel(
+            "Module Result",
+            f"{action.title()} {module_id}: {summary}",
+            running=False,
+            ok=ok,
+        )
+        self._set_status(f"{action.title()} {module_id}: {summary}")
+        self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+        self._refresh_registry()
+
+    def _on_job_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if payload.get("job_type") not in (CORE_JOB_MODULE_INSTALL, CORE_JOB_MODULE_UNINSTALL):
+            return
+        if not self._is_active_payload(payload):
+            return
+        ok = bool(payload.get("ok"))
+        error = payload.get("error")
+        module_id = self.pending_module_id or "module"
+        action = self.pending_action or "module"
+        summary = "OK" if ok else error or "failed"
+        self._show_progress_panel(
+            "Module Result",
+            f"{action.title()} {module_id}: {summary}",
+            running=False,
+            ok=ok,
+        )
+        self._set_status(f"{action.title()} {module_id}: {summary}")
+        self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+        self._refresh_registry()
+
+    def _set_job_state(self, *, job_id: Optional[str], module_id: Optional[str], action: Optional[str], running: bool) -> None:
+        self.pending_job_id = job_id
+        self.pending_module_id = module_id
+        self.pending_action = action if running else None
+
+    def _show_progress_panel(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
+        color = "#0d47a1"
+        if ok is True:
+            color = "#2e7d32"
+        elif ok is False:
+            color = "#b71c1c"
+        self.progress_title.setText(title)
+        self.progress_title.setStyleSheet(f"font-weight: bold; color: {color};")
+        self.progress_details.setText(details)
+        self.progress_panel.setVisible(True)
+
+
+class ContentManagementScreen(QtWidgets.QWidget):
+    def __init__(self, adapter: "ContentSystemAdapter", on_back, *, bus=None):
+        super().__init__()
+        self.adapter = adapter
+        self.on_back = on_back
+        self.bus = bus
+        self._bus_dispatch_bridge = _BusDispatchBridge(self)
+        self._bus_subscriptions: list[str] = []
+        self.current_selection: Optional[Dict[str, Any]] = None
+        self.install_thread: Optional[QtCore.QThread] = None
+        self.progress_dialog: Optional[QtWidgets.QProgressDialog] = None
+        self.pending_job_id: Optional[str] = None
+        self.pending_module_id: Optional[str] = None
+        self.pending_action: Optional[str] = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        header = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Content Management")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header.addWidget(title)
+        header.addStretch()
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_tree)
+        header.addWidget(refresh_btn)
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        header.addWidget(back_btn)
+        layout.addLayout(header)
+
+        self.status_label = QtWidgets.QLabel()
+        layout.addWidget(self.status_label)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        layout.addWidget(splitter, stretch=1)
+
+        self.tree = QtWidgets.QTreeWidget()
+        self.tree.setHeaderLabels(["Item", "Status"])
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setColumnCount(2)
+        header_view = self.tree.header()
+        header_view.setStretchLastSection(False)
+        header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header_view.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.itemSelectionChanged.connect(self._on_selection_changed)
+        splitter.addWidget(self.tree)
+
+        detail_widget = QtWidgets.QWidget()
+        detail_layout = QtWidgets.QVBoxLayout(detail_widget)
+        self.detail_title = QtWidgets.QLabel("Select an item to view details.")
+        self.detail_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.detail_status = QtWidgets.QLabel("")
+        self.detail_reason = QtWidgets.QLabel("")
+        self.detail_reason.setStyleSheet("color: #555;")
+        self.detail_hint = QtWidgets.QLabel("")
+        self.detail_hint.setStyleSheet("color: #777;")
+        detail_layout.addWidget(self.detail_title)
+        detail_layout.addWidget(self.detail_status)
+        detail_layout.addWidget(self.detail_reason)
+        detail_layout.addWidget(self.detail_hint)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        self.install_part_btn = QtWidgets.QPushButton("Install part")
+        self.install_part_btn.clicked.connect(self._install_part)
+        self.install_part_btn.setVisible(False)
+        self.install_module_btn = QtWidgets.QPushButton("Install module")
+        self.install_module_btn.clicked.connect(lambda: self._start_module_job("install"))
+        self.uninstall_module_btn = QtWidgets.QPushButton("Uninstall module")
+        self.uninstall_module_btn.clicked.connect(lambda: self._start_module_job("uninstall"))
+        btn_row.addWidget(self.install_part_btn)
+        btn_row.addWidget(self.install_module_btn)
+        btn_row.addWidget(self.uninstall_module_btn)
+        btn_row.addStretch()
+        detail_layout.addLayout(btn_row)
+
+        self.progress_panel = QtWidgets.QFrame()
+        self.progress_panel.setVisible(False)
+        self.progress_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
+        cm_pp_layout = QtWidgets.QHBoxLayout(self.progress_panel)
+        cm_pp_layout.setContentsMargins(8, 4, 8, 4)
+        self.progress_title = QtWidgets.QLabel("")
+        self.progress_details = QtWidgets.QLabel("")
+        self.progress_details.setWordWrap(True)
+        cm_dismiss = QtWidgets.QPushButton("Dismiss")
+        cm_dismiss.setFixedWidth(80)
+        cm_dismiss.clicked.connect(lambda: self.progress_panel.setVisible(False))
+        cm_text = QtWidgets.QVBoxLayout()
+        cm_text.addWidget(self.progress_title)
+        cm_text.addWidget(self.progress_details)
+        cm_pp_layout.addLayout(cm_text)
+        cm_pp_layout.addStretch()
+        cm_pp_layout.addWidget(cm_dismiss)
+        detail_layout.addWidget(self.progress_panel)
+
+        splitter.addWidget(detail_widget)
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 3)
+
+        self._init_bus_subscriptions()
+        self.refresh_tree()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self._unsubscribe_all()
+        super().closeEvent(event)
+
+    def _init_bus_subscriptions(self) -> None:
+        if not self.bus or self._bus_subscriptions:
+            return
+        self._subscribe_bus(BUS_MODULE_PROGRESS, self._on_module_progress_event)
+        self._subscribe_bus(BUS_MODULE_COMPLETED, self._on_module_completed_event)
+        self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
+        self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event)
+
+    def _subscribe_bus(self, topic: Optional[str], handler: Callable[[Any], None]) -> None:
+        if not (self.bus and topic):
+            return
+
+        def _wrapped(envelope):
+            self._bus_dispatch_bridge.envelope_dispatched.emit(handler, envelope)
+
+        sub_id = self.bus.subscribe(topic, _wrapped, replay_last=False)
+        self._bus_subscriptions.append(sub_id)
+
+    def _unsubscribe_all(self) -> None:
+        if not self.bus:
+            return
+        for sub_id in self._bus_subscriptions:
+            self.bus.unsubscribe(sub_id)
+        self._bus_subscriptions.clear()
+
+    def _set_status(self, text: str) -> None:
+        self.status_label.setText(text)
+
+    def refresh_tree(self) -> None:
+        self.tree.clear()
+        data = self.adapter.list_tree()
+        module = data.get("module")
+        if not module:
+            self._set_status(data.get("reason") or "Module data unavailable.")
+            return
+        module_item = QtWidgets.QTreeWidgetItem(
+            [self._display_name(module.get("title"), module.get("module_id"), "Module"), data.get("status", "")]
+        )
+        module_item.setData(
+            0,
+            QtCore.Qt.ItemDataRole.UserRole,
+            {"type": "module", "module_id": module.get("module_id")},
+        )
+        self.tree.addTopLevelItem(module_item)
+        for section in module.get("sections", []):
+            sec_item = QtWidgets.QTreeWidgetItem(
+                [self._display_name(section.get("title"), section.get("section_id"), "Section"), section.get("status", "")]
+            )
+            sec_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "section"})
+            module_item.addChild(sec_item)
+            for package in section.get("packages", []):
+                pkg_item = QtWidgets.QTreeWidgetItem(
+                    [self._display_name(package.get("title"), package.get("package_id"), "Package"), package.get("status", "")]
+                )
+                pkg_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "package"})
+                sec_item.addChild(pkg_item)
+                for part in package.get("parts", []):
+                    part_item = QtWidgets.QTreeWidgetItem(
+                        [self._display_name(part.get("title"), part.get("part_id"), "Part"), part.get("status")]
+                    )
+                    part_item.setData(
+                        0,
+                        QtCore.Qt.ItemDataRole.UserRole,
+                        {
+                            "type": "part",
+                            "part_id": part.get("part_id"),
+                            "module_id": module.get("module_id"),
+                            "status": part.get("status"),
+                            "reason": part.get("reason"),
+                        },
+                    )
+                    sec_item.addChild(part_item)
+        self.tree.expandAll()
+        self._clear_details()
+        self._set_status("Content tree refreshed.")
+
+    def _on_selection_changed(self) -> None:
+        item = self.tree.currentItem()
+        if not item:
+            self._clear_details()
+            return
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        self.current_selection = data
+        node_type = data.get("type")
+        if node_type == "part":
+            part_id = data.get("part_id")
+            status = data.get("status") or ""
+            reason = data.get("reason") or "—"
+            self.detail_title.setText(f"Part {part_id}")
+            self.detail_status.setText(f"Status: {status}")
+            self.detail_reason.setText(f"Reason: {reason}")
+            self.detail_hint.setText("Per-part uninstall is unavailable; use module uninstall.")
+            self.install_part_btn.setVisible(True)
+            self.install_part_btn.setEnabled(status != STATUS_READY)
+            self.install_module_btn.setVisible(True)
+            self.uninstall_module_btn.setVisible(True)
+        elif node_type == "module":
+            module_id = data.get("module_id") or "module"
+            self.detail_title.setText(f"Module {module_id}")
+            self.detail_status.setText(f"Status: {item.text(1)}")
+            self.detail_reason.setText("")
+            self.detail_hint.setText("Install or uninstall the whole module.")
+            self.install_part_btn.setVisible(False)
+            self.install_module_btn.setVisible(True)
+            self.uninstall_module_btn.setVisible(True)
+        else:
+            self._clear_details()
+
+    def _clear_details(self) -> None:
+        self.current_selection = None
+        self.detail_title.setText("Select an item to view details.")
+        self.detail_status.clear()
+        self.detail_reason.clear()
+        self.detail_hint.clear()
+        self.install_part_btn.setVisible(False)
+        self.install_module_btn.setVisible(False)
+        self.uninstall_module_btn.setVisible(False)
+
+    def _install_part(self) -> None:
+        if not self.current_selection or self.current_selection.get("type") != "part":
+            return
+        if self.install_thread:
+            return
+        part_id = self.current_selection.get("part_id")
+        self.progress_dialog = QtWidgets.QProgressDialog("Installing part...", "", 0, 0, self)
+        self.progress_dialog.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        self.progress_dialog.setCancelButton(None)
+        worker = InstallWorker(self.adapter, part_id)
+        thread = QtCore.QThread()
+        self.install_thread = thread
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda result: self._on_install_finished(result, worker, thread))
+        worker.error.connect(lambda err: self._on_install_error(err, worker, thread))
+        thread.start()
+
+    def _on_install_finished(self, result: Dict, worker: InstallWorker, thread: QtCore.QThread):
+        if self.progress_dialog:
+            self.progress_dialog.close()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        self.install_thread = None
+        status = result.get("status")
+        message = result.get("reason") or "Completed."
+        QtWidgets.QMessageBox.information(self, "Install", f"Status: {status}\n{message}")
+        self.refresh_tree()
+
+    def _on_install_error(self, error: str, worker: InstallWorker, thread: QtCore.QThread):
+        if self.progress_dialog:
+            self.progress_dialog.close()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        thread.deleteLater()
+        self.install_thread = None
+        QtWidgets.QMessageBox.warning(self, "Install", f"Failed to install: {error}")
+
+    def _start_module_job(self, action: str) -> None:
+        module_id = self._selected_module_id()
+        if not module_id:
+            QtWidgets.QMessageBox.information(self, "Module", "Select the module first.")
+            return
+        if not self.bus:
+            QtWidgets.QMessageBox.information(self, "Module", "Runtime bus unavailable.")
+            return
+        if self.pending_job_id:
+            QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            return
+        topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
+        self._set_job_state(job_id=None, module_id=module_id, action=action, running=True)
+        self._show_progress_panel(
+            f"{action.title()} requested",
+            f"{action.title()} {module_id}: requesting job...",
+            running=True,
+        )
+        try:
+            response = self.bus.request(
+                topic,
+                {"module_id": module_id},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
+            return
+        if not response.get("ok") or not response.get("job_id"):
+            self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Module",
+                f"Request failed: {response.get('error') or 'unknown'}",
+            )
+            return
+        job_id = str(response["job_id"])
+        self._set_job_state(job_id=job_id, module_id=module_id, action=action, running=True)
+        self._show_progress_panel(
+            "Module job queued",
+            f"{action.title()} {module_id}: awaiting progress (job {job_id[:8]})",
+            running=True,
+        )
+
+    def _selected_module_id(self) -> Optional[str]:
+        if self.current_selection and self.current_selection.get("type") == "module":
+            return self.current_selection.get("module_id")
+        if self.current_selection and self.current_selection.get("type") == "part":
+            return self.current_selection.get("module_id")
+        return None
+
+    def _is_active_payload(self, payload: Dict[str, Any]) -> bool:
+        if not payload:
+            return False
+        job_id = payload.get("job_id")
+        module_id = payload.get("module_id")
+        if self.pending_job_id and job_id and job_id != self.pending_job_id:
+            return False
+        if self.pending_module_id and module_id and module_id != self.pending_module_id:
+            return False
+        if not (self.pending_job_id or self.pending_module_id):
+            return False
+        return True
+
+    def _on_module_progress_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if not self._is_active_payload(payload):
+            return
+        self._handle_progress_payload(payload)
+
+    def _on_job_progress_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if payload.get("job_type") not in (CORE_JOB_MODULE_INSTALL, CORE_JOB_MODULE_UNINSTALL):
+            return
+        if not self._is_active_payload(payload):
+            return
+        self._handle_progress_payload(payload)
+
+    def _handle_progress_payload(self, payload: Dict[str, Any]) -> None:
+        stage = payload.get("stage") or "Working"
+        percent = payload.get("percent")
+        percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
+        module_id = payload.get("module_id") or self.pending_module_id or "module"
+        action = (self.pending_action or "module").title()
+        details = f"{action} {module_id}: {percent_text} {stage}".strip()
+        self._show_progress_panel("Module Progress", details, running=True)
+        self._set_status(details)
+
+    def _on_module_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if not self._is_active_payload(payload):
+            return
+        ok = bool(payload.get("ok"))
+        error = payload.get("error")
+        module_id = payload.get("module_id") or self.pending_module_id or "module"
+        action = payload.get("action") or self.pending_action or "module"
+        summary = "OK" if ok else error or "failed"
+        self._show_progress_panel(
+            "Module Result",
+            f"{action.title()} {module_id}: {summary}",
+            running=False,
+            ok=ok,
+        )
+        self._set_status(f"{action.title()} {module_id}: {summary}")
+        self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+        self.refresh_tree()
+
+    def _on_job_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if payload.get("job_type") not in (CORE_JOB_MODULE_INSTALL, CORE_JOB_MODULE_UNINSTALL):
+            return
+        if not self._is_active_payload(payload):
+            return
+        ok = bool(payload.get("ok"))
+        error = payload.get("error")
+        module_id = self.pending_module_id or "module"
+        action = self.pending_action or "module"
+        summary = "OK" if ok else error or "failed"
+        self._show_progress_panel(
+            "Module Result",
+            f"{action.title()} {module_id}: {summary}",
+            running=False,
+            ok=ok,
+        )
+        self._set_status(f"{action.title()} {module_id}: {summary}")
+        self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+        self.refresh_tree()
+
+    def _set_job_state(self, *, job_id: Optional[str], module_id: Optional[str], action: Optional[str], running: bool) -> None:
+        self.pending_job_id = job_id
+        self.pending_module_id = module_id
+        self.pending_action = action if running else None
+
+    def _show_progress_panel(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
+        color = "#0d47a1"
+        if ok is True:
+            color = "#2e7d32"
+        elif ok is False:
+            color = "#b71c1c"
+        self.progress_title.setText(title)
+        self.progress_title.setStyleSheet(f"font-weight: bold; color: {color};")
+        self.progress_details.setText(details)
+        self.progress_panel.setVisible(True)
+
+    @staticmethod
+    def _display_name(title: Optional[str], fallback: Optional[str], default: str) -> str:
+        return str(title or fallback or default)
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, initial_profile: str):
@@ -1879,7 +2644,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._quit_app,
             self.current_profile,
         )
-        self.module_manager = ModuleManagerScreen(self.adapter)
+        self.module_management = ModuleManagementScreen(self._show_main_menu, bus=APP_BUS)
         self.content_browser = ContentBrowserScreen(
             self.adapter,
             self._show_main_menu,
@@ -1887,16 +2652,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_lab,
         )
         self.system_health = SystemHealthScreen(self._show_main_menu, cleanup_enabled=CORE_CENTER_AVAILABLE, bus=APP_BUS)
+        self.content_management = ContentManagementScreen(self.adapter, self._show_main_menu, bus=APP_BUS)
 
         self.stacked.addWidget(self.main_menu)
-        self.stacked.addWidget(self.module_manager)
         self.stacked.addWidget(self.content_browser)
         self.stacked.addWidget(self.system_health)
+        self.stacked.addWidget(self.module_management)
+        self.stacked.addWidget(self.content_management)
         self._show_main_menu()
 
-    def _show_module_manager(self):
+    def _show_module_management(self):
         self._dispose_lab_widget()
-        self.stacked.setCurrentWidget(self.module_manager)
+        if self.module_management:
+            self.module_management._refresh_registry()
+            self.stacked.setCurrentWidget(self.module_management)
 
     def _show_main_menu(self):
         self._dispose_lab_widget()
@@ -1932,10 +2701,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.content_browser.set_profile(self.current_profile)
 
     def _open_module_management(self):
-        PlaceholderDialog("Module Management", "Module management tools coming soon.", self).exec()
+        self._show_module_management()
 
     def _open_content_management(self):
-        PlaceholderDialog("Content Management", "Content management tools coming soon.", self).exec()
+        self._dispose_lab_widget()
+        if self.content_management:
+            self.content_management.refresh_tree()
+            self.stacked.setCurrentWidget(self.content_management)
 
     def _open_diagnostics(self):
         self._dispose_lab_widget()

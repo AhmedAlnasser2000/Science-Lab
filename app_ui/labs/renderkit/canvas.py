@@ -106,3 +106,4 @@ class RenderCanvas(QtWidgets.QWidget):
                 # Do not crash the UI for a single layer failure.
                 continue
 
+
