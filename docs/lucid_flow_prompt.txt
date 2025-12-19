@@ -1,0 +1,67 @@
+Lucidchart prompt: PhysicsLab app flowchart
+
+Create a clean, readable architecture + flow diagram for the PhysicsLab app. Use a left-to-right layout with 3 swimlanes: UI, Services, Storage. Use simple rectangles for components, diamonds only for decision points, arrows for data/control flows.
+
+Include these components:
+
+UI lane:
+- App UI (app_ui.main)
+- Home / Quick Start
+- Content Browser
+- Content Management
+- System Health / Storage
+- Settings
+- LabHost
+- Lab Plugins (gravity, projectile, electric_field, lens_ray, vector_add)
+- UI System (ui_system) [for QSS packs]
+
+Services lane:
+- Content System (content_system)
+- Runtime Bus (runtime_bus)
+- Core Center (core_center)
+- Kernel DLL bridge (ctypes) [optional]
+
+Storage lane:
+- content_repo (modules)
+- content_store (installed modules)
+- data/roaming (policy.json, registry.json, jobs.json, ui_config.json, experience_profile.json)
+- data/store/runs (run.json per run)
+- data/store/runs_local (fallback)
+- data/cache, data/dumps
+- ui_repo, ui_store (UI packs)
+- kernel/target/release/physicslab_kernel.dll
+
+Key flows to show (label arrows):
+1) App startup:
+   App UI -> UI System (load QSS pack) -> applies stylesheet
+2) Content browsing:
+   Content Browser -> Content System (list_tree, get_part)
+   Content System -> content_repo/content_store (read manifests/assets)
+3) Lab launch:
+   Content Browser -> LabHost -> Lab Plugin
+   LabHost -> Runtime Bus (core.policy.get.request, core.storage.allocate_run_dir.request)
+   Runtime Bus -> Core Center (handlers)
+   Core Center -> data/roaming (policy) and data/store/runs (run.json)
+   LabHost -> Kernel bridge -> Kernel DLL (for gravity demo only)
+4) System Health (Explorer/Educator):
+   System Health -> Runtime Bus (core.storage.report.request, core.cleanup.request)
+   Runtime Bus -> Core Center -> data/cache/dumps/data/store
+   Core Center -> Runtime Bus (core.storage.report.ready, core.cleanup.completed)
+5) Module install/uninstall (local):
+   System Health -> Runtime Bus (core.content.module.install.request / uninstall)
+   Runtime Bus -> Core Center (job)
+   Core Center -> content_repo -> content_store (copy/remove)
+   Core Center -> data/roaming/registry.json
+6) Telemetry (Explorer + policy):
+   LabHost -> Runtime Bus (lab.telemetry)
+
+Decision points (diamonds):
+- Core Center available? (if no, UI falls back to direct/local)
+- Lab part is READY? (if no, prompt install)
+- Kernel DLL found? (if no, use Python fallback)
+
+Add a legend:
+- Solid arrows: request/reply
+- Dashed arrows: event publish/subscribe
+
+Keep labels short and readable. Do not include implementation code.
