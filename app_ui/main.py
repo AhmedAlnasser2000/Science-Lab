@@ -318,7 +318,7 @@ class MainMenuScreen(QtWidgets.QWidget):
 
     def _rebuild_buttons(self) -> None:
         self._clear_buttons()
-        self._add_button("Start Physics", self.on_start_physics)
+        self._add_button("Quick Start", self.on_start_physics)
         self._add_button("Physics Content", self.on_open_content_browser)
 
         if self.profile in ("Educator", "Explorer"):
@@ -2206,11 +2206,35 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self.progress_panel.setVisible(True)
 
 
+class StatusPill(QtWidgets.QLabel):
+    def __init__(self, text: str = "") -> None:
+        super().__init__(text)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.setVisible(False)
+
+    def set_status(self, status: str) -> None:
+        status = (status or "").upper()
+        bg = "#eeeeee"
+        fg = "#333333"
+        if status == STATUS_READY:
+            bg, fg = "#e8f5e9", "#2e7d32"
+        elif status == STATUS_NOT_INSTALLED:
+            bg, fg = "#fff8e1", "#f57c00"
+        elif status == STATUS_UNAVAILABLE:
+            bg, fg = "#ffebee", "#b71c1c"
+        self.setText(status or "UNKNOWN")
+        self.setStyleSheet(
+            f"padding: 2px 8px; border-radius: 10px; background: {bg}; color: {fg};"
+        )
+        self.setVisible(True)
+
+
 class ContentManagementScreen(QtWidgets.QWidget):
-    def __init__(self, adapter: "ContentSystemAdapter", on_back, *, bus=None):
+    def __init__(self, adapter: "ContentSystemAdapter", on_back, on_open_part=None, *, bus=None):
         super().__init__()
         self.adapter = adapter
         self.on_back = on_back
+        self.on_open_part = on_open_part
         self.bus = bus
         self._bus_dispatch_bridge = _BusDispatchBridge(self)
         self._bus_subscriptions: list[str] = []
@@ -2225,16 +2249,26 @@ class ContentManagementScreen(QtWidgets.QWidget):
 
         header = QtWidgets.QHBoxLayout()
         title = QtWidgets.QLabel("Content Management")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
         header.addWidget(title)
         header.addStretch()
-        refresh_btn = QtWidgets.QPushButton("Refresh")
-        refresh_btn.clicked.connect(self.refresh_tree)
-        header.addWidget(refresh_btn)
         back_btn = QtWidgets.QPushButton("Back")
         back_btn.clicked.connect(self.on_back)
         header.addWidget(back_btn)
         layout.addLayout(header)
+
+        toolbar = QtWidgets.QHBoxLayout()
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_tree)
+        toolbar.addWidget(refresh_btn)
+        toolbar.addSpacing(12)
+        toolbar.addWidget(QtWidgets.QLabel("Show:"))
+        self.filter_combo = QtWidgets.QComboBox()
+        self.filter_combo.addItems(["All", "Installed only", "Not installed"])
+        self.filter_combo.currentIndexChanged.connect(self._apply_filter)
+        toolbar.addWidget(self.filter_combo)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
 
         self.status_label = QtWidgets.QLabel()
         layout.addWidget(self.status_label)
@@ -2252,20 +2286,24 @@ class ContentManagementScreen(QtWidgets.QWidget):
         header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         header_view.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.tree.itemSelectionChanged.connect(self._on_selection_changed)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         splitter.addWidget(self.tree)
 
         detail_widget = QtWidgets.QWidget()
         detail_layout = QtWidgets.QVBoxLayout(detail_widget)
         self.detail_title = QtWidgets.QLabel("Select an item to view details.")
-        self.detail_title.setStyleSheet("font-size: 16px; font-weight: bold;")
-        self.detail_status = QtWidgets.QLabel("")
-        self.detail_reason = QtWidgets.QLabel("")
-        self.detail_reason.setStyleSheet("color: #555;")
+        self.detail_title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.detail_status_pill = StatusPill()
+        self.detail_meta = QtWidgets.QLabel("")
+        self.detail_meta.setStyleSheet("color: #555;")
+        self.detail_action = QtWidgets.QLabel("")
+        self.detail_action.setStyleSheet("color: #777;")
         self.detail_hint = QtWidgets.QLabel("")
         self.detail_hint.setStyleSheet("color: #777;")
         detail_layout.addWidget(self.detail_title)
-        detail_layout.addWidget(self.detail_status)
-        detail_layout.addWidget(self.detail_reason)
+        detail_layout.addWidget(self.detail_status_pill)
+        detail_layout.addWidget(self.detail_meta)
+        detail_layout.addWidget(self.detail_action)
         detail_layout.addWidget(self.detail_hint)
 
         btn_row = QtWidgets.QHBoxLayout()
@@ -2306,6 +2344,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         splitter.setStretchFactor(1, 3)
 
         self._init_bus_subscriptions()
+        self._tree_data: Optional[Dict[str, Any]] = None
         self.refresh_tree()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
@@ -2341,12 +2380,29 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.status_label.setText(text)
 
     def refresh_tree(self) -> None:
-        self.tree.clear()
         data = self.adapter.list_tree()
+        self._tree_data = data
+        self._build_tree()
+        self._set_status("Content tree refreshed.")
+
+    def _build_tree(self) -> None:
+        self.tree.clear()
+        data = self._tree_data or {}
         module = data.get("module")
         if not module:
             self._set_status(data.get("reason") or "Module data unavailable.")
+            self._clear_details()
             return
+
+        filter_mode = self.filter_combo.currentText()
+
+        def part_allowed(status: str) -> bool:
+            if filter_mode == "Installed only":
+                return status == STATUS_READY
+            if filter_mode == "Not installed":
+                return status != STATUS_READY
+            return True
+
         module_item = QtWidgets.QTreeWidgetItem(
             [self._display_name(module.get("title"), module.get("module_id"), "Module"), data.get("status", "")]
         )
@@ -2355,22 +2411,25 @@ class ContentManagementScreen(QtWidgets.QWidget):
             QtCore.Qt.ItemDataRole.UserRole,
             {"type": "module", "module_id": module.get("module_id")},
         )
-        self.tree.addTopLevelItem(module_item)
+        added_any = False
         for section in module.get("sections", []):
             sec_item = QtWidgets.QTreeWidgetItem(
                 [self._display_name(section.get("title"), section.get("section_id"), "Section"), section.get("status", "")]
             )
             sec_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "section"})
-            module_item.addChild(sec_item)
+            sec_has_child = False
             for package in section.get("packages", []):
                 pkg_item = QtWidgets.QTreeWidgetItem(
                     [self._display_name(package.get("title"), package.get("package_id"), "Package"), package.get("status", "")]
                 )
                 pkg_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "package"})
-                sec_item.addChild(pkg_item)
+                pkg_has_child = False
                 for part in package.get("parts", []):
+                    status = part.get("status")
+                    if not part_allowed(status):
+                        continue
                     part_item = QtWidgets.QTreeWidgetItem(
-                        [self._display_name(part.get("title"), part.get("part_id"), "Part"), part.get("status")]
+                        [self._display_name(part.get("title"), part.get("part_id"), "Part"), status]
                     )
                     part_item.setData(
                         0,
@@ -2379,14 +2438,28 @@ class ContentManagementScreen(QtWidgets.QWidget):
                             "type": "part",
                             "part_id": part.get("part_id"),
                             "module_id": module.get("module_id"),
-                            "status": part.get("status"),
+                            "status": status,
                             "reason": part.get("reason"),
                         },
                     )
-                    sec_item.addChild(part_item)
-        self.tree.expandAll()
+                    pkg_item.addChild(part_item)
+                    pkg_has_child = True
+                if pkg_has_child:
+                    sec_item.addChild(pkg_item)
+                    sec_has_child = True
+            if sec_has_child:
+                module_item.addChild(sec_item)
+                added_any = True
+
+        if added_any or filter_mode == "All":
+            self.tree.addTopLevelItem(module_item)
+            self.tree.expandAll()
+        else:
+            self._set_status("No installed modules yet. Install from Module Management.")
         self._clear_details()
-        self._set_status("Content tree refreshed.")
+
+    def _apply_filter(self) -> None:
+        self._build_tree()
 
     def _on_selection_changed(self) -> None:
         item = self.tree.currentItem()
@@ -2399,11 +2472,15 @@ class ContentManagementScreen(QtWidgets.QWidget):
         if node_type == "part":
             part_id = data.get("part_id")
             status = data.get("status") or ""
-            reason = data.get("reason") or "—"
+            reason = data.get("reason") or "Not installed."
             self.detail_title.setText(f"Part {part_id}")
-            self.detail_status.setText(f"Status: {status}")
-            self.detail_reason.setText(f"Reason: {reason}")
-            self.detail_hint.setText("Per-part uninstall is unavailable; use module uninstall.")
+            self.detail_status_pill.set_status(status)
+            self.detail_meta.setText(f"Module: {data.get('module_id') or 'physics'}")
+            if status == STATUS_READY:
+                self.detail_action.setText("Action: Open in Content Browser or Uninstall Module.")
+            else:
+                self.detail_action.setText("Action: Install Module.")
+            self.detail_hint.setText(f"Reason: {reason}")
             self.install_part_btn.setVisible(True)
             self.install_part_btn.setEnabled(status != STATUS_READY)
             self.install_module_btn.setVisible(True)
@@ -2411,9 +2488,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
         elif node_type == "module":
             module_id = data.get("module_id") or "module"
             self.detail_title.setText(f"Module {module_id}")
-            self.detail_status.setText(f"Status: {item.text(1)}")
-            self.detail_reason.setText("")
-            self.detail_hint.setText("Install or uninstall the whole module.")
+            self.detail_status_pill.set_status(item.text(1))
+            self.detail_meta.setText(f"Module ID: {module_id}")
+            module_status = item.text(1)
+            if module_status == STATUS_READY:
+                self.detail_action.setText("Action: Uninstall Module.")
+            else:
+                self.detail_action.setText("Action: Install Module.")
+            self.detail_hint.setText("Manage the entire module.")
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(True)
             self.uninstall_module_btn.setVisible(True)
@@ -2423,12 +2505,21 @@ class ContentManagementScreen(QtWidgets.QWidget):
     def _clear_details(self) -> None:
         self.current_selection = None
         self.detail_title.setText("Select an item to view details.")
-        self.detail_status.clear()
-        self.detail_reason.clear()
+        self.detail_status_pill.setVisible(False)
+        self.detail_meta.clear()
+        self.detail_action.clear()
         self.detail_hint.clear()
         self.install_part_btn.setVisible(False)
         self.install_module_btn.setVisible(False)
         self.uninstall_module_btn.setVisible(False)
+
+    def _on_item_double_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        if data.get("type") != "part":
+            return
+        part_id = data.get("part_id")
+        if part_id and self.on_open_part:
+            self.on_open_part(part_id)
 
     def _install_part(self) -> None:
         if not self.current_selection or self.current_selection.get("type") != "part":
@@ -2652,7 +2743,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_lab,
         )
         self.system_health = SystemHealthScreen(self._show_main_menu, cleanup_enabled=CORE_CENTER_AVAILABLE, bus=APP_BUS)
-        self.content_management = ContentManagementScreen(self.adapter, self._show_main_menu, bus=APP_BUS)
+        self.content_management = ContentManagementScreen(
+            self.adapter,
+            self._show_main_menu,
+            self._open_content_browser_from_management,
+            bus=APP_BUS,
+        )
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.content_browser)
@@ -2672,10 +2768,36 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.setCurrentWidget(self.main_menu)
 
     def _start_physics(self):
-        for part_id in RECOMMENDED_PART_SEQUENCE:
-            if self._open_content_browser(focus_part=part_id):
-                return
-        self._open_content_browser()
+        quick_part = self._find_quick_start_part()
+        if quick_part:
+            self.open_part_by_id(quick_part)
+            return
+        self._dispose_lab_widget()
+        if self.content_management:
+            self.content_management.refresh_tree()
+            self.content_management._set_status("Install a module to begin.")
+            self.stacked.setCurrentWidget(self.content_management)
+            return
+        self._show_module_management()
+
+    def _find_quick_start_part(self) -> Optional[str]:
+        data = self.adapter.list_tree()
+        module = data.get("module") if isinstance(data, dict) else None
+        if not isinstance(module, dict):
+            return None
+        for section in module.get("sections", []):
+            for package in section.get("packages", []):
+                for part in package.get("parts", []):
+                    if part.get("status") != STATUS_READY:
+                        continue
+                    part_id = part.get("part_id")
+                    if not part_id:
+                        continue
+                    lab = part.get("lab")
+                    lab_id = lab.get("lab_id") if isinstance(lab, dict) else None
+                    if lab_id or str(part_id).endswith("_demo"):
+                        return part_id
+        return None
 
     def _open_content_browser(self, focus_part: Optional[str] = None) -> bool:
         self._dispose_lab_widget()
@@ -2690,6 +2812,40 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_content_browser(self):
         self._dispose_lab_widget()
         self.stacked.setCurrentWidget(self.content_browser)
+
+    def _open_content_browser_from_management(self, part_id: str) -> None:
+        self._open_content_browser(focus_part=part_id)
+
+    def open_part_by_id(self, part_id: str) -> None:
+        detail = self.adapter.get_part(part_id)
+        manifest = detail.get("manifest") or {}
+        behavior = manifest.get("behavior") or {}
+        lab_id = None
+        detail_lab = detail.get("lab") if isinstance(detail, dict) else None
+        if isinstance(detail_lab, dict):
+            candidate = detail_lab.get("lab_id")
+            if isinstance(candidate, str) and candidate.strip():
+                lab_id = candidate.strip()
+        if not lab_id:
+            x_ext = manifest.get("x_extensions")
+            if isinstance(x_ext, dict):
+                lab_info = x_ext.get("lab")
+                if isinstance(lab_info, dict):
+                    candidate = lab_info.get("lab_id")
+                    if isinstance(candidate, str) and candidate.strip():
+                        lab_id = candidate.strip()
+        if not lab_id and behavior.get("preset") == "gravity-demo":
+            lab_id = "gravity"
+        if not lab_id and part_id == "gravity_demo":
+            lab_id = "gravity"
+        if not lab_id and behavior.get("preset") == "projectile-demo":
+            lab_id = "projectile"
+        if not lab_id and part_id == "projectile_demo":
+            lab_id = "projectile"
+        if lab_id and detail.get("status") == STATUS_READY:
+            self._open_lab(lab_id, part_id, manifest, detail)
+            return
+        self._open_content_browser(focus_part=part_id)
 
     def _open_settings(self):
         dialog = SettingsDialog(self)
