@@ -28,6 +28,7 @@ from .base import LabPlugin
 from .renderkit import AssetResolver, AssetCache, RenderCanvas
 from .shared import primitives as shared_primitives
 from .shared.math2d import Vec2
+from .shared.viewport import ViewTransform
 
 
 class LensRayLabPlugin(LabPlugin):
@@ -274,27 +275,37 @@ class LensRayLabWidget(QtWidgets.QWidget):
 
         self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
 
+        def _build_view(p: QtGui.QPainter) -> ViewTransform:
+            rect_px = QtCore.QRectF(p.viewport())
+            view = ViewTransform(padding_px=28)
+            view.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
+            view.fit(int(rect_px.width()), int(rect_px.height()))
+            return view
+
         def layer_grid(p: QtGui.QPainter, ctx):
             rect_px = QtCore.QRectF(p.viewport())
-            origin = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            view = _build_view(p)
+            origin = view.world_to_screen(QtCore.QPointF(0.0, 0.0))
             step_world = 2.0
-            step_px = abs(ctx.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
+            step_px = abs(view.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
             shared_primitives.draw_grid(p, rect_px, step_px=step_px)
             axis_len = min(rect_px.width(), rect_px.height()) / 2.0
             shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
 
         def layer_lens(p: QtGui.QPainter, ctx):
+            view = _build_view(p)
             p.save()
             p.setPen(QtGui.QPen(QtGui.QColor("#9ad2ff"), 3))
             p.drawLine(
-                ctx.world_to_screen(QtCore.QPointF(0.0, world["ymin"])),
-                ctx.world_to_screen(QtCore.QPointF(0.0, world["ymax"])),
+                view.world_to_screen(QtCore.QPointF(0.0, world["ymin"])),
+                view.world_to_screen(QtCore.QPointF(0.0, world["ymax"])),
             )
             p.restore()
 
         def layer_rays(p: QtGui.QPainter, ctx):
-            start = ctx.world_to_screen(QtCore.QPointF(*scene["incident"]["start"]))
-            end = ctx.world_to_screen(QtCore.QPointF(*scene["incident"]["end"]))
+            view = _build_view(p)
+            start = view.world_to_screen(QtCore.QPointF(*scene["incident"]["start"]))
+            end = view.world_to_screen(QtCore.QPointF(*scene["incident"]["end"]))
             shared_primitives.draw_vector(
                 p,
                 start,
@@ -305,8 +316,8 @@ class LensRayLabWidget(QtWidgets.QWidget):
             p.drawText(end + QtCore.QPointF(8, -6), "I,i")
             p.restore()
             if scene.get("refracted"):
-                start = ctx.world_to_screen(QtCore.QPointF(*scene["refracted"]["start"]))
-                end = ctx.world_to_screen(QtCore.QPointF(*scene["refracted"]["end"]))
+                start = view.world_to_screen(QtCore.QPointF(*scene["refracted"]["start"]))
+                end = view.world_to_screen(QtCore.QPointF(*scene["refracted"]["end"]))
                 shared_primitives.draw_vector(
                     p,
                     start,
@@ -317,8 +328,8 @@ class LensRayLabWidget(QtWidgets.QWidget):
                 p.drawText(end + QtCore.QPointF(8, -6), "I,t")
                 p.restore()
             if scene.get("reflected"):
-                start = ctx.world_to_screen(QtCore.QPointF(*scene["reflected"]["start"]))
-                end = ctx.world_to_screen(QtCore.QPointF(*scene["reflected"]["end"]))
+                start = view.world_to_screen(QtCore.QPointF(*scene["reflected"]["start"]))
+                end = view.world_to_screen(QtCore.QPointF(*scene["reflected"]["end"]))
                 shared_primitives.draw_vector(
                     p,
                     start,
@@ -332,18 +343,19 @@ class LensRayLabWidget(QtWidgets.QWidget):
             p.save()
             p.setPen(QtGui.QPen(QtGui.QColor("#6f7ba5"), 2))
             p.drawLine(
-                ctx.world_to_screen(QtCore.QPointF(world["xmin"], 0)),
-                ctx.world_to_screen(QtCore.QPointF(world["xmax"], 0)),
+                view.world_to_screen(QtCore.QPointF(world["xmin"], 0)),
+                view.world_to_screen(QtCore.QPointF(world["xmax"], 0)),
             )
             p.setPen(QtGui.QPen(QtGui.QColor("#9099c4"), 1, QtCore.Qt.PenStyle.DashLine))
             p.drawLine(
-                ctx.world_to_screen(QtCore.QPointF(0, world["ymin"])),
-                ctx.world_to_screen(QtCore.QPointF(0, world["ymax"])),
+                view.world_to_screen(QtCore.QPointF(0, world["ymin"])),
+                view.world_to_screen(QtCore.QPointF(0, world["ymax"])),
             )
             p.restore()
 
         def layer_text(p: QtGui.QPainter, ctx):
-            base = ctx.world_to_screen(QtCore.QPointF(world["xmax"] * 0.55, world["ymax"] * 0.75))
+            view = _build_view(p)
+            base = view.world_to_screen(QtCore.QPointF(world["xmax"] * 0.55, world["ymax"] * 0.75))
             p.save()
             p.setPen(ctx.palette.color(QtGui.QPalette.ColorRole.Text))
             p.drawText(base, f"θi={scene['overlays']['theta_i']:.1f}°")

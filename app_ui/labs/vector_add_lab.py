@@ -30,6 +30,7 @@ from .base import LabPlugin
 from .renderkit import AssetResolver, AssetCache, RenderCanvas
 from .shared import primitives as shared_primitives
 from .shared.math2d import Vec2
+from .shared.viewport import ViewTransform
 
 
 class VectorAddLabPlugin(LabPlugin):
@@ -245,6 +246,13 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         world = {"xmin": -span, "xmax": span, "ymin": -span, "ymax": span}
         self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
 
+        def _build_view(p: QtGui.QPainter) -> ViewTransform:
+            rect_px = QtCore.QRectF(p.viewport())
+            view = ViewTransform(padding_px=28)
+            view.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
+            view.fit(int(rect_px.width()), int(rect_px.height()))
+            return view
+
         vectors = [
             {"start": Vec2(0.0, 0.0), "end": a_vec, "label": "A", "color": QtGui.QColor("#7fa8ff")},
             {"start": Vec2(0.0, 0.0), "end": b_vec, "label": "B", "color": QtGui.QColor("#c1c7d0")},
@@ -253,17 +261,19 @@ class VectorAddLabWidget(QtWidgets.QWidget):
 
         def layer_grid(p: QtGui.QPainter, ctx):
             rect_px = QtCore.QRectF(p.viewport())
-            origin = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            view = _build_view(p)
+            origin = view.world_to_screen(QtCore.QPointF(0.0, 0.0))
             step_world = max(1.0, span / 8.0)
-            step_px = abs(ctx.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
+            step_px = abs(view.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
             shared_primitives.draw_grid(p, rect_px, step_px=step_px)
             axis_len = min(rect_px.width(), rect_px.height()) / 2.0
             shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
 
         def layer_vectors(p: QtGui.QPainter, ctx):
+            view = _build_view(p)
             for vec in vectors:
-                start = ctx.world_to_screen(QtCore.QPointF(vec["start"].x, vec["start"].y))
-                end = ctx.world_to_screen(QtCore.QPointF(vec["end"].x, vec["end"].y))
+                start = view.world_to_screen(QtCore.QPointF(vec["start"].x, vec["start"].y))
+                end = view.world_to_screen(QtCore.QPointF(vec["end"].x, vec["end"].y))
                 shared_primitives.draw_vector(
                     p,
                     start,

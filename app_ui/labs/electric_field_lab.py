@@ -28,6 +28,7 @@ from .base import LabPlugin
 from .renderkit import AssetResolver, AssetCache, RenderCanvas
 from .shared import primitives as shared_primitives
 from .shared.math2d import Vec2
+from .shared.viewport import ViewTransform
 
 
 class ElectricFieldLabPlugin(LabPlugin):
@@ -275,18 +276,27 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         }
         self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
 
+        def _build_view(p: QtGui.QPainter) -> ViewTransform:
+            rect_px = QtCore.QRectF(p.viewport())
+            view = ViewTransform(padding_px=28)
+            view.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
+            view.fit(int(rect_px.width()), int(rect_px.height()))
+            return view
+
         def layer_grid(p: QtGui.QPainter, ctx):
             rect_px = QtCore.QRectF(p.viewport())
-            origin = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            view = _build_view(p)
+            origin = view.world_to_screen(QtCore.QPointF(0.0, 0.0))
             step_world = 2.0
-            step_px = abs(ctx.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
+            step_px = abs(view.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
             shared_primitives.draw_grid(p, rect_px, step_px=step_px)
             axis_len = min(rect_px.width(), rect_px.height()) / 2.0
             shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
 
         def layer_charge(p: QtGui.QPainter, ctx):
-            center = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
-            unit_px = abs(ctx.world_to_screen(QtCore.QPointF(1.0, 0.0)).x() - center.x())
+            view = _build_view(p)
+            center = view.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            unit_px = abs(view.world_to_screen(QtCore.QPointF(1.0, 0.0)).x() - center.x())
             radius = max(8.0, unit_px * 0.9)
             rect = QtCore.QRectF(
                 center.x() - radius,
@@ -311,9 +321,10 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
             p.restore()
 
         def layer_vectors(p: QtGui.QPainter, ctx):
+            view = _build_view(p)
             for vec in vectors:
-                start = ctx.world_to_screen(QtCore.QPointF(*vec["start"]))
-                end = ctx.world_to_screen(QtCore.QPointF(*vec["end"]))
+                start = view.world_to_screen(QtCore.QPointF(*vec["start"]))
+                end = view.world_to_screen(QtCore.QPointF(*vec["end"]))
                 shared_primitives.draw_vector(
                     p,
                     start,
@@ -323,10 +334,11 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         def layer_samples(p: QtGui.QPainter, ctx):
             if not show_values:
                 return
+            view = _build_view(p)
             p.save()
             p.setPen(ctx.palette.color(QtGui.QPalette.ColorRole.Text))
             for sample in samples:
-                pos = ctx.world_to_screen(QtCore.QPointF(*sample["pos"]))
+                pos = view.world_to_screen(QtCore.QPointF(*sample["pos"]))
                 p.drawText(pos + QtCore.QPointF(6, -6), sample["text"])
             p.restore()
 
