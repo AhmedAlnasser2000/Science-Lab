@@ -9,3 +9,9 @@ __pycache__/
 
 # IDE
 .vscode/
+
+# Runtime outputs and local mirrors (not source of truth)
+data/store/runs/
+data/store/runs_local/
+content_store/
+ui_store/
