@@ -1,0 +1,16 @@
+{
+  "labs": {
+    "gravity": {
+      "show_grid": true,
+      "show_axes": true
+    },
+    "vector_add": {
+      "show_grid": true,
+      "show_axes": false
+    },
+    "electric_field": {
+      "show_grid": true,
+      "show_axes": false
+    }
+  }
+}

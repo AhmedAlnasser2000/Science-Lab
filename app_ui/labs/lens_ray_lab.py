@@ -25,6 +25,7 @@ def _agent_log(payload: Dict[str, object]) -> None:
     # endregion
 
 from .base import LabPlugin
+from .context import LabContext, LabUserPrefs
 from .renderkit import AssetResolver, AssetCache, RenderCanvas
 from .shared import primitives as shared_primitives
 from .shared.math2d import Vec2
@@ -50,6 +51,7 @@ class LensRayLabWidget(QtWidgets.QWidget):
         self.get_profile = get_profile
         self.profile = get_profile()
         self.reduced_motion = False
+        self.lab_context: LabContext | None = None
         self.resolver = AssetResolver()
         self.cache = AssetCache()
         self._step_n = 0
@@ -160,6 +162,11 @@ class LensRayLabWidget(QtWidgets.QWidget):
         self.profile = profile
         self._step()
 
+    def set_lab_context(self, context: LabContext) -> None:
+        self.lab_context = context
+        self.reduced_motion = bool(context.reduced_motion)
+        self.canvas.update()
+
     def stop_simulation(self) -> None:
         self.timer.stop()
         self.run_btn.setText("Run")
@@ -186,6 +193,12 @@ class LensRayLabWidget(QtWidgets.QWidget):
         self.n1 = self.n1_spin.value()
         self.n2 = self.n2_spin.value()
         self._step()
+
+    def _get_prefs(self) -> LabUserPrefs:
+        ctx = self.lab_context
+        if ctx and ctx.user_prefs:
+            return ctx.user_prefs
+        return LabUserPrefs()
 
     def _toggle_run(self) -> None:
         if self.timer.isActive():
@@ -284,13 +297,16 @@ class LensRayLabWidget(QtWidgets.QWidget):
 
         def layer_grid(p: QtGui.QPainter, ctx):
             rect_px = QtCore.QRectF(p.viewport())
+            prefs = self._get_prefs()
             view = _build_view(p)
             origin = view.world_to_screen(QtCore.QPointF(0.0, 0.0))
             step_world = 2.0
             step_px = abs(view.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
-            shared_primitives.draw_grid(p, rect_px, step_px=step_px)
-            axis_len = min(rect_px.width(), rect_px.height()) / 2.0
-            shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
+            if prefs.show_grid:
+                shared_primitives.draw_grid(p, rect_px, step_px=step_px)
+            if prefs.show_axes:
+                axis_len = min(rect_px.width(), rect_px.height()) / 2.0
+                shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
 
         def layer_lens(p: QtGui.QPainter, ctx):
             view = _build_view(p)

@@ -14,6 +14,9 @@ try:
 except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
+from .context import LabContext
+from .prefs_store import get_lab_prefs, save_lab_prefs
+
 RUN_DIR_REQUEST_TOPIC = (
     BUS_TOPICS.CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST if BUS_TOPICS else "core.storage.allocate_run_dir.request"
 )
@@ -57,8 +60,19 @@ class LabHost(QtWidgets.QWidget):
         self.run_context = self._init_run_context()
         self.run_context.setdefault("policy", self.policy)
         self.run_context.setdefault("profile", self.profile)
+        self.user_prefs = get_lab_prefs(self.lab_id)
+        self.lab_context = LabContext(
+            lab_id=self.lab_id,
+            profile=self.profile,
+            reduced_motion=self.reduced_motion,
+            run_id=self.run_context.get("run_id"),
+            run_dir=self.run_context.get("run_dir"),
+            policy=dict(self.policy),
+            user_prefs=self.user_prefs,
+        )
         print(f"[lab_host] policy resolved for {self.lab_id}: {self.policy}")
         self._apply_run_context()
+        self._apply_lab_context()
         self.telemetry_timer = QtCore.QTimer(self)
         self.telemetry_timer.timeout.connect(self._emit_telemetry)
         self.telemetry_start: Optional[float] = None
@@ -76,6 +90,14 @@ class LabHost(QtWidgets.QWidget):
         self.export_status.setStyleSheet("color: #4a4a4a; font-size: 12px;")
         self.export_status.setVisible(False)
         controls.addWidget(self.export_status)
+        self.grid_toggle = QtWidgets.QCheckBox("Grid")
+        self.grid_toggle.setChecked(self.user_prefs.show_grid)
+        self.grid_toggle.toggled.connect(self._on_prefs_changed)
+        controls.addWidget(self.grid_toggle)
+        self.axes_toggle = QtWidgets.QCheckBox("Axes")
+        self.axes_toggle.setChecked(self.user_prefs.show_axes)
+        self.axes_toggle.toggled.connect(self._on_prefs_changed)
+        controls.addWidget(self.axes_toggle)
         controls.addStretch()
         main_layout.addLayout(controls)
 
@@ -199,6 +221,16 @@ class LabHost(QtWidgets.QWidget):
         self.export_status.setText(text)
         self.export_status.setVisible(True)
 
+    def _on_prefs_changed(self) -> None:
+        self.lab_context.user_prefs.show_grid = self.grid_toggle.isChecked()
+        self.lab_context.user_prefs.show_axes = self.axes_toggle.isChecked()
+        save_lab_prefs(self.lab_id, self.lab_context.user_prefs)
+        self._apply_lab_context()
+        try:
+            self.lab_widget.update()
+        except Exception:
+            pass
+
     def _export_run_metadata(self, context: dict) -> None:
         run_dir = Path(context.get("run_dir") or "")
         if not run_dir:
@@ -219,6 +251,24 @@ class LabHost(QtWidgets.QWidget):
                 self.lab_widget.set_run_context(context)
             except Exception:
                 pass
+
+    def _apply_lab_context(self) -> None:
+        if hasattr(self.lab_widget, "set_context"):
+            try:
+                self.lab_widget.set_context(self.lab_context)
+                return
+            except Exception:
+                pass
+        if hasattr(self.lab_widget, "set_lab_context"):
+            try:
+                self.lab_widget.set_lab_context(self.lab_context)
+                return
+            except Exception:
+                pass
+        try:
+            setattr(self.lab_widget, "lab_context", self.lab_context)
+        except Exception:
+            pass
 
     def _init_policy(self) -> dict:
         policy = dict(DEFAULT_POLICY)
