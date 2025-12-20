@@ -1,67 +1,78 @@
-Lucidchart prompt: PhysicsLab app flowchart
+Lucidchart prompt: PhysicsLab swimlane flowchart (3 lanes)
 
-Create a clean, readable architecture + flow diagram for the PhysicsLab app. Use a left-to-right layout with 3 swimlanes: UI, Services, Storage. Use simple rectangles for components, diamonds only for decision points, arrows for data/control flows.
+Create a precise, readable left-to-right architecture + runtime flow diagram for PhysicsLab. Use exactly 3 swimlanes: UI, Services, Storage. Use rectangles for components, diamonds only for decisions, arrows for flows. Keep labels short. No implementation code.
 
-Include these components:
-
-UI lane:
+UI lane (screens + UI containers):
 - App UI (app_ui.main)
 - Home / Quick Start
-- Content Browser
+- Physics Content (Content Browser)
+- Module Management
 - Content Management
 - System Health / Storage
 - Settings
 - LabHost
-- Lab Plugins (gravity, projectile, electric_field, lens_ray, vector_add)
-- UI System (ui_system) [for QSS packs]
+- Lab Plugins: gravity, projectile, electric_field, lens_ray, vector_add
 
-Services lane:
+Services lane (runtime services):
+- UI System (ui_system) [QSS pack manager]
 - Content System (content_system)
 - Runtime Bus (runtime_bus)
-- Core Center (core_center)
-- Kernel DLL bridge (ctypes) [optional]
+- Core Center (core_center) [optional]
+- Kernel Bridge (ctypes) [optional, gravity only]
 
-Storage lane:
-- content_repo (modules)
-- content_store (installed modules)
-- data/roaming (policy.json, registry.json, jobs.json, ui_config.json, experience_profile.json)
-- data/store/runs (run.json per run)
-- data/store/runs_local (fallback)
-- data/cache, data/dumps
-- ui_repo, ui_store (UI packs)
+Storage lane (data + packs + binary):
+- content_repo/physics_v1 (modules)
+- content_store/physics_v1 (installed modules/assets)
+- ui_repo/ui_v1 (UI packs)
+- ui_store/ui_v1 (installed UI packs)
+- data/roaming (ui_config.json, experience_profile.json, policy.json, registry.json, jobs.json)
+- data/store/runs (per-run run.json)
+- data/store/runs_local (fallback runs)
+- data/cache
+- data/dumps
 - kernel/target/release/physicslab_kernel.dll
 
-Key flows to show (label arrows):
-1) App startup:
-   App UI -> UI System (load QSS pack) -> applies stylesheet
-2) Content browsing:
+Key flows (label arrows; use solid for request/reply, dashed for events):
+1) Startup + theming:
+   App UI -> UI System (load active pack) -> ui_repo/ui_store (QSS) -> App UI (apply stylesheet)
+2) Quick Start vs Physics Content:
+   Home / Quick Start -> Content System (list_tree) -> Decision: READY lab part?
+     - Yes -> LabHost (open lab directly)
+     - No -> Content Management (message: install a module)
+   Home / Physics Content -> Content Browser
+3) Content browsing + open:
    Content Browser -> Content System (list_tree, get_part)
    Content System -> content_repo/content_store (read manifests/assets)
-3) Lab launch:
-   Content Browser -> LabHost -> Lab Plugin
+   Content Browser -> Decision: lab part READY?
+     - Yes -> LabHost -> Lab Plugin
+     - No -> install prompt
+4) Lab host runtime services:
    LabHost -> Runtime Bus (core.policy.get.request, core.storage.allocate_run_dir.request)
-   Runtime Bus -> Core Center (handlers)
-   Core Center -> data/roaming (policy) and data/store/runs (run.json)
-   LabHost -> Kernel bridge -> Kernel DLL (for gravity demo only)
-4) System Health (Explorer/Educator):
+   Runtime Bus -> Core Center (handlers) -> data/roaming + data/store/runs
+   LabHost -> Decision: Core Center available?
+     - No -> data/store/runs_local (local run dir)
+   LabHost -> Kernel Bridge -> kernel DLL (gravity only)
+   Kernel Bridge -> Decision: DLL found?
+     - No -> Python fallback (inside gravity lab)
+5) System Health / Storage (Educator/Explorer):
    System Health -> Runtime Bus (core.storage.report.request, core.cleanup.request)
-   Runtime Bus -> Core Center -> data/cache/dumps/data/store
-   Core Center -> Runtime Bus (core.storage.report.ready, core.cleanup.completed)
-5) Module install/uninstall (local):
+   Runtime Bus -> Core Center -> data/cache + data/dumps + data/store
+   Core Center -> Runtime Bus (core.storage.report.ready, core.cleanup.completed) [dashed]
+   Explorer: System Health -> Runtime Bus (core.jobs.list.request) -> Core Center -> data/roaming/jobs.json
+6) Module install/uninstall (Explorer, local):
    System Health -> Runtime Bus (core.content.module.install.request / uninstall)
    Runtime Bus -> Core Center (job)
    Core Center -> content_repo -> content_store (copy/remove)
    Core Center -> data/roaming/registry.json
-6) Telemetry (Explorer + policy):
-   LabHost -> Runtime Bus (lab.telemetry)
+7) Telemetry (Explorer + policy):
+   LabHost -> Runtime Bus (lab.telemetry) [dashed]
 
 Decision points (diamonds):
-- Core Center available? (if no, UI falls back to direct/local)
-- Lab part is READY? (if no, prompt install)
-- Kernel DLL found? (if no, use Python fallback)
+- Runtime Bus available? (if no, System Health runs direct report/cleanup when Core Center is available; otherwise show unavailable)
+- Core Center available? (if no, LabHost uses runs_local; System Health shows unavailable)
+- Lab part READY? (if no, install prompt)
+- Kernel DLL found? (if no, gravity uses Python fallback)
 
-Add a legend:
-- Solid arrows: request/reply
-- Dashed arrows: event publish/subscribe
-
-Keep labels short and readable. Do not include implementation code.
+Legend:
+- Solid arrows = request/reply
+- Dashed arrows = publish/subscribe events
