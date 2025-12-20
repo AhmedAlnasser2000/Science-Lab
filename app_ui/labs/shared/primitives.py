@@ -1,72 +1,14 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from typing import Union
 
 from PyQt6 import QtCore, QtGui
 
-PointLike = Union["Vec2", QtCore.QPointF]
+from .math2d import Vec2
 
-
-@dataclass(frozen=True)
-class Vec2:
-    """Small immutable 2D vector with basic math helpers."""
-
-    x: float
-    y: float
-
-    def __add__(self, other: "Vec2") -> "Vec2":
-        return Vec2(self.x + other.x, self.y + other.y)
-
-    def __sub__(self, other: "Vec2") -> "Vec2":
-        return Vec2(self.x - other.x, self.y - other.y)
-
-    def __mul__(self, scalar: float) -> "Vec2":
-        return Vec2(self.x * scalar, self.y * scalar)
-
-    def __rmul__(self, scalar: float) -> "Vec2":
-        return self.__mul__(scalar)
-
-    def length(self) -> float:
-        return math.hypot(self.x, self.y)
-
-    def normalized(self) -> "Vec2":
-        length = self.length()
-        if length <= 1e-9:
-            return Vec2(0.0, 0.0)
-        return Vec2(self.x / length, self.y / length)
-
-    def to_point(self) -> QtCore.QPointF:
-        return QtCore.QPointF(self.x, self.y)
-
-
-@dataclass
-class ViewTransform:
-    """Pan/zoom transform between world and screen coordinates.
-
-    zoom = pixels per world unit. center_world maps to rect center.
-    """
-
-    rect_px: QtCore.QRectF
-    center_world: Vec2 = Vec2(0.0, 0.0)
-    zoom: float = 40.0
-
-    def world_to_screen(self, world: PointLike) -> QtCore.QPointF:
-        pt = _as_vec2(world)
-        cx = self.rect_px.center().x()
-        cy = self.rect_px.center().y()
-        sx = cx + (pt.x - self.center_world.x) * self.zoom
-        sy = cy - (pt.y - self.center_world.y) * self.zoom
-        return QtCore.QPointF(sx, sy)
-
-    def screen_to_world(self, screen: PointLike) -> Vec2:
-        pt = _as_vec2(screen)
-        cx = self.rect_px.center().x()
-        cy = self.rect_px.center().y()
-        wx = (pt.x - cx) / self.zoom + self.center_world.x
-        wy = -(pt.y - cy) / self.zoom + self.center_world.y
-        return Vec2(wx, wy)
+PointLike = Union[Vec2, QtCore.QPointF]
+AxesOrigin = Union[Vec2, QtCore.QPointF, QtCore.QRectF]
 
 
 def draw_grid(painter: QtGui.QPainter, rect_px: QtCore.QRectF, step_px: float = 40.0) -> None:
@@ -90,16 +32,16 @@ def draw_grid(painter: QtGui.QPainter, rect_px: QtCore.QRectF, step_px: float = 
 
 def draw_axes(
     painter: QtGui.QPainter,
-    origin_px: PointLike,
+    origin_px: AxesOrigin,
     axis_len_px: float | None = None,
 ) -> None:
-    """Draw X/Y axes crossing at origin_px."""
-    origin = _as_vec2(origin_px).to_point()
+    """Draw X/Y axes crossing at origin_px or rect center."""
+    origin, default_len = _resolve_axes_origin(origin_px)
     painter.save()
     pen = QtGui.QPen(QtGui.QColor(120, 132, 168))
     pen.setWidthF(2.0)
     painter.setPen(pen)
-    length = axis_len_px or 200.0
+    length = axis_len_px if axis_len_px is not None else default_len
     painter.drawLine(
         QtCore.QPointF(origin.x() - length, origin.y()),
         QtCore.QPointF(origin.x() + length, origin.y()),
@@ -149,3 +91,12 @@ def _as_vec2(value: PointLike) -> Vec2:
     if isinstance(value, Vec2):
         return value
     return Vec2(value.x(), value.y())
+
+
+def _resolve_axes_origin(origin_px: AxesOrigin) -> tuple[QtCore.QPointF, float]:
+    if isinstance(origin_px, QtCore.QRectF):
+        center = origin_px.center()
+        default_len = min(origin_px.width(), origin_px.height()) / 2.0
+        return center, max(20.0, default_len)
+    point = _as_vec2(origin_px).to_point()
+    return point, 200.0
