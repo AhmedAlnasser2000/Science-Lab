@@ -209,7 +209,13 @@ class VectorAddLabWidget(QtWidgets.QWidget):
                 "hypothesisId": "H4",
                 "location": "vector_add_lab:_step_once",
                 "message": "step executed",
-                "data": {"a": (ax, ay), "b": (bx, by), "r": (rx, ry), "mag": mag, "ang": ang},
+                "data": {
+                    "a": (a_vec.x, a_vec.y),
+                    "b": (b_vec.x, b_vec.y),
+                    "r": (r_vec.x, r_vec.y),
+                    "mag": mag,
+                    "ang": ang,
+                },
             }
         )
         return {"mag": mag, "ang": ang, "rx": r_vec.x, "ry": r_vec.y}
