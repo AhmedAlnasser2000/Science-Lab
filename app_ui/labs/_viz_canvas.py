@@ -5,6 +5,7 @@ from typing import Dict, Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from .shared.viewport import ViewTransform, nice_step
 
 class VizCanvas(QtWidgets.QWidget):
     """Lightweight QPainter canvas for the lab visualizations."""
@@ -13,7 +14,8 @@ class VizCanvas(QtWidgets.QWidget):
         super().__init__(parent)
         self.scene_data: Dict = {}
         self.padding = 28
-        self._transform_cache: Dict[str, float] = {}
+        self._view = ViewTransform(padding_px=self.padding)
+        self._world: Dict = {}
         self.setMinimumHeight(320)
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -27,16 +29,9 @@ class VizCanvas(QtWidgets.QWidget):
 
     # ---- Utilities -----------------------------------------------------
     def world_to_screen(self, x: float, y: float) -> QtCore.QPointF:
-        tf = self._transform_cache
-        if not tf:
+        if not self._view:
             return QtCore.QPointF(self.width() * 0.5, self.height() * 0.5)
-        world = tf["world"]
-        scale = tf["scale"]
-        pad = tf["pad"]
-        h = tf["h"]
-        sx = pad + (x - world["xmin"]) * scale
-        sy = h - pad - (y - world["ymin"]) * scale
-        return QtCore.QPointF(sx, sy)
+        return self._view.world_to_screen(QtCore.QPointF(x, y))
 
     def draw_arrow(
         self,
@@ -94,49 +89,30 @@ class VizCanvas(QtWidgets.QWidget):
         painter.restore()
 
     # ---- Drawing helpers ----------------------------------------------
-    def _nice_step(self, span: float) -> float:
-        if span <= 0:
-            return 1.0
-        raw = span / 8.0
-        power = 10 ** math.floor(math.log10(raw))
-        for m in (1, 2, 5, 10):
-            step = m * power
-            if span / step <= 12:
-                return step
-        return power * 10
-
     def _prep_transform(self) -> Dict:
-        w = max(1, self.width())
-        h = max(1, self.height())
-        pad = self.padding
         world = self.scene_data.get("world") or {
             "xmin": -10.0,
             "xmax": 10.0,
             "ymin": -10.0,
             "ymax": 10.0,
         }
-        span_x = max(1e-3, world["xmax"] - world["xmin"])
-        span_y = max(1e-3, world["ymax"] - world["ymin"])
-        usable_w = max(4.0, w - 2 * pad)
-        usable_h = max(4.0, h - 2 * pad)
-        scale = min(usable_w / span_x, usable_h / span_y)
-        self._transform_cache = {"world": world, "scale": scale, "pad": pad, "w": w, "h": h}
-        return self._transform_cache
+        self._view.padding_px = self.padding
+        self._view.set_world_bounds(
+            world["xmin"],
+            world["xmax"],
+            world["ymin"],
+            world["ymax"],
+        )
+        self._view.fit(self.width(), self.height())
+        self._world = world
+        return {"world": world}
 
-    def _draw_grid_and_axes(
-        self,
-        painter: QtGui.QPainter,
-        world: Dict,
-        scale: float,
-        w: int,
-        h: int,
-        pad: float,
-    ) -> None:
+    def _draw_grid_and_axes(self, painter: QtGui.QPainter, world: Dict) -> None:
         painter.save()
         grid_pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 22))
         grid_pen.setWidthF(1.0)
         painter.setPen(grid_pen)
-        step = self._nice_step(max(world["xmax"] - world["xmin"], world["ymax"] - world["ymin"]))
+        step = nice_step(max(world["xmax"] - world["xmin"], world["ymax"] - world["ymin"]))
 
         x = math.ceil(world["xmin"] / step) * step
         while x <= world["xmax"]:
@@ -283,9 +259,9 @@ class VizCanvas(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QtGui.QColor("#0d1021"))
 
-        tf = self._prep_transform()
-        world = tf["world"]
-        self._draw_grid_and_axes(painter, world, tf["scale"], tf["w"], tf["h"], tf["pad"])
+        self._prep_transform()
+        world = self._world
+        self._draw_grid_and_axes(painter, world)
 
         kind = self.scene_data.get("kind") or self.scene_data.get("type")
         if kind == "lens":
