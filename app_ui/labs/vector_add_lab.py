@@ -27,7 +27,9 @@ def _agent_log(payload: Dict[str, object]) -> None:
     # endregion
 
 from .base import LabPlugin
-from .renderkit import AssetResolver, AssetCache, RenderCanvas, primitives
+from .renderkit import AssetResolver, AssetCache, RenderCanvas
+from .shared import primitives as shared_primitives
+from .shared.math2d import Vec2
 
 
 class VectorAddLabPlugin(LabPlugin):
@@ -194,12 +196,12 @@ class VectorAddLabWidget(QtWidgets.QWidget):
             self.result_label.setText(f"Error: {exc}")
 
     def _step_once(self) -> Dict[str, float]:
-        ax, ay = self._components(self.a_mag.value(), self.a_ang.value())
-        bx, by = self._components(self.b_mag.value(), self.b_ang.value())
-        rx, ry = ax + bx, ay + by
-        mag = math.hypot(rx, ry)
-        ang = math.degrees(math.atan2(ry, rx)) if mag > 0 else 0.0
-        self._update_canvas(ax, ay, bx, by, rx, ry)
+        a_vec = self._components(self.a_mag.value(), self.a_ang.value())
+        b_vec = self._components(self.b_mag.value(), self.b_ang.value())
+        r_vec = a_vec + b_vec
+        mag = r_vec.length()
+        ang = math.degrees(math.atan2(r_vec.y, r_vec.x)) if mag > 0 else 0.0
+        self._update_canvas(a_vec, b_vec, r_vec)
         _agent_log(
             {
                 "sessionId": "debug-session",
@@ -210,7 +212,7 @@ class VectorAddLabWidget(QtWidgets.QWidget):
                 "data": {"a": (ax, ay), "b": (bx, by), "r": (rx, ry), "mag": mag, "ang": ang},
             }
         )
-        return {"mag": mag, "ang": ang, "rx": rx, "ry": ry}
+        return {"mag": mag, "ang": ang, "rx": r_vec.x, "ry": r_vec.y}
 
     def _set_result_text(self, result: Dict[str, float], *, prefix: str) -> None:
         mag = result.get("mag", 0.0)
@@ -219,43 +221,51 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         ry = result.get("ry", 0.0)
         self.result_label.setText(f"{prefix}: {mag:.2f} @ {ang:.1f}° (Rx={rx:.2f}, Ry={ry:.2f})")
 
-    def _components(self, magnitude: float, angle_deg: float) -> tuple[float, float]:
+    def _components(self, magnitude: float, angle_deg: float) -> Vec2:
         rad = math.radians(angle_deg)
-        return magnitude * math.cos(rad), magnitude * math.sin(rad)
+        return Vec2(magnitude * math.cos(rad), magnitude * math.sin(rad))
 
-    def _update_canvas(self, ax: float, ay: float, bx: float, by: float, rx: float, ry: float) -> None:
+    def _update_canvas(self, a_vec: Vec2, b_vec: Vec2, r_vec: Vec2) -> None:
         max_extent = max(
             6.0,
-            abs(ax),
-            abs(ay),
-            abs(bx),
-            abs(by),
-            abs(rx),
-            abs(ry),
+            abs(a_vec.x),
+            abs(a_vec.y),
+            abs(b_vec.x),
+            abs(b_vec.y),
+            abs(r_vec.x),
+            abs(r_vec.y),
         )
         span = max_extent * 1.4
         world = {"xmin": -span, "xmax": span, "ymin": -span, "ymax": span}
         self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
 
         vectors = [
-            {"start": (0.0, 0.0), "end": (ax, ay), "label": "A", "role": QtGui.QPalette.ColorRole.Link},
-            {"start": (0.0, 0.0), "end": (bx, by), "label": "B", "role": QtGui.QPalette.ColorRole.Text},
-            {"start": (0.0, 0.0), "end": (rx, ry), "label": "R", "role": QtGui.QPalette.ColorRole.Highlight},
+            {"start": Vec2(0.0, 0.0), "end": a_vec, "label": "A", "color": QtGui.QColor("#7fa8ff")},
+            {"start": Vec2(0.0, 0.0), "end": b_vec, "label": "B", "color": QtGui.QColor("#c1c7d0")},
+            {"start": Vec2(0.0, 0.0), "end": r_vec, "label": "R", "color": QtGui.QColor("#9ad2ff")},
         ]
 
         def layer_grid(p: QtGui.QPainter, ctx):
-            primitives.draw_grid(p, ctx)
-            primitives.draw_axes(p, ctx)
+            rect_px = QtCore.QRectF(p.viewport())
+            origin = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            step_world = max(1.0, span / 8.0)
+            step_px = abs(ctx.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
+            shared_primitives.draw_grid(p, rect_px, step_px=step_px)
+            axis_len = min(rect_px.width(), rect_px.height()) / 2.0
+            shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
 
         def layer_vectors(p: QtGui.QPainter, ctx):
             for vec in vectors:
-                primitives.draw_arrow_sprite(
+                start = ctx.world_to_screen(QtCore.QPointF(vec["start"].x, vec["start"].y))
+                end = ctx.world_to_screen(QtCore.QPointF(vec["end"].x, vec["end"].y))
+                shared_primitives.draw_vector(
                     p,
-                    ctx,
-                    vec["start"],
-                    vec["end"],
-                    label=vec["label"],
-                    color_role=vec["role"],
+                    start,
+                    Vec2(end.x() - start.x(), end.y() - start.y()),
                 )
+                p.save()
+                p.setPen(QtGui.QPen(vec["color"], 1))
+                p.drawText(end + QtCore.QPointF(8, -6), vec["label"])
+                p.restore()
 
         self.canvas.set_layers([layer_grid, layer_vectors])

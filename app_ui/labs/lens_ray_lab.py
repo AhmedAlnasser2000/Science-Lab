@@ -25,7 +25,9 @@ def _agent_log(payload: Dict[str, object]) -> None:
     # endregion
 
 from .base import LabPlugin
-from .renderkit import AssetResolver, AssetCache, RenderCanvas, primitives
+from .renderkit import AssetResolver, AssetCache, RenderCanvas
+from .shared import primitives as shared_primitives
+from .shared.math2d import Vec2
 
 
 class LensRayLabPlugin(LabPlugin):
@@ -273,46 +275,59 @@ class LensRayLabWidget(QtWidgets.QWidget):
         self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
 
         def layer_grid(p: QtGui.QPainter, ctx):
-            primitives.draw_grid(p, ctx)
-            primitives.draw_axes(p, ctx)
+            rect_px = QtCore.QRectF(p.viewport())
+            origin = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            step_world = 2.0
+            step_px = abs(ctx.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
+            shared_primitives.draw_grid(p, rect_px, step_px=step_px)
+            axis_len = min(rect_px.width(), rect_px.height()) / 2.0
+            shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
 
         def layer_lens(p: QtGui.QPainter, ctx):
-            primitives.draw_svg_sprite(
-                p,
-                ctx,
-                "assets/lab_viz/lens.svg",
-                (0.0, 0.0),
-                (2.0, world["ymax"] - world["ymin"]),
-                tint_role=QtGui.QPalette.ColorRole.Highlight,
+            p.save()
+            p.setPen(QtGui.QPen(QtGui.QColor("#9ad2ff"), 3))
+            p.drawLine(
+                ctx.world_to_screen(QtCore.QPointF(0.0, world["ymin"])),
+                ctx.world_to_screen(QtCore.QPointF(0.0, world["ymax"])),
             )
+            p.restore()
 
         def layer_rays(p: QtGui.QPainter, ctx):
-            primitives.draw_arrow_sprite(
+            start = ctx.world_to_screen(QtCore.QPointF(*scene["incident"]["start"]))
+            end = ctx.world_to_screen(QtCore.QPointF(*scene["incident"]["end"]))
+            shared_primitives.draw_vector(
                 p,
-                ctx,
-                scene["incident"]["start"],
-                scene["incident"]["end"],
-                label="θi",
-                color_role=QtGui.QPalette.ColorRole.Link,
+                start,
+                Vec2(end.x() - start.x(), end.y() - start.y()),
             )
+            p.save()
+            p.setPen(QtGui.QPen(QtGui.QColor("#7fa8ff"), 1))
+            p.drawText(end + QtCore.QPointF(8, -6), "I,i")
+            p.restore()
             if scene.get("refracted"):
-                primitives.draw_arrow_sprite(
+                start = ctx.world_to_screen(QtCore.QPointF(*scene["refracted"]["start"]))
+                end = ctx.world_to_screen(QtCore.QPointF(*scene["refracted"]["end"]))
+                shared_primitives.draw_vector(
                     p,
-                    ctx,
-                    scene["refracted"]["start"],
-                    scene["refracted"]["end"],
-                    label="θt",
-                    color_role=QtGui.QPalette.ColorRole.Highlight,
+                    start,
+                    Vec2(end.x() - start.x(), end.y() - start.y()),
                 )
+                p.save()
+                p.setPen(QtGui.QPen(QtGui.QColor("#9ad2ff"), 1))
+                p.drawText(end + QtCore.QPointF(8, -6), "I,t")
+                p.restore()
             if scene.get("reflected"):
-                primitives.draw_arrow_sprite(
+                start = ctx.world_to_screen(QtCore.QPointF(*scene["reflected"]["start"]))
+                end = ctx.world_to_screen(QtCore.QPointF(*scene["reflected"]["end"]))
+                shared_primitives.draw_vector(
                     p,
-                    ctx,
-                    scene["reflected"]["start"],
-                    scene["reflected"]["end"],
-                    label="refl",
-                    color_role=QtGui.QPalette.ColorRole.BrightText,
+                    start,
+                    Vec2(end.x() - start.x(), end.y() - start.y()),
                 )
+                p.save()
+                p.setPen(QtGui.QPen(QtGui.QColor("#dfe8ff"), 1))
+                p.drawText(end + QtCore.QPointF(8, -6), "refl")
+                p.restore()
             # boundary and normal
             p.save()
             p.setPen(QtGui.QPen(QtGui.QColor("#6f7ba5"), 2))

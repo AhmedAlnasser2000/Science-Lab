@@ -25,7 +25,9 @@ def _agent_log(payload: Dict[str, object]) -> None:
     # endregion
 
 from .base import LabPlugin
-from .renderkit import AssetResolver, AssetCache, RenderCanvas, primitives
+from .renderkit import AssetResolver, AssetCache, RenderCanvas
+from .shared import primitives as shared_primitives
+from .shared.math2d import Vec2
 
 
 class ElectricFieldLabPlugin(LabPlugin):
@@ -274,31 +276,48 @@ class ElectricFieldLabWidget(QtWidgets.QWidget):
         self.canvas.set_world_bounds(world["xmin"], world["xmax"], world["ymin"], world["ymax"])
 
         def layer_grid(p: QtGui.QPainter, ctx):
-            primitives.draw_grid(p, ctx, step=2.0)
-            primitives.draw_axes(p, ctx)
+            rect_px = QtCore.QRectF(p.viewport())
+            origin = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            step_world = 2.0
+            step_px = abs(ctx.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
+            shared_primitives.draw_grid(p, rect_px, step_px=step_px)
+            axis_len = min(rect_px.width(), rect_px.height()) / 2.0
+            shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
 
         def layer_charge(p: QtGui.QPainter, ctx):
-            asset = "assets/lab_viz/charge_plus.svg" if self.charge_c >= 0 else "assets/lab_viz/charge_minus.svg"
-            primitives.draw_svg_sprite(
-                p,
-                ctx,
-                asset,
-                (0.0, 0.0),
-                (2.2, 2.2),
-                tint_role=QtGui.QPalette.ColorRole.Highlight,
+            center = ctx.world_to_screen(QtCore.QPointF(0.0, 0.0))
+            unit_px = abs(ctx.world_to_screen(QtCore.QPointF(1.0, 0.0)).x() - center.x())
+            radius = max(8.0, unit_px * 0.9)
+            rect = QtCore.QRectF(
+                center.x() - radius,
+                center.y() - radius,
+                radius * 2,
+                radius * 2,
             )
+            p.save()
+            p.setPen(QtGui.QPen(QtGui.QColor("#9ad2ff"), 2))
+            p.setBrush(QtGui.QColor(255, 255, 255, 18))
+            p.drawEllipse(rect)
+            p.setPen(QtGui.QPen(QtGui.QColor("#9ad2ff"), 2))
+            p.drawLine(
+                QtCore.QPointF(center.x() - radius * 0.5, center.y()),
+                QtCore.QPointF(center.x() + radius * 0.5, center.y()),
+            )
+            if self.charge_c >= 0:
+                p.drawLine(
+                    QtCore.QPointF(center.x(), center.y() - radius * 0.5),
+                    QtCore.QPointF(center.x(), center.y() + radius * 0.5),
+                )
+            p.restore()
 
         def layer_vectors(p: QtGui.QPainter, ctx):
-            color = QtGui.QColor("#7de3ff") if self.charge_c >= 0 else QtGui.QColor("#ffb4a4")
             for vec in vectors:
-                primitives.draw_arrow_sprite(
+                start = ctx.world_to_screen(QtCore.QPointF(*vec["start"]))
+                end = ctx.world_to_screen(QtCore.QPointF(*vec["end"]))
+                shared_primitives.draw_vector(
                     p,
-                    ctx,
-                    vec["start"],
-                    vec["end"],
-                    color=color,
-                    label=None,
-                    asset_rel_path="assets/lab_viz/field_arrow.svg",
+                    start,
+                    Vec2(end.x() - start.x(), end.y() - start.y()),
                 )
 
         def layer_samples(p: QtGui.QPainter, ctx):
