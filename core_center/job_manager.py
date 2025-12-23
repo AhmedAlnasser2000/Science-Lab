@@ -25,6 +25,8 @@ JOB_CLEANUP_CACHE = "core.cleanup.cache"
 JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 JOB_MODULE_INSTALL = "core.module.install"
 JOB_MODULE_UNINSTALL = "core.module.uninstall"
+JOB_COMPONENT_PACK_INSTALL = "core.component_pack.install"
+JOB_COMPONENT_PACK_UNINSTALL = "core.component_pack.uninstall"
 
 REPORT_READY_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_READY", "core.storage.report.ready")
 CLEANUP_STARTED_TOPIC = getattr(BUS_TOPICS, "CORE_CLEANUP_STARTED", "core.cleanup.started")
@@ -44,7 +46,20 @@ _LOCK = threading.Lock()
 JOB_HISTORY_PATH = Path("data/roaming/jobs.json")
 REPO_ROOT = Path("content_repo")
 STORE_ROOT = Path("content_store")
+COMPONENT_REPO_ROOT = Path("component_repo") / "component_v1" / "packs"
+COMPONENT_STORE_ROOT = Path("component_store") / "component_v1" / "packs"
 DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+
+DEFAULT_JOB_TIMEOUT = 60.0
+_JOB_TIMEOUTS = {
+    JOB_REPORT_GENERATE: 30.0,
+    JOB_CLEANUP_CACHE: 30.0,
+    JOB_CLEANUP_DUMPS: 30.0,
+    JOB_MODULE_INSTALL: 60.0,
+    JOB_MODULE_UNINSTALL: 60.0,
+    JOB_COMPONENT_PACK_INSTALL: 45.0,
+    JOB_COMPONENT_PACK_UNINSTALL: 45.0,
+}
 
 
 def _agent_log(location: str, message: str, data: Dict[str, Any], hypothesis_id: str, run_id: str = "baseline") -> None:
@@ -174,8 +189,10 @@ def _create_job_impl(job_type: str, payload: Optional[Dict[str, Any]], *, bus: A
             "progress": 0.0,
             "result": None,
             "error": None,
+            "payload": payload or {},
         }
     runner.start()
+    _start_job_timeout(job_id, job_type, bus, source)
     return job_id
 
 
@@ -209,6 +226,10 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
             ok = True
         except Exception as exc:  # pragma: no cover - defensive
             error_msg = str(exc)
+    if _job_already_terminal(job_id):
+        with _LOCK:
+            _RUNNING_JOBS.pop(job_id, None)
+        return
     if not ok and job_type == JOB_REPORT_GENERATE:
         context.publish(REPORT_READY_TOPIC, {"ok": False, "error": error_msg or "failed"})
     finished_at = _now_iso()
@@ -267,6 +288,77 @@ def _summarize_result(result: Dict[str, Any]) -> Optional[str]:
     except Exception:
         pass
     return None
+
+
+def _job_timeout_seconds(job_type: str) -> Optional[float]:
+    return _JOB_TIMEOUTS.get(job_type, DEFAULT_JOB_TIMEOUT)
+
+
+def _job_already_terminal(job_id: str) -> bool:
+    with _LOCK:
+        status = _JOB_STATE.get(job_id, {}).get("status")
+    return status in ("COMPLETED", "FAILED")
+
+
+def _start_job_timeout(job_id: str, job_type: str, bus: Any, source: str) -> None:
+    timeout = _job_timeout_seconds(job_type)
+    if not timeout:
+        return
+    timer = threading.Thread(
+        target=_watch_job_timeout,
+        args=(job_id, job_type, bus, source, timeout),
+        name=f"core-center-job-timeout-{job_id}",
+        daemon=True,
+    )
+    timer.start()
+
+
+def _watch_job_timeout(job_id: str, job_type: str, bus: Any, source: str, timeout: float) -> None:
+    time.sleep(timeout)
+    with _LOCK:
+        state = _JOB_STATE.get(job_id)
+        if not state or state.get("status") != "running":
+            return
+        state.update(
+            {
+                "status": "FAILED",
+                "finished_at": _now_iso(),
+                "ok": False,
+                "error": f"timeout after {int(timeout)}s",
+                "timed_out": True,
+            }
+        )
+        snapshot = dict(state)
+        _RUNNING_JOBS.pop(job_id, None)
+    if job_type == JOB_REPORT_GENERATE:
+        _publish(bus, REPORT_READY_TOPIC, {"ok": False, "error": snapshot.get("error")}, source)
+    if job_type in (JOB_MODULE_INSTALL, JOB_MODULE_UNINSTALL):
+        payload = snapshot.get("payload") or {}
+        module_id = payload.get("module_id")
+        action = "install" if job_type == JOB_MODULE_INSTALL else "uninstall"
+        if module_id:
+            _publish(
+                bus,
+                CONTENT_INSTALL_COMPLETED_TOPIC,
+                {"module_id": module_id, "action": action, "ok": False, "error": snapshot.get("error")},
+                source,
+                sticky=True,
+            )
+    _publish(
+        bus,
+        JOB_COMPLETED_TOPIC,
+        {
+            "job_id": job_id,
+            "job_type": job_type,
+            "status": "FAILED",
+            "ok": False,
+            "result": None,
+            "error": snapshot.get("error"),
+        },
+        source,
+        sticky=True,
+    )
+    _persist_job_record(snapshot)
 
 
 def _safe_load_history() -> List[Dict[str, Any]]:
@@ -365,6 +457,15 @@ def _validate_module_id(payload: Dict[str, Any]) -> str:
     if any(sep in module_id for sep in ("/", "\\", "..")):
         raise ValueError("invalid_module_id")
     return module_id
+
+
+def _validate_pack_id(payload: Dict[str, Any]) -> str:
+    pack_id = str(payload.get("pack_id") or "").strip()
+    if not pack_id:
+        raise ValueError("pack_id_required")
+    if any(sep in pack_id for sep in ("/", "\\", "..")):
+        raise ValueError("invalid_pack_id")
+    return pack_id
 
 
 def _handle_report_job(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
@@ -529,12 +630,79 @@ def _handle_module_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[s
         _module_completed(ctx, resolved_id, "uninstall", ok, error=error_msg or None)
 
 
+def _handle_component_pack_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
+    pack_id = _validate_pack_id(payload)
+    source_dir = COMPONENT_REPO_ROOT / pack_id
+    target_dir = COMPONENT_STORE_ROOT / pack_id
+    staging_dir = Path("data/cache/pack_installs") / pack_id / ctx.job_id
+    staging_parent = staging_dir.parent
+    staging_parent.mkdir(parents=True, exist_ok=True)
+    COMPONENT_STORE_ROOT.mkdir(parents=True, exist_ok=True)
+    ok = False
+    error_msg = ""
+    try:
+        ctx.progress(5, "preparing")
+        if not source_dir.exists():
+            raise FileNotFoundError(f"pack not found: {pack_id}")
+        if staging_dir.exists():
+            safe_rmtree(staging_dir)
+        safe_copytree(source_dir, staging_dir)
+        ctx.progress(60, "staged copy complete")
+        if target_dir.exists():
+            safe_rmtree(target_dir)
+        shutil.move(str(staging_dir), str(target_dir))
+        ctx.progress(90, "installed to store")
+        ok = True
+        return {"pack_id": pack_id, "install_path": str(target_dir), "text": f"Installed {pack_id}"}
+    except Exception as exc:
+        error_msg = (
+            f"install failed: pack={pack_id} src={source_dir} staging={staging_dir} dst={target_dir} err={exc!r}"
+        )
+        raise RuntimeError(error_msg) from exc
+    finally:
+        try:
+            if staging_dir.exists():
+                safe_rmtree(staging_dir)
+        except Exception:
+            pass
+        try:
+            if staging_parent.exists() and not any(staging_parent.iterdir()):
+                staging_parent.rmdir()
+        except Exception:
+            pass
+        if not ok:
+            ctx.progress(0, "failed")
+
+
+def _handle_component_pack_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
+    pack_id = _validate_pack_id(payload)
+    target_dir = COMPONENT_STORE_ROOT / pack_id
+    ok = False
+    error_msg = ""
+    try:
+        ctx.progress(10, "removing pack")
+        if not target_dir.exists():
+            raise FileNotFoundError(f"pack not installed: {pack_id}")
+        safe_rmtree(target_dir)
+        ctx.progress(90, "removed from store")
+        ok = True
+        return {"pack_id": pack_id, "text": f"Uninstalled {pack_id}"}
+    except Exception as exc:
+        error_msg = f"uninstall failed: pack={pack_id} dst={target_dir} err={exc!r}"
+        raise RuntimeError(error_msg) from exc
+    finally:
+        if not ok:
+            ctx.progress(0, "failed")
+
+
 def _register_builtin_jobs() -> None:
     register_job_handler(JOB_REPORT_GENERATE, _handle_report_job)
     register_job_handler(JOB_CLEANUP_CACHE, _handle_cleanup_cache)
     register_job_handler(JOB_CLEANUP_DUMPS, _handle_cleanup_dumps)
     register_job_handler(JOB_MODULE_INSTALL, _handle_module_install)
     register_job_handler(JOB_MODULE_UNINSTALL, _handle_module_uninstall)
+    register_job_handler(JOB_COMPONENT_PACK_INSTALL, _handle_component_pack_install)
+    register_job_handler(JOB_COMPONENT_PACK_UNINSTALL, _handle_component_pack_uninstall)
 
 
 _register_builtin_jobs()

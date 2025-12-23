@@ -1046,6 +1046,9 @@ BUS_JOB_PROGRESS = BUS_TOPICS.JOB_PROGRESS if BUS_TOPICS else "job.progress"
 BUS_REGISTRY_REQUEST = (
     BUS_TOPICS.CORE_REGISTRY_GET_REQUEST if BUS_TOPICS else "core.registry.get.request"
 )
+BUS_INVENTORY_REQUEST = (
+    BUS_TOPICS.CORE_INVENTORY_GET_REQUEST if BUS_TOPICS else "core.inventory.get.request"
+)
 BUS_JOBS_GET_REQUEST = BUS_TOPICS.CORE_JOBS_GET_REQUEST if BUS_TOPICS else "core.jobs.get.request"
 BUS_MODULE_INSTALL_REQUEST = (
     BUS_TOPICS.CORE_CONTENT_MODULE_INSTALL_REQUEST
@@ -1056,6 +1059,16 @@ BUS_MODULE_UNINSTALL_REQUEST = (
     BUS_TOPICS.CORE_CONTENT_MODULE_UNINSTALL_REQUEST
     if BUS_TOPICS
     else "core.content.module.uninstall.request"
+)
+BUS_COMPONENT_PACK_INSTALL_REQUEST = (
+    BUS_TOPICS.CORE_COMPONENT_PACK_INSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.component_pack.install.request"
+)
+BUS_COMPONENT_PACK_UNINSTALL_REQUEST = (
+    BUS_TOPICS.CORE_COMPONENT_PACK_UNINSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.component_pack.uninstall.request"
 )
 BUS_MODULE_PROGRESS = (
     BUS_TOPICS.CONTENT_INSTALL_PROGRESS if BUS_TOPICS else "content.install.progress"
@@ -1110,7 +1123,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._module_job_running = False
         self.pending_module_job_id: Optional[str] = None
         self.pending_module_action: Optional[str] = None
-        self.pending_module_id: str = "physics"
+        self.pending_module_id: str = "physics_v1"
+        self._module_installed: Optional[bool] = None
+        self._inventory_checked = False
         self._module_poll_timer: Optional[QtCore.QTimer] = None
         self._module_poll_deadline: float = 0.0
         self._is_explorer = False
@@ -1208,9 +1223,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
         layout.addWidget(self.comm_panel)
 
         module_row = QtWidgets.QHBoxLayout()
-        self.install_btn = QtWidgets.QPushButton("Install Physics module (local)")
+        self.install_btn = QtWidgets.QPushButton("Install module (local)")
         self.install_btn.clicked.connect(lambda: self._start_module_job("install"))
-        self.uninstall_btn = QtWidgets.QPushButton("Uninstall Physics module (local)")
+        self.uninstall_btn = QtWidgets.QPushButton("Uninstall module (local)")
         self.uninstall_btn.clicked.connect(lambda: self._start_module_job("uninstall"))
         module_row.addWidget(self.install_btn)
         module_row.addWidget(self.uninstall_btn)
@@ -1256,6 +1271,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if self.refresh_capability and self._pending_initial_refresh:
             self._refresh_report()
         self._update_comm_controls()
+        if self.bus and not self._inventory_checked:
+            self._refresh_inventory()
 
     def _set_control_enabled(self, enabled: bool) -> None:
         enable_refresh = bool(self.refresh_capability and enabled)
@@ -1267,13 +1284,62 @@ class SystemHealthScreen(QtWidgets.QWidget):
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
         )
+        install_allowed = module_enabled
+        uninstall_allowed = module_enabled
+        if self._module_installed is True:
+            install_allowed = False
+        elif self._module_installed is False:
+            uninstall_allowed = False
         if hasattr(self, "install_btn"):
-            self.install_btn.setEnabled(module_enabled)
+            self.install_btn.setEnabled(install_allowed)
         if hasattr(self, "uninstall_btn"):
-            self.uninstall_btn.setEnabled(module_enabled)
+            self.uninstall_btn.setEnabled(uninstall_allowed)
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
+
+    def _update_module_button_labels(self) -> None:
+        module_id = self.pending_module_id or "module"
+        if hasattr(self, "install_btn"):
+            self.install_btn.setText(f"Install {module_id} module (local)")
+        if hasattr(self, "uninstall_btn"):
+            self.uninstall_btn.setText(f"Uninstall {module_id} module (local)")
+
+    def _refresh_inventory(self) -> None:
+        self._inventory_checked = True
+        if not self.bus:
+            self._module_installed = None
+            self._update_module_button_labels()
+            self._set_control_enabled(True)
+            return
+        try:
+            response = self.bus.request(
+                BUS_INVENTORY_REQUEST,
+                {},
+                source="app_ui",
+                timeout_ms=1500,
+            )
+        except Exception:
+            self._module_installed = None
+            self._update_module_button_labels()
+            self._set_control_enabled(True)
+            return
+        if not response.get("ok"):
+            self._module_installed = None
+            self._update_module_button_labels()
+            self._set_control_enabled(True)
+            return
+        inventory = response.get("inventory") or {}
+        modules = inventory.get("modules") or []
+        module_ids = [m.get("id") for m in modules if m.get("id")]
+        preferred = "physics_v1"
+        if preferred in module_ids:
+            self.pending_module_id = preferred
+        elif module_ids:
+            self.pending_module_id = module_ids[0]
+        self._module_installed = bool(module_ids)
+        self._update_module_button_labels()
+        self._set_control_enabled(True)
 
     def _update_comm_controls(self) -> None:
         profile = ui_config.load_experience_profile()
@@ -1291,6 +1357,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if not module_available and hasattr(self, "module_panel"):
             self.module_panel.setVisible(False)
         self._set_control_enabled(True)
+        self._update_module_button_labels()
 
     def _show_comm_report(self) -> None:
         if not self.bus:
@@ -1646,6 +1713,15 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if self._module_job_running:
             QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
             return
+        if not self.pending_module_id:
+            QtWidgets.QMessageBox.information(self, "Module", "No module id available.")
+            return
+        if action == "install" and self._module_installed is True:
+            QtWidgets.QMessageBox.information(self, "Module", "Module already installed.")
+            return
+        if action == "uninstall" and self._module_installed is False:
+            QtWidgets.QMessageBox.information(self, "Module", "Module already uninstalled.")
+            return
         topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
         self._set_module_job_state(job_id=None, action=action, running=True)
         self._show_module_panel(
@@ -1816,6 +1892,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             running=False,
             ok=ok,
         )
+        self._refresh_inventory()
 
     def _unsubscribe_all(self) -> None:
         if not self.bus:
@@ -2358,6 +2435,14 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self.on_back = on_back
         self.bus = bus
         self._job_thread: Optional[QtCore.QThread] = None
+        self._bus_dispatch_bridge = _BusDispatchBridge(self)
+        self._bus_subscriptions: list[str] = []
+        self.pending_job_id: Optional[str] = None
+        self.pending_pack_id: Optional[str] = None
+        self.pending_action: Optional[str] = None
+        self._job_poll_timer: Optional[QtCore.QTimer] = None
+        self._job_poll_deadline: float = 0.0
+        self._installed_pack_ids: set[str] = set()
 
         layout = QtWidgets.QVBoxLayout(self)
         header = QtWidgets.QHBoxLayout()
@@ -2420,6 +2505,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         splitter.setStretchFactor(1, 1)
         splitter.setChildrenCollapsible(False)
 
+        self._init_bus_subscriptions()
         self.refresh()
 
     def refresh(self) -> None:
@@ -2429,22 +2515,33 @@ class ComponentManagementScreen(QtWidgets.QWidget):
             self._show_progress("Component packs", "component_runtime not available", running=False, ok=False)
             return
         repo_packs = component_packs.list_repo_packs()
-        store_packs = component_packs.list_installed_packs()
+        store_packs = self._load_installed_packs()
+        self._installed_pack_ids = {p.get("pack_id") or p.get("id") for p in store_packs if p.get("pack_id") or p.get("id")}
         for pack in repo_packs:
             label = _format_pack_label(pack)
             item = QtWidgets.QListWidgetItem(label)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, pack.get("pack_id"))
             self.repo_list.addItem(item)
         for pack in store_packs:
-            label = _format_pack_label(pack)
+            pack_id = pack.get("pack_id") or pack.get("id")
+            label = _format_pack_label(
+                {
+                    "pack_id": pack_id,
+                    "display_name": pack.get("display_name") or pack.get("name") or pack_id,
+                    "version": pack.get("version"),
+                }
+            )
             item = QtWidgets.QListWidgetItem(label)
-            item.setData(QtCore.Qt.ItemDataRole.UserRole, pack.get("pack_id"))
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, pack_id)
             self.store_list.addItem(item)
 
     def _install_selected(self) -> None:
         pack_id = _selected_pack_id(self.repo_list)
         if not pack_id:
             self._show_progress("Install", "Select a pack to install.", running=False, ok=False)
+            return
+        if pack_id in self._installed_pack_ids:
+            self._show_progress("Install", f"{pack_id} already installed.", running=False, ok=False)
             return
         self._run_job("install", pack_id)
 
@@ -2453,25 +2550,49 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         if not pack_id:
             self._show_progress("Uninstall", "Select a pack to uninstall.", running=False, ok=False)
             return
+        if pack_id not in self._installed_pack_ids:
+            self._show_progress("Uninstall", f"{pack_id} not installed.", running=False, ok=False)
+            return
         self._run_job("uninstall", pack_id)
 
     def _run_job(self, action: str, pack_id: str) -> None:
-        if self._job_thread is not None:
+        if not self.bus:
+            self._show_progress("Pack Job", "Runtime bus unavailable.", running=False, ok=False)
             return
-        self.install_btn.setEnabled(False)
-        self.uninstall_btn.setEnabled(False)
+        if self.pending_job_id:
+            self._show_progress("Pack Job", "Another pack job is running.", running=False, ok=False)
+            return
+        topic = BUS_COMPONENT_PACK_INSTALL_REQUEST if action == "install" else BUS_COMPONENT_PACK_UNINSTALL_REQUEST
+        self._set_job_state(job_id=None, pack_id=pack_id, action=action, running=True)
         self._show_progress(f"{action.title()} {pack_id}", "Starting job...", running=True)
-        worker = TaskWorker(lambda: _run_pack_job(action, pack_id))
-        thread = QtCore.QThread()
-        self._job_thread = thread
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_job_finished)
-        worker.error.connect(self._on_job_error)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.start()
+        try:
+            response = self.bus.request(
+                topic,
+                {"pack_id": pack_id},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._set_job_state(job_id=None, pack_id=None, action=None, running=False)
+            self._show_progress("Pack Job", f"{action.title()} failed: {exc}", running=False, ok=False)
+            return
+        if not response.get("ok") or not response.get("job_id"):
+            self._set_job_state(job_id=None, pack_id=None, action=None, running=False)
+            self._show_progress(
+                "Pack Job",
+                f"{action.title()} failed: {response.get('error') or 'unknown'}",
+                running=False,
+                ok=False,
+            )
+            return
+        job_id = str(response["job_id"])
+        self._set_job_state(job_id=job_id, pack_id=pack_id, action=action, running=True)
+        self._show_progress(
+            "Pack Job",
+            f"{action.title()} {pack_id}: awaiting completion (job {job_id[:8]})",
+            running=True,
+        )
+        self._start_job_poll_timer()
 
     def _on_job_finished(self, result: Dict[str, Any]) -> None:
         self._job_thread = None
@@ -2510,6 +2631,162 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self.progress_title.setStyleSheet(f"font-weight: bold; color: {color};")
         self.progress_details.setText(details)
         self.progress_panel.setVisible(True)
+
+    def _load_installed_packs(self) -> list[Dict[str, Any]]:
+        if self.bus:
+            try:
+                response = self.bus.request(
+                    BUS_INVENTORY_REQUEST,
+                    {},
+                    source="app_ui",
+                    timeout_ms=1500,
+                )
+                if response.get("ok"):
+                    inventory = response.get("inventory") or {}
+                    packs = inventory.get("component_packs") or []
+                    return [
+                        {
+                            "pack_id": pack.get("id") or pack.get("pack_id"),
+                            "version": pack.get("version"),
+                            "display_name": pack.get("display_name") or pack.get("name"),
+                        }
+                        for pack in packs
+                        if pack.get("id") or pack.get("pack_id")
+                    ]
+            except Exception:
+                pass
+        if component_packs is None:
+            return []
+        return component_packs.list_installed_packs()
+
+    def _init_bus_subscriptions(self) -> None:
+        if not self.bus or self._bus_subscriptions:
+            return
+        self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
+        self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event)
+
+    def _subscribe_bus(self, topic: Optional[str], handler: Callable[[Any], None]) -> None:
+        if not (self.bus and topic):
+            return
+
+        def _wrapped(envelope):
+            self._bus_dispatch_bridge.envelope_dispatched.emit(handler, envelope)
+
+        sub_id = self.bus.subscribe(topic, _wrapped, replay_last=False)
+        self._bus_subscriptions.append(sub_id)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if self.bus:
+            for sub_id in self._bus_subscriptions:
+                self.bus.unsubscribe(sub_id)
+            self._bus_subscriptions.clear()
+        super().closeEvent(event)
+
+    def _set_job_state(
+        self,
+        *,
+        job_id: Optional[str],
+        pack_id: Optional[str],
+        action: Optional[str],
+        running: bool,
+    ) -> None:
+        self.pending_job_id = job_id
+        self.pending_pack_id = pack_id
+        self.pending_action = action if running else None
+        self.install_btn.setEnabled(not running)
+        self.uninstall_btn.setEnabled(not running)
+        if not running:
+            self._stop_job_poll_timer()
+
+    def _start_job_poll_timer(self) -> None:
+        if not (self.bus and self.pending_job_id):
+            return
+        self._stop_job_poll_timer()
+        timer = QtCore.QTimer(self)
+        timer.setInterval(800)
+        timer.timeout.connect(self._poll_job_status)
+        self._job_poll_deadline = time.monotonic() + 45.0
+        self._job_poll_timer = timer
+        timer.start()
+
+    def _stop_job_poll_timer(self) -> None:
+        if self._job_poll_timer:
+            self._job_poll_timer.stop()
+            self._job_poll_timer.deleteLater()
+            self._job_poll_timer = None
+        self._job_poll_deadline = 0.0
+
+    def _poll_job_status(self) -> None:
+        if not (self.bus and self.pending_job_id):
+            self._stop_job_poll_timer()
+            return
+        if self._job_poll_deadline and time.monotonic() > self._job_poll_deadline:
+            self._stop_job_poll_timer()
+            self._show_progress(
+                "Pack Job Timeout",
+                f"{(self.pending_action or 'Pack').title()} {self.pending_pack_id or 'pack'}: timed out",
+                running=False,
+                ok=False,
+            )
+            self._set_job_state(job_id=None, pack_id=None, action=None, running=False)
+            return
+        try:
+            response = self.bus.request(
+                BUS_JOBS_GET_REQUEST,
+                {"job_id": self.pending_job_id},
+                source="app_ui",
+                timeout_ms=800,
+            )
+        except Exception:
+            return
+        if not response.get("ok"):
+            return
+        job = response.get("job") or {}
+        status = str(job.get("status") or "").upper()
+        ok_flag = job.get("ok")
+        terminal = status in ("COMPLETED", "FAILED") or ok_flag is not None
+        if not terminal:
+            return
+        payload = {
+            "job_id": self.pending_job_id,
+            "job_type": job.get("job_type"),
+            "ok": ok_flag,
+            "error": job.get("error"),
+        }
+        self._on_job_completed_event(SimpleNamespace(payload=payload))
+
+    def _on_job_progress_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if payload.get("job_id") != self.pending_job_id:
+            return
+        percent = payload.get("percent")
+        stage = payload.get("stage") or "Working"
+        percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
+        label = self.pending_pack_id or "pack"
+        self._show_progress(
+            "Pack Progress",
+            f"{(self.pending_action or 'pack').title()} {label}: {percent_text} {stage}".strip(),
+            running=True,
+        )
+
+    def _on_job_completed_event(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        if payload.get("job_id") != self.pending_job_id:
+            return
+        ok = bool(payload.get("ok"))
+        error = payload.get("error") or "failed"
+        label = self.pending_pack_id or "pack"
+        action = self.pending_action or "pack"
+        summary = "OK" if ok else error
+        self._show_progress(
+            "Pack Result",
+            f"{action.title()} {label}: {summary}",
+            running=False,
+            ok=ok,
+        )
+        self._set_job_state(job_id=None, pack_id=None, action=None, running=False)
+        self._refresh_registry()
+        self.refresh()
 
 
 class StatusPill(QtWidgets.QLabel):

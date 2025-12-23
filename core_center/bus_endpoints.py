@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
 from . import job_manager, storage_manager, policy_manager
+from . import inventory as inventory_module
 from .registry import load_registry, summarize_registry
 
 REPORT_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_STORAGE_REPORT_REQUEST", "core.storage.report.request")
@@ -26,11 +27,20 @@ POLICY_REQUEST_TOPIC = getattr(
 REGISTRY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_REGISTRY_GET_REQUEST", "core.registry.get.request"
 )
+INVENTORY_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_INVENTORY_GET_REQUEST", "core.inventory.get.request"
+)
 MODULE_INSTALL_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_CONTENT_MODULE_INSTALL_REQUEST", "core.content.module.install.request"
 )
 MODULE_UNINSTALL_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_CONTENT_MODULE_UNINSTALL_REQUEST", "core.content.module.uninstall.request"
+)
+COMPONENT_PACK_INSTALL_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_COMPONENT_PACK_INSTALL_REQUEST", "core.component_pack.install.request"
+)
+COMPONENT_PACK_UNINSTALL_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_COMPONENT_PACK_UNINSTALL_REQUEST", "core.component_pack.uninstall.request"
 )
 JOBS_LIST_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_JOBS_LIST_REQUEST", "core.jobs.list.request")
 JOBS_GET_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_JOBS_GET_REQUEST", "core.jobs.get.request")
@@ -112,6 +122,13 @@ def register_core_center_endpoints(bus: Any) -> None:
         summary = summarize_registry(records)
         return {"ok": True, "registry": records, "summary": summary}
 
+    def _handle_inventory(envelope) -> Dict[str, object]:  # noqa: ARG001
+        try:
+            snapshot = inventory_module.get_inventory_snapshot()
+            return {"ok": True, "inventory": snapshot}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def _handle_module_install(envelope) -> Dict[str, object]:
         payload = envelope.payload or {}
         module_id = payload.get("module_id")
@@ -132,6 +149,30 @@ def register_core_center_endpoints(bus: Any) -> None:
         job_id = job_manager.create_job(
             job_manager.JOB_MODULE_UNINSTALL,
             {"module_id": module_id},
+            bus=proxy,
+        )
+        return {"ok": True, "job_id": job_id}
+
+    def _handle_component_pack_install(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        pack_id = payload.get("pack_id")
+        if not pack_id:
+            return {"ok": False, "error": "pack_id_required"}
+        job_id = job_manager.create_job(
+            job_manager.JOB_COMPONENT_PACK_INSTALL,
+            {"pack_id": pack_id},
+            bus=proxy,
+        )
+        return {"ok": True, "job_id": job_id}
+
+    def _handle_component_pack_uninstall(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        pack_id = payload.get("pack_id")
+        if not pack_id:
+            return {"ok": False, "error": "pack_id_required"}
+        job_id = job_manager.create_job(
+            job_manager.JOB_COMPONENT_PACK_UNINSTALL,
+            {"pack_id": pack_id},
             bus=proxy,
         )
         return {"ok": True, "job_id": job_id}
@@ -164,10 +205,16 @@ def register_core_center_endpoints(bus: Any) -> None:
         bus.register_handler(POLICY_REQUEST_TOPIC, _handle_policy)
     if REGISTRY_REQUEST_TOPIC:
         bus.register_handler(REGISTRY_REQUEST_TOPIC, _handle_registry)
+    if INVENTORY_REQUEST_TOPIC:
+        bus.register_handler(INVENTORY_REQUEST_TOPIC, _handle_inventory)
     if MODULE_INSTALL_REQUEST_TOPIC:
         bus.register_handler(MODULE_INSTALL_REQUEST_TOPIC, _handle_module_install)
     if MODULE_UNINSTALL_REQUEST_TOPIC:
         bus.register_handler(MODULE_UNINSTALL_REQUEST_TOPIC, _handle_module_uninstall)
+    if COMPONENT_PACK_INSTALL_REQUEST_TOPIC:
+        bus.register_handler(COMPONENT_PACK_INSTALL_REQUEST_TOPIC, _handle_component_pack_install)
+    if COMPONENT_PACK_UNINSTALL_REQUEST_TOPIC:
+        bus.register_handler(COMPONENT_PACK_UNINSTALL_REQUEST_TOPIC, _handle_component_pack_uninstall)
     if JOBS_LIST_REQUEST_TOPIC:
         bus.register_handler(JOBS_LIST_REQUEST_TOPIC, _handle_jobs_list)
     if JOBS_GET_REQUEST_TOPIC:

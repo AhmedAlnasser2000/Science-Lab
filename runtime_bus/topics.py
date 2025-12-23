@@ -29,8 +29,11 @@ CORE_CLEANUP_COMPLETED = "core.cleanup.completed"
 CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST = "core.storage.allocate_run_dir.request"
 CORE_POLICY_GET_REQUEST = "core.policy.get.request"
 CORE_REGISTRY_GET_REQUEST = "core.registry.get.request"
+CORE_INVENTORY_GET_REQUEST = "core.inventory.get.request"
 CORE_CONTENT_MODULE_INSTALL_REQUEST = "core.content.module.install.request"
 CORE_CONTENT_MODULE_UNINSTALL_REQUEST = "core.content.module.uninstall.request"
+CORE_COMPONENT_PACK_INSTALL_REQUEST = "core.component_pack.install.request"
+CORE_COMPONENT_PACK_UNINSTALL_REQUEST = "core.component_pack.uninstall.request"
 CORE_JOBS_LIST_REQUEST = "core.jobs.list.request"
 CORE_JOBS_GET_REQUEST = "core.jobs.get.request"
 
@@ -61,8 +64,11 @@ __all__ = [
     "CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST",
     "CORE_POLICY_GET_REQUEST",
     "CORE_REGISTRY_GET_REQUEST",
+    "CORE_INVENTORY_GET_REQUEST",
     "CORE_CONTENT_MODULE_INSTALL_REQUEST",
     "CORE_CONTENT_MODULE_UNINSTALL_REQUEST",
+    "CORE_COMPONENT_PACK_INSTALL_REQUEST",
+    "CORE_COMPONENT_PACK_UNINSTALL_REQUEST",
     "CORE_JOBS_LIST_REQUEST",
     "CORE_JOBS_GET_REQUEST",
     "ERROR_RAISED",
