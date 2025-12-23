@@ -277,6 +277,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         on_open_module_mgmt,
         on_open_content_mgmt,
         on_open_diagnostics,
+        on_open_component_mgmt,
         on_open_component_sandbox,
         on_quit,
         experience_profile: str,
@@ -288,6 +289,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         self.on_open_module_mgmt = on_open_module_mgmt
         self.on_open_content_mgmt = on_open_content_mgmt
         self.on_open_diagnostics = on_open_diagnostics
+        self.on_open_component_mgmt = on_open_component_mgmt
         self.on_open_component_sandbox = on_open_component_sandbox
         self.on_quit = on_quit
         self.profile = experience_profile
@@ -348,6 +350,9 @@ class MainMenuScreen(QtWidgets.QWidget):
 
         if self.profile in ("Educator", "Explorer"):
             self._add_button("System Health / Storage", self.on_open_diagnostics)
+
+        if self.profile == "Explorer" and self.on_open_component_mgmt:
+            self._add_button("Component Management", self.on_open_component_mgmt)
 
         if self.profile == "Explorer" and self.on_open_component_sandbox and COMPONENT_RUNTIME_AVAILABLE:
             self._add_button("Component Sandbox", self.on_open_component_sandbox)
@@ -2239,6 +2244,207 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self.progress_panel.setVisible(True)
 
 
+def _format_pack_label(pack: Dict[str, Any]) -> str:
+    pack_id = pack.get("pack_id") or "unknown"
+    name = pack.get("display_name") or pack_id
+    version = pack.get("version") or "?"
+    return f"{name} ({pack_id}) v{version}"
+
+
+def _selected_pack_id(list_widget: QtWidgets.QListWidget) -> Optional[str]:
+    item = list_widget.currentItem()
+    if not item:
+        return None
+    value = item.data(QtCore.Qt.ItemDataRole.UserRole)
+    return value if isinstance(value, str) else None
+
+
+def _run_pack_job(action: str, pack_id: str) -> Dict[str, Any]:
+    import shutil
+
+    repo_root = Path("component_repo/component_v1/packs")
+    store_root = Path("component_store/component_v1/packs")
+    repo_pack = repo_root / pack_id
+    store_pack = store_root / pack_id
+
+    repo_root.mkdir(parents=True, exist_ok=True)
+    store_root.mkdir(parents=True, exist_ok=True)
+
+    if action == "install":
+        if not repo_pack.exists():
+            return {"ok": False, "message": f"Pack '{pack_id}' not found in repo."}
+        if store_pack.exists():
+            shutil.rmtree(store_pack, ignore_errors=True)
+        shutil.copytree(repo_pack, store_pack, dirs_exist_ok=True)
+        return {"ok": True, "message": f"Installed {pack_id}."}
+    if action == "uninstall":
+        if not store_pack.exists():
+            return {"ok": False, "message": f"Pack '{pack_id}' not installed."}
+        shutil.rmtree(store_pack, ignore_errors=True)
+        return {"ok": True, "message": f"Uninstalled {pack_id}."}
+    return {"ok": False, "message": "Unknown action."}
+
+
+class ComponentManagementScreen(QtWidgets.QWidget):
+    def __init__(self, on_back, bus=None):
+        super().__init__()
+        self.on_back = on_back
+        self.bus = bus
+        self._job_thread: Optional[QtCore.QThread] = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        header = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Component Management")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh)
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        header.addWidget(title)
+        header.addStretch()
+        header.addWidget(refresh_btn)
+        header.addWidget(back_btn)
+        layout.addLayout(header)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        layout.addWidget(splitter, stretch=1)
+
+        repo_panel = QtWidgets.QWidget()
+        repo_layout = QtWidgets.QVBoxLayout(repo_panel)
+        repo_layout.addWidget(QtWidgets.QLabel("Available (Repo)"))
+        self.repo_list = QtWidgets.QListWidget()
+        repo_layout.addWidget(self.repo_list, stretch=1)
+        repo_btn_row = QtWidgets.QHBoxLayout()
+        self.install_btn = QtWidgets.QPushButton("Install")
+        self.install_btn.clicked.connect(self._install_selected)
+        repo_btn_row.addWidget(self.install_btn)
+        repo_layout.addLayout(repo_btn_row)
+        splitter.addWidget(repo_panel)
+
+        store_panel = QtWidgets.QWidget()
+        store_layout = QtWidgets.QVBoxLayout(store_panel)
+        store_layout.addWidget(QtWidgets.QLabel("Installed (Store)"))
+        self.store_list = QtWidgets.QListWidget()
+        store_layout.addWidget(self.store_list, stretch=1)
+        store_btn_row = QtWidgets.QHBoxLayout()
+        self.uninstall_btn = QtWidgets.QPushButton("Uninstall")
+        self.uninstall_btn.clicked.connect(self._uninstall_selected)
+        store_btn_row.addWidget(self.uninstall_btn)
+        store_layout.addLayout(store_btn_row)
+        splitter.addWidget(store_panel)
+
+        self.progress_panel = QtWidgets.QFrame()
+        self.progress_panel.setVisible(False)
+        self.progress_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
+        pp_layout = QtWidgets.QHBoxLayout(self.progress_panel)
+        text_box = QtWidgets.QVBoxLayout()
+        self.progress_title = QtWidgets.QLabel("")
+        self.progress_details = QtWidgets.QLabel("")
+        self.progress_details.setWordWrap(True)
+        dismiss_btn = QtWidgets.QPushButton("Dismiss")
+        dismiss_btn.clicked.connect(lambda: self.progress_panel.setVisible(False))
+        text_box.addWidget(self.progress_title)
+        text_box.addWidget(self.progress_details)
+        pp_layout.addLayout(text_box, stretch=1)
+        pp_layout.addWidget(dismiss_btn)
+        layout.addWidget(self.progress_panel)
+
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+        splitter.setChildrenCollapsible(False)
+
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.repo_list.clear()
+        self.store_list.clear()
+        if component_packs is None:
+            self._show_progress("Component packs", "component_runtime not available", running=False, ok=False)
+            return
+        repo_packs = component_packs.list_repo_packs()
+        store_packs = component_packs.list_installed_packs()
+        for pack in repo_packs:
+            label = _format_pack_label(pack)
+            item = QtWidgets.QListWidgetItem(label)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, pack.get("pack_id"))
+            self.repo_list.addItem(item)
+        for pack in store_packs:
+            label = _format_pack_label(pack)
+            item = QtWidgets.QListWidgetItem(label)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, pack.get("pack_id"))
+            self.store_list.addItem(item)
+
+    def _install_selected(self) -> None:
+        pack_id = _selected_pack_id(self.repo_list)
+        if not pack_id:
+            self._show_progress("Install", "Select a pack to install.", running=False, ok=False)
+            return
+        self._run_job("install", pack_id)
+
+    def _uninstall_selected(self) -> None:
+        pack_id = _selected_pack_id(self.store_list)
+        if not pack_id:
+            self._show_progress("Uninstall", "Select a pack to uninstall.", running=False, ok=False)
+            return
+        self._run_job("uninstall", pack_id)
+
+    def _run_job(self, action: str, pack_id: str) -> None:
+        if self._job_thread is not None:
+            return
+        self.install_btn.setEnabled(False)
+        self.uninstall_btn.setEnabled(False)
+        self._show_progress(f"{action.title()} {pack_id}", "Starting job...", running=True)
+        worker = TaskWorker(lambda: _run_pack_job(action, pack_id))
+        thread = QtCore.QThread()
+        self._job_thread = thread
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_job_finished)
+        worker.error.connect(self._on_job_error)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+
+    def _on_job_finished(self, result: Dict[str, Any]) -> None:
+        self._job_thread = None
+        self.install_btn.setEnabled(True)
+        self.uninstall_btn.setEnabled(True)
+        ok = bool(result.get("ok"))
+        details = result.get("message") or ""
+        self._show_progress("Pack Job", details, running=False, ok=ok)
+        self._refresh_registry()
+        self.refresh()
+
+    def _on_job_error(self, error: str) -> None:
+        self._job_thread = None
+        self.install_btn.setEnabled(True)
+        self.uninstall_btn.setEnabled(True)
+        self._show_progress("Pack Job", error, running=False, ok=False)
+
+    def _refresh_registry(self) -> None:
+        if component_registry is None or component_packs is None:
+            return
+        try:
+            pack_manifests = component_packs.load_installed_packs()
+            component_registry.register_pack_components(pack_manifests)
+        except Exception:
+            pass
+
+    def _show_progress(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
+        color = "#7a7a7a"
+        if ok is True:
+            color = "#2e7d32"
+        elif ok is False:
+            color = "#b71c1c"
+        if running:
+            details = f"{details} (running)"
+        self.progress_title.setText(title)
+        self.progress_title.setStyleSheet(f"font-weight: bold; color: {color};")
+        self.progress_details.setText(details)
+        self.progress_panel.setVisible(True)
+
+
 class StatusPill(QtWidgets.QLabel):
     def __init__(self, text: str = "") -> None:
         super().__init__(text)
@@ -3019,6 +3225,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_module_management,
             self._open_content_management,
             self._open_diagnostics,
+            self._open_component_management,
             self._open_component_sandbox,
             self._quit_app,
             self.current_profile,
@@ -3038,6 +3245,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_content_browser_from_management,
             bus=APP_BUS,
         )
+        self.component_management = ComponentManagementScreen(self._show_main_menu, bus=APP_BUS)
         self.component_sandbox = ComponentSandboxScreen(
             self._show_main_menu,
             self._build_component_context,
@@ -3061,6 +3269,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.system_health)
         self.stacked.addWidget(self.module_management)
         self.stacked.addWidget(self.content_management)
+        self.stacked.addWidget(self.component_management)
         self.stacked.addWidget(self.component_sandbox)
         self.stacked.addWidget(self.component_host)
         self._show_main_menu()
@@ -3182,6 +3391,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.system_health:
             self.system_health.prepare()
             self.stacked.setCurrentWidget(self.system_health)
+
+    def _open_component_management(self):
+        self._dispose_lab_widget()
+        if self.component_management:
+            self.component_management.refresh()
+            self.stacked.setCurrentWidget(self.component_management)
 
     def _open_component_sandbox(self):
         self._dispose_lab_widget()

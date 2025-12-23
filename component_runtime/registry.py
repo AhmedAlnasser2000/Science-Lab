@@ -17,6 +17,7 @@ class ComponentRegistry:
 
     def __init__(self) -> None:
         self._entries: Dict[str, ComponentEntry] = {}
+        self._pack_component_ids: set[str] = set()
 
     def register(self, factory: Callable[[], Component]) -> None:
         component = factory()
@@ -69,6 +70,10 @@ def register_pack_components(pack_manifests) -> None:
     from .markdown_panel import MarkdownPanelComponent
     from .types import ComponentKind
 
+    for component_id in list(_REGISTRY._pack_component_ids):
+        _REGISTRY._entries.pop(component_id, None)
+    _REGISTRY._pack_component_ids.clear()
+
     for entry in pack_manifests or []:
         manifest = entry.get("manifest") if isinstance(entry, dict) else entry
         if not isinstance(manifest, dict):
@@ -103,6 +108,7 @@ def register_pack_components(pack_manifests) -> None:
                         component.get("params") or {},
                     )
                 )
+                _REGISTRY._pack_component_ids.add(component_id)
             elif impl == "builtin:lab_preset":
                 _REGISTRY.register(
                     lambda component_id=component_id, display_name=display_name, parsed_kind=parsed_kind, pack_root=pack_root, component=component: LabPresetLauncherComponent(
@@ -113,3 +119,4 @@ def register_pack_components(pack_manifests) -> None:
                         component.get("params") or {},
                     )
                 )
+                _REGISTRY._pack_component_ids.add(component_id)
