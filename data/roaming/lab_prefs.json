@@ -2,7 +2,7 @@
   "labs": {
     "gravity": {
       "show_grid": true,
-      "show_axes": true
+      "show_axes": false
     },
     "vector_add": {
       "show_grid": true,

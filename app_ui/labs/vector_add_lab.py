@@ -32,6 +32,7 @@ from .context import LabContext, LabUserPrefs
 from .shared import primitives as shared_primitives
 from .shared.math2d import Vec2
 from .shared.viewport import ViewTransform
+from component_runtime.subcomponents.render_grid_axes import GridAxesRenderable
 
 
 class VectorAddLabPlugin(LabPlugin):
@@ -99,6 +100,7 @@ class VectorAddLabWidget(QtWidgets.QWidget):
 
         self.canvas = RenderCanvas(self.resolver, self.cache)
         layout.addWidget(self.canvas)
+        self._grid_axes = GridAxesRenderable()
 
         buttons = QtWidgets.QHBoxLayout()
         self.run_btn = QtWidgets.QPushButton("Run")
@@ -279,11 +281,18 @@ class VectorAddLabWidget(QtWidgets.QWidget):
             origin = view.world_to_screen(QtCore.QPointF(0.0, 0.0))
             step_world = max(1.0, span / 8.0)
             step_px = abs(view.world_to_screen(QtCore.QPointF(step_world, 0.0)).x() - origin.x())
-            if prefs.show_grid:
-                shared_primitives.draw_grid(p, rect_px, step_px=step_px)
-            if prefs.show_axes:
-                axis_len = min(rect_px.width(), rect_px.height()) / 2.0
-                shared_primitives.draw_axes(p, origin, axis_len_px=axis_len)
+            axis_len = min(rect_px.width(), rect_px.height()) / 2.0
+            self._grid_axes.draw(
+                p,
+                view,
+                {
+                    "rect_px": rect_px,
+                    "origin_px": origin,
+                    "step_px": step_px,
+                    "axis_len_px": axis_len,
+                    "lab_prefs": prefs,
+                },
+            )
 
         def layer_vectors(p: QtGui.QPainter, ctx):
             view = _build_view(p)
