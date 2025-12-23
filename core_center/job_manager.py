@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
 from .cleanup import purge_cache, prune_dumps
+from diagnostics.fs_ops import safe_copytree, safe_rmtree
 from .discovery import discover_components, ensure_data_roots
 from .registry import load_registry, save_registry, upsert_records
 from .storage_report import format_report_text, generate_report
@@ -351,27 +352,42 @@ def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str
     staging_parent.mkdir(parents=True, exist_ok=True)
     store_parent = target_dir.parent
     store_parent.mkdir(parents=True, exist_ok=True)
+    ok = False
+    error_msg = ""
+    result: Dict[str, Any] = {}
     try:
         if staging_dir.exists():
-            shutil.rmtree(staging_dir)
+            safe_rmtree(staging_dir)
         _module_progress(ctx, module_id, 5, "preparing staging")
-        shutil.copytree(source_dir, staging_dir)
+        safe_copytree(source_dir, staging_dir)
         _module_progress(ctx, module_id, 55, "staged copy complete")
         if target_dir.exists():
-            shutil.rmtree(target_dir)
+            safe_rmtree(target_dir)
         shutil.move(str(staging_dir), str(target_dir))
         _module_progress(ctx, module_id, 80, "installed to store")
         _refresh_registry_records()
         _module_progress(ctx, module_id, 95, "registry updated")
-        _module_completed(ctx, module_id, "install", True, install_path=str(target_dir))
-        return {"module_id": module_id, "install_path": str(target_dir)}
+        ok = True
+        result = {"module_id": module_id, "install_path": str(target_dir)}
+        return result
     except Exception as exc:
-        _module_completed(ctx, module_id, "install", False, error=str(exc))
-        raise
+        error_msg = (
+            f"install failed: module={module_id} src={source_dir} "
+            f"staging={staging_dir} dst={target_dir} err={exc!r}"
+        )
+        raise RuntimeError(error_msg) from exc
     finally:
+        _module_completed(
+            ctx,
+            module_id,
+            "install",
+            ok,
+            error=error_msg or None,
+            install_path=str(target_dir) if ok else None,
+        )
         try:
             if staging_dir.exists():
-                shutil.rmtree(staging_dir, ignore_errors=True)
+                safe_rmtree(staging_dir)
         except Exception:
             pass
         try:
@@ -386,17 +402,23 @@ def _handle_module_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[s
     target_dir = Path("content_store") / module_id
     if not target_dir.exists() or not target_dir.is_dir():
         raise FileNotFoundError(f"module not installed: {module_id}")
+    ok = False
+    error_msg = ""
+    result: Dict[str, Any] = {}
     try:
         _module_progress(ctx, module_id, 10, "removing module")
-        shutil.rmtree(target_dir)
+        safe_rmtree(target_dir)
         _module_progress(ctx, module_id, 70, "removed from store")
         _refresh_registry_records()
         _module_progress(ctx, module_id, 95, "registry updated")
-        _module_completed(ctx, module_id, "uninstall", True)
-        return {"module_id": module_id}
+        ok = True
+        result = {"module_id": module_id}
+        return result
     except Exception as exc:
-        _module_completed(ctx, module_id, "uninstall", False, error=str(exc))
-        raise
+        error_msg = f"uninstall failed: module={module_id} dst={target_dir} err={exc!r}"
+        raise RuntimeError(error_msg) from exc
+    finally:
+        _module_completed(ctx, module_id, "uninstall", ok, error=error_msg or None)
 
 
 def _register_builtin_jobs() -> None:

@@ -6,8 +6,8 @@
     "source": "repo",
     "state": "present",
     "install_path": "content_repo\\physics_v1",
-    "last_seen": "2025-12-19T17:53:39Z",
-    "disk_usage_bytes": 21697
+    "last_seen": "2025-12-23T07:50:59Z",
+    "disk_usage_bytes": 21946
   },
   {
     "id": "default",
@@ -16,7 +16,7 @@
     "source": "repo",
     "state": "present",
     "install_path": "ui_repo\\ui_v1\\packs\\default",
-    "last_seen": "2025-12-19T17:53:39Z",
+    "last_seen": "2025-12-23T07:50:59Z",
     "disk_usage_bytes": 1274
   },
   {
@@ -26,7 +26,7 @@
     "source": "repo",
     "state": "present",
     "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth",
-    "last_seen": "2025-12-19T17:53:39Z",
+    "last_seen": "2025-12-23T07:50:59Z",
     "disk_usage_bytes": 1664
   },
   {
@@ -36,7 +36,7 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-19T17:53:39Z",
+    "last_seen": "2025-12-23T07:50:59Z",
     "disk_usage_bytes": 8791
   },
   {
@@ -46,7 +46,7 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-19T17:53:39Z",
+    "last_seen": "2025-12-23T07:50:59Z",
     "disk_usage_bytes": 10439
   },
   {
@@ -56,8 +56,8 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-19T17:53:39Z",
-    "disk_usage_bytes": 11477
+    "last_seen": "2025-12-23T07:50:59Z",
+    "disk_usage_bytes": 13627
   },
   {
     "id": "lens_ray",
@@ -66,8 +66,8 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-19T17:53:39Z",
-    "disk_usage_bytes": 13514
+    "last_seen": "2025-12-23T07:50:59Z",
+    "disk_usage_bytes": 16049
   },
   {
     "id": "vector_add",
@@ -76,8 +76,8 @@
     "source": "app",
     "state": "present",
     "install_path": "app_ui\\labs",
-    "last_seen": "2025-12-19T17:53:39Z",
-    "disk_usage_bytes": 9555
+    "last_seen": "2025-12-23T07:50:59Z",
+    "disk_usage_bytes": 11692
   },
   {
     "id": "physics",
@@ -86,7 +86,7 @@
     "source": "store",
     "state": "present",
     "install_path": "content_store\\physics_v1",
-    "last_seen": "2025-12-18T12:56:25Z",
-    "disk_usage_bytes": 21687
+    "last_seen": "2025-12-23T07:50:51Z",
+    "disk_usage_bytes": 21946
   }
 ]

@@ -14,6 +14,7 @@ from . import kernel_bridge
 from .labs import registry as lab_registry
 from .labs.host import LabHost
 from .labs.host import DEFAULT_POLICY as LAB_DEFAULT_POLICY
+from diagnostics.fs_ops import safe_copytree, safe_rmtree
 
 
 def _ensure_safe_font(app: QtWidgets.QApplication, min_point_size: int = 10) -> None:
@@ -2260,8 +2261,6 @@ def _selected_pack_id(list_widget: QtWidgets.QListWidget) -> Optional[str]:
 
 
 def _run_pack_job(action: str, pack_id: str) -> Dict[str, Any]:
-    import shutil
-
     repo_root = Path("component_repo/component_v1/packs")
     store_root = Path("component_store/component_v1/packs")
     repo_pack = repo_root / pack_id
@@ -2270,19 +2269,28 @@ def _run_pack_job(action: str, pack_id: str) -> Dict[str, Any]:
     repo_root.mkdir(parents=True, exist_ok=True)
     store_root.mkdir(parents=True, exist_ok=True)
 
-    if action == "install":
-        if not repo_pack.exists():
-            return {"ok": False, "message": f"Pack '{pack_id}' not found in repo."}
-        if store_pack.exists():
-            shutil.rmtree(store_pack, ignore_errors=True)
-        shutil.copytree(repo_pack, store_pack, dirs_exist_ok=True)
-        return {"ok": True, "message": f"Installed {pack_id}."}
-    if action == "uninstall":
-        if not store_pack.exists():
-            return {"ok": False, "message": f"Pack '{pack_id}' not installed."}
-        shutil.rmtree(store_pack, ignore_errors=True)
-        return {"ok": True, "message": f"Uninstalled {pack_id}."}
-    return {"ok": False, "message": "Unknown action."}
+    try:
+        if action == "install":
+            if not repo_pack.exists():
+                return {"ok": False, "message": f"Pack '{pack_id}' not found in repo."}
+            if store_pack.exists():
+                safe_rmtree(store_pack)
+            safe_copytree(repo_pack, store_pack)
+            return {"ok": True, "message": f"Installed {pack_id}."}
+        if action == "uninstall":
+            if not store_pack.exists():
+                return {"ok": False, "message": f"Pack '{pack_id}' not installed."}
+            safe_rmtree(store_pack)
+            return {"ok": True, "message": f"Uninstalled {pack_id}."}
+        return {"ok": False, "message": "Unknown action."}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "message": (
+                f"{action} failed: pack={pack_id} src={repo_pack} "
+                f"dst={store_pack} err={exc!r}"
+            ),
+        }
 
 
 class ComponentManagementScreen(QtWidgets.QWidget):
