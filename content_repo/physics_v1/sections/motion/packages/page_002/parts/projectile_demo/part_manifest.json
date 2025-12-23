@@ -6,6 +6,7 @@
   "section_id": "motion",
   "package_id": "page_002",
   "part_id": "projectile_demo",
+  "component_id": "labhost:projectile",
   "title": "Projectile Motion Lab",
   "part_type": "simulation",
   "content": {

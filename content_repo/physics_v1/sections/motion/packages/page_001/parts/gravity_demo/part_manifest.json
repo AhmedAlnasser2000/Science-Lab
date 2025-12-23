@@ -6,6 +6,7 @@
   "section_id": "motion",
   "package_id": "page_001",
   "part_id": "gravity_demo",
+  "component_id": "labhost:gravity",
   "title": "Gravity Drop Demo",
   "part_type": "simulation",
   "content": {

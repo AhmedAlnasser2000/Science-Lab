@@ -6,6 +6,7 @@
   "section_id": "electricity",
   "package_id": "page_001",
   "part_id": "electric_field_demo",
+  "component_id": "labhost:electric_field",
   "title": "Electric Field Lab",
   "part_type": "simulation",
   "content": {

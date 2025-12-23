@@ -6,6 +6,7 @@
   "section_id": "optics",
   "package_id": "page_001",
   "part_id": "lens_ray_demo",
+  "component_id": "labhost:lens_ray",
   "title": "Lens Ray Lab",
   "part_type": "simulation",
   "content": {
