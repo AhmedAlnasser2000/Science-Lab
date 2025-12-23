@@ -42,6 +42,82 @@ _RUNNING_JOBS: Dict[str, threading.Thread] = {}
 _JOB_STATE: Dict[str, Dict[str, Any]] = {}
 _LOCK = threading.Lock()
 JOB_HISTORY_PATH = Path("data/roaming/jobs.json")
+REPO_ROOT = Path("content_repo")
+STORE_ROOT = Path("content_store")
+DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+
+
+def _agent_log(location: str, message: str, data: Dict[str, Any], hypothesis_id: str, run_id: str = "baseline") -> None:
+    # region agent log
+    try:
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _fh:
+            _fh.write(
+                json.dumps(
+                    {
+                        "sessionId": "debug-session",
+                        "runId": run_id,
+                        "hypothesisId": hypothesis_id,
+                        "location": location,
+                        "message": message,
+                        "data": data,
+                        "timestamp": int(time.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # endregion
+
+
+def _load_manifest(path: Path) -> Dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _resolve_module_paths(module_id: str, *, source: str) -> tuple[Path, Path, str]:
+    """Resolve module paths allowing manifest id/folder name mismatch."""
+    base = REPO_ROOT if source == "repo" else STORE_ROOT
+    if not base.exists():
+        raise FileNotFoundError(f"module not found in repo: {module_id}")
+    for manifest_path in base.rglob("module_manifest.json"):
+        manifest = _load_manifest(manifest_path)
+        manifest_id = str(manifest.get("module_id") or "").strip()
+        folder_id = manifest_path.parent.name
+        if module_id in (manifest_id, folder_id):
+            resolved_id = manifest_id or folder_id
+            target_dir = STORE_ROOT / folder_id
+            _agent_log(
+                "core_center/job_manager.py:_resolve_module_paths",
+                "module_resolved",
+                {
+                    "module_id": module_id,
+                    "manifest_id": manifest_id,
+                    "folder_id": folder_id,
+                    "resolved_id": resolved_id,
+                    "source": source,
+                    "source_dir": str(manifest_path.parent),
+                    "target_dir": str(target_dir),
+                },
+                hypothesis_id="H3",
+            )
+            return manifest_path.parent, target_dir, resolved_id
+    raise FileNotFoundError(f"module not found in repo: {module_id}")
+
+
+def _resolve_installed_module_path(module_id: str) -> tuple[Path, str]:
+    """Find installed module path in store by manifest id or folder name."""
+    if not STORE_ROOT.exists():
+        raise FileNotFoundError(f"module not installed: {module_id}")
+    for manifest_path in STORE_ROOT.rglob("module_manifest.json"):
+        manifest = _load_manifest(manifest_path)
+        manifest_id = str(manifest.get("module_id") or "").strip()
+        folder_id = manifest_path.parent.name
+        if module_id in (manifest_id, folder_id):
+            return manifest_path.parent, (manifest_id or folder_id)
+    raise FileNotFoundError(f"module not installed: {module_id}")
 
 
 class JobContext:
@@ -60,10 +136,10 @@ class JobContext:
             self.source,
         )
 
-    def publish(self, topic: str, payload: Dict[str, Any]) -> None:
+    def publish(self, topic: str, payload: Dict[str, Any], *, sticky: bool = False) -> None:
         data = dict(payload)
         data.setdefault("job_id", self.job_id)
-        _publish(self.bus, topic, data, self.source)
+        _publish(self.bus, topic, data, self.source, sticky=sticky)
 
 
 def register_job_handler(job_type: str, handler: JobHandler) -> None:
@@ -136,10 +212,11 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
     if not ok and job_type == JOB_REPORT_GENERATE:
         context.publish(REPORT_READY_TOPIC, {"ok": False, "error": error_msg or "failed"})
     finished_at = _now_iso()
+    status = "COMPLETED" if ok else "FAILED"
     _update_job_state(
         job_id,
         {
-            "status": "completed",
+            "status": status,
             "finished_at": finished_at,
             "result": result if ok else None,
             "error": error_msg if not ok else None,
@@ -150,8 +227,16 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
     _publish(
         bus,
         JOB_COMPLETED_TOPIC,
-        {"job_id": job_id, "job_type": job_type, "ok": ok, "result": result if ok else None, "error": error_msg if not ok else None},
+        {
+            "job_id": job_id,
+            "job_type": job_type,
+            "status": status,
+            "ok": ok,
+            "result": result if ok else None,
+            "error": error_msg if not ok else None,
+        },
         source,
+        sticky=True,
     )
     with _LOCK:
         _RUNNING_JOBS.pop(job_id, None)
@@ -159,11 +244,11 @@ def _run_job(job_id: str, job_type: str, payload: Dict[str, Any], bus: Any, sour
     _persist_job_record(snapshot)
 
 
-def _publish(bus: Any, topic: Optional[str], payload: Dict[str, Any], source: str) -> None:
+def _publish(bus: Any, topic: Optional[str], payload: Dict[str, Any], source: str, *, sticky: bool = False) -> None:
     if not bus or not topic:
         return
     try:
-        bus.publish(topic, payload, source=source, trace_id=None)
+        bus.publish(topic, payload, source=source, trace_id=None, sticky=sticky)
     except Exception:  # pragma: no cover - defensive
         return
 
@@ -270,7 +355,7 @@ def _module_progress(ctx: JobContext, module_id: str, percent: float, stage: str
 def _module_completed(ctx: JobContext, module_id: str, action: str, ok: bool, **extra) -> None:
     payload = {"module_id": module_id, "action": action, "ok": ok}
     payload.update(extra)
-    ctx.publish(CONTENT_INSTALL_COMPLETED_TOPIC, payload)
+    ctx.publish(CONTENT_INSTALL_COMPLETED_TOPIC, payload, sticky=True)
 
 
 def _validate_module_id(payload: Dict[str, Any]) -> str:
@@ -343,32 +428,43 @@ def _handle_cleanup_dumps(payload: Dict[str, Any], ctx: JobContext) -> Dict[str,
 
 def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
     module_id = _validate_module_id(payload)
-    source_dir = Path("content_repo") / module_id
-    if not source_dir.exists() or not source_dir.is_dir():
-        raise FileNotFoundError(f"module not found in repo: {module_id}")
-    staging_dir = Path("data/cache/module_installs") / module_id / ctx.job_id
-    target_dir = Path("content_store") / module_id
+    source_dir, target_dir, resolved_id = _resolve_module_paths(module_id, source="repo")
+    staging_dir = Path("data/cache/module_installs") / resolved_id / ctx.job_id
     staging_parent = staging_dir.parent
     staging_parent.mkdir(parents=True, exist_ok=True)
     store_parent = target_dir.parent
     store_parent.mkdir(parents=True, exist_ok=True)
+    _agent_log(
+        "core_center/job_manager.py:_handle_module_install",
+        "module_install_start",
+        {
+            "module_id": module_id,
+            "resolved_id": resolved_id,
+            "source_dir": str(source_dir),
+            "target_dir": str(target_dir),
+            "staging_dir": str(staging_dir),
+            "target_exists": target_dir.exists(),
+            "staging_exists": staging_dir.exists(),
+        },
+        hypothesis_id="H2",
+    )
     ok = False
     error_msg = ""
     result: Dict[str, Any] = {}
     try:
         if staging_dir.exists():
             safe_rmtree(staging_dir)
-        _module_progress(ctx, module_id, 5, "preparing staging")
+        _module_progress(ctx, resolved_id, 5, "preparing staging")
         safe_copytree(source_dir, staging_dir)
-        _module_progress(ctx, module_id, 55, "staged copy complete")
+        _module_progress(ctx, resolved_id, 55, "staged copy complete")
         if target_dir.exists():
             safe_rmtree(target_dir)
         shutil.move(str(staging_dir), str(target_dir))
-        _module_progress(ctx, module_id, 80, "installed to store")
+        _module_progress(ctx, resolved_id, 80, "installed to store")
         _refresh_registry_records()
-        _module_progress(ctx, module_id, 95, "registry updated")
+        _module_progress(ctx, resolved_id, 95, "registry updated")
         ok = True
-        result = {"module_id": module_id, "install_path": str(target_dir)}
+        result = {"module_id": resolved_id, "install_path": str(target_dir)}
         return result
     except Exception as exc:
         error_msg = (
@@ -377,9 +473,23 @@ def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str
         )
         raise RuntimeError(error_msg) from exc
     finally:
+        _agent_log(
+            "core_center/job_manager.py:_handle_module_install",
+            "module_install_finish",
+            {
+                "module_id": module_id,
+                "resolved_id": resolved_id,
+                "ok": ok,
+                "error": error_msg or None,
+                "staging_exists_after": staging_dir.exists(),
+                "staging_parent_exists": staging_parent.exists(),
+                "target_exists_after": target_dir.exists(),
+            },
+            hypothesis_id="H2",
+        )
         _module_completed(
             ctx,
-            module_id,
+            resolved_id,
             "install",
             ok,
             error=error_msg or None,
@@ -399,26 +509,24 @@ def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str
 
 def _handle_module_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
     module_id = _validate_module_id(payload)
-    target_dir = Path("content_store") / module_id
-    if not target_dir.exists() or not target_dir.is_dir():
-        raise FileNotFoundError(f"module not installed: {module_id}")
+    target_dir, resolved_id = _resolve_installed_module_path(module_id)
     ok = False
     error_msg = ""
     result: Dict[str, Any] = {}
     try:
-        _module_progress(ctx, module_id, 10, "removing module")
+        _module_progress(ctx, resolved_id, 10, "removing module")
         safe_rmtree(target_dir)
-        _module_progress(ctx, module_id, 70, "removed from store")
+        _module_progress(ctx, resolved_id, 70, "removed from store")
         _refresh_registry_records()
-        _module_progress(ctx, module_id, 95, "registry updated")
+        _module_progress(ctx, resolved_id, 95, "registry updated")
         ok = True
-        result = {"module_id": module_id}
+        result = {"module_id": resolved_id}
         return result
     except Exception as exc:
         error_msg = f"uninstall failed: module={module_id} dst={target_dir} err={exc!r}"
         raise RuntimeError(error_msg) from exc
     finally:
-        _module_completed(ctx, module_id, "uninstall", ok, error=error_msg or None)
+        _module_completed(ctx, resolved_id, "uninstall", ok, error=error_msg or None)
 
 
 def _register_builtin_jobs() -> None:

@@ -1,0 +1,1000 @@
+Folder PATH listing for volume Windows
+Volume serial number is 6AC9-54CD
+C:.
+|   .gitattributes
+|   .gitignore
+|   CHANGELOG.md
+|   README.md
+|   
++---.cursor
+|   |   debug.log
+|   |   
+|   +---commands
+|   |       gemini-draft-new-physics-page.md
+|   |       gemini-improve-existing-markdown.md
+|   |       
+|   \---rules
+|       \---gemini-3-pro-rules
+|               RULE.md
+|               
++---.vs
+|   |   ProjectSettings.json
+|   |   slnx.sqlite
+|   |   VSWorkspaceState.json
+|   |   
+|   \---PhysicsLab
+|       +---FileContentIndex
+|       |       f4265ca1-9863-4cb8-a1b2-30187cb4b8a1.vsidx
+|       |       
+|       \---v17
+|               Browse.VC.db
+|               DocumentLayout.json
+|               
++---app_ui
+|   |   config.py
+|   |   kernel_bridge.py
+|   |   main.py
+|   |   README.md
+|   |   __init__.py
+|   |   
+|   +---labs
+|   |   |   base.py
+|   |   |   context.py
+|   |   |   electric_field_lab.py
+|   |   |   gravity_lab.py
+|   |   |   host.py
+|   |   |   lens_ray_lab.py
+|   |   |   prefs_store.py
+|   |   |   projectile_lab.py
++   |   |   registry.py
+|   |   |   vector_add_lab.py
+|   |   |   _viz_canvas.py
+|   |   |   __init__.py
+|   |   |   
+|   |   +---renderkit
+|   |   |   |   assets.py
+|   |   |   |   canvas.py
+|   |   |   |   primitives.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           assets.cpython-314.pyc
+|   |   |           canvas.cpython-314.pyc
+|   |   |           primitives.cpython-314.pyc
+|   |   |           __init__.cpython-314.pyc
+|   |   |           
+|   |   +---shared
+|   |   |   |   init.py
+|   |   |   |   math2d.py
+|   |   |   |   primitives.py
+|   |   |   |   viewport.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           init.cpython-314.pyc
+|   |   |           math2d.cpython-314.pyc
+|   |   |           primitives.cpython-314.pyc
+|   |   |           viewport.cpython-314.pyc
+|   |   |           __init__.cpython-314.pyc
+|   |   |           
+|   |   \---__pycache__
+|   |           base.cpython-314.pyc
+|   |           context.cpython-314.pyc
+|   |           electric_field_lab.cpython-314.pyc
+|   |           gravity_lab.cpython-314.pyc
+|   |           host.cpython-314.pyc
+|   |           lens_ray_lab.cpython-314.pyc
+|   |           prefs_store.cpython-314.pyc
+|   |           projectile_lab.cpython-314.pyc
+|   |           registry.cpython-314.pyc
+|   |           shared_lib.cpython-314.pyc
+|   |           vector_add_lab.cpython-314.pyc
+|   |           _viz_canvas.cpython-314.pyc
+|   |           __init__.cpython-314.pyc
+|   |           
+|   \---__pycache__
+|           config.cpython-314.pyc
+|           kernel_bridge.cpython-314.pyc
+|           main.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---component_repo
+|   \---component_v1
+|       \---packs
+|           \---welcome_pack
+|                   component_pack_manifest.json
+|                   welcome.md
+|                   
++---component_runtime
+|   |   context.py
+|   |   demo_component.py
+|   |   host.py
+|   |   lab_component.py
+|   |   lab_preset.py
+|   |   markdown_panel.py
+|   |   packs.py
+|   |   registry.py
+|   |   types.py
+|   |   __init__.py
+|   |   
+|   +---subcomponents
+|   |   |   base.py
+|   |   |   render_grid_axes.py
+|   |   |   __init__.py
+|   |   |   
+|   |   \---__pycache__
+|   |           base.cpython-314.pyc
+|   |           render_grid_axes.cpython-314.pyc
+|   |           __init__.cpython-314.pyc
+|   |           
+|   \---__pycache__
+|           context.cpython-314.pyc
+|           demo_component.cpython-314.pyc
+|           host.cpython-314.pyc
+|           lab_component.cpython-314.pyc
+|           lab_preset.cpython-314.pyc
+|           markdown_panel.cpython-314.pyc
+|           packs.cpython-314.pyc
+|           registry.cpython-314.pyc
+|           types.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---component_store
+|   \---component_v1
+|       \---packs
+|           \---welcome_pack
+|                   component_pack_manifest.json
+|                   welcome.md
+|                   
++---content_repo
+|   \---physics_v1
+|       |   diagnostic_event_example.json
+|       |   mode_profile.json
+|       |   module_manifest.json
+|       |   
+|       +---assets
+|       |   |   electricity_charge_intro.md
+|       |   |   electric_field_demo.md
+|       |   |   electric_field_guide_educator.md
+|       |   |   electric_field_guide_explorer.md
+|       |   |   electric_field_guide_learner.md
+|       |   |   gravity_demo.md
+|       |   |   gravity_guide_educator.md
+|       |   |   gravity_guide_explorer.md
+|       |   |   gravity_guide_learner.md
+|       |   |   lens_ray_demo.md
+|       |   |   lens_ray_guide_educator.md
+|       |   |   lens_ray_guide_explorer.md
+|       |   |   lens_ray_guide_learner.md
+|       |   |   optics_light_intro.md
+|       |   |   projectile_demo.md
+|       |   |   projectile_guide_educator.md
+|       |   |   projectile_guide_explorer.md
+|       |   |   projectile_guide_learner.md
+|       |   |   text_intro.md
+|       |   |   vectors_intro.md
+|       |   |   vector_add_demo.md
+|       |   |   vector_add_guide_educator.md
+|       |   |   vector_add_guide_explorer.md
+|       |   |   vector_add_guide_learner.md
+|       |   |   
+|       |   \---lab_viz
+|       |           arrow.svg
+|       |           charge_minus.svg
+|       |           charge_plus.svg
+|       |           field_arrow.svg
+|       |           lens.svg
+|       |           
+|       \---sections
+|           +---electricity
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       \---page_001
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               +---charge_intro
+|           |               |       part_manifest.json
+|           |               |       
+|           |               \---electric_field_demo
+|           |                       part_manifest.json
+|           |                       
+|           +---motion
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       +---page_001
+|           |       |   |   package_manifest.json
+|           |       |   |   
+|           |       |   \---parts
+|           |       |       +---gravity_demo
+|           |       |       |       part_manifest.json
+|           |       |       |       
+|           |       |       \---text_intro
+|           |       |               part_manifest.json
+|           |       |               
+|           |       \---page_002
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               \---projectile_demo
+|           |                       part_manifest.json
+|           |                       
+|           +---optics
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       \---page_001
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               +---lens_ray_demo
+|           |               |       part_manifest.json
+|           |               |       
+|           |               \---light_intro
+|           |                       part_manifest.json
+|           |                       
+|           \---vectors
+|               |   section_manifest.json
+|               |   
+|               \---packages
+|                   \---page_001
+|                       |   package_manifest.json
+|                       |   
+|                       \---parts
+|                           +---vectors_intro
+|                           |       part_manifest.json
+|                           |       
+|                           \---vector_add_demo
+|                                   part_manifest.json
+|                                   
++---content_store
+|   \---physics_v1
+|       |   diagnostic_event_example.json
+|       |   mode_profile.json
+|       |   module_manifest.json
+|       |   
+|       +---assets
+|       |   |   electricity_charge_intro.md
+|       |   |   electric_field_demo.md
+|       |   |   electric_field_guide_educator.md
+|       |   |   electric_field_guide_explorer.md
+|       |   |   electric_field_guide_learner.md
+|       |   |   gravity_demo.md
+|       |   |   gravity_guide_educator.md
+|       |   |   gravity_guide_explorer.md
+|       |   |   gravity_guide_learner.md
+|       |   |   lens_ray_demo.md
+|       |   |   lens_ray_guide_educator.md
+|       |   |   lens_ray_guide_explorer.md
+|       |   |   lens_ray_guide_learner.md
+|       |   |   optics_light_intro.md
+|       |   |   projectile_demo.md
+|       |   |   projectile_guide_educator.md
+|       |   |   projectile_guide_explorer.md
+|       |   |   projectile_guide_learner.md
+|       |   |   text_intro.md
+|       |   |   vectors_intro.md
+|       |   |   vector_add_demo.md
+|       |   |   vector_add_guide_educator.md
+|       |   |   vector_add_guide_explorer.md
+|       |   |   vector_add_guide_learner.md
+|       |   |   
+|       |   \---lab_viz
+|       |           arrow.svg
+|       |           charge_minus.svg
+|       |           charge_plus.svg
+|       |           field_arrow.svg
+|       |           lens.svg
+|       |           
+|       \---sections
+|           +---electricity
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       \---page_001
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               +---charge_intro
+|           |               |       part_manifest.json
+|           |               |       
+|           |               \---electric_field_demo
+|           |                       part_manifest.json
+|           |                       
+|           +---motion
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       +---page_001
+|           |       |   |   package_manifest.json
+|           |       |   |   
+|           |       |   \---parts
+|           |       |       +---gravity_demo
+|           |       |       |       part_manifest.json
+|           |       |       |       
+|           |       |       \---text_intro
+|           |       |               part_manifest.json
+|           |       |               
+|           |       \---page_002
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               \---projectile_demo
+|           |                       part_manifest.json
+|           |                       
+|           +---optics
+|           |   |   section_manifest.json
+|           |   |   
+|           |   \---packages
+|           |       \---page_001
+|           |           |   package_manifest.json
+|           |           |   
+|           |           \---parts
+|           |               +---lens_ray_demo
+|           |               |       part_manifest.json
+|           |               |       
+|           |               \---light_intro
+|           |                       part_manifest.json
+|           |                       
+|           \---vectors
+|               |   section_manifest.json
+|               |   
+|               \---packages
+|                   \---page_001
+|                       |   package_manifest.json
+|                       |   
+|                       \---parts
+|                           +---vectors_intro
+|                           |       part_manifest.json
+|                           |       
+|                           \---vector_add_demo
+|                                   part_manifest.json
+|                                   
++---content_system
+|   |   demo_print_tree.py
+|   |   loader.py
+|   |   README.md
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           demo_print_tree.cpython-314.pyc
+|           loader.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---core_center
+|   |   bus_endpoints.py
+|   |   cleanup.py
+|   |   demo_install.py
+|   |   demo_report.py
+|   |   discovery.py
+|   |   job_manager.py
+|   |   policy_manager.py
+|   |   README.md
+|   |   registry.py
+|   |   storage_manager.py
+|   |   storage_report.py
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           bus_endpoints.cpython-314.pyc
+|           cleanup.cpython-314.pyc
+|           demo_install.cpython-314.pyc
+|           demo_report.cpython-314.pyc
+|           discovery.cpython-314.pyc
+|           job_manager.cpython-314.pyc
+|           policy_manager.cpython-314.pyc
+|           registry.cpython-314.pyc
+|           storage_manager.cpython-314.pyc
+|           storage_report.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---data
+|   +---cache
+|   |   \---module_installs
+|   |       \---physics_v1
+|   |           +---010c3590-34b2-4571-9cab-aea0a123781b
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---0c68e6c5-61ef-414e-bc47-fec37eaac084
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---20142b90-6331-4786-8bc4-b2d95ea9424d
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---2aeb48d2-a7aa-481e-8baa-16c5cb97c874
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---3a6c8b88-4bd8-46f5-96ae-f0beb97f3650
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---5f5342ac-919a-461d-b10b-180123fdce69
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---911109e9-c336-41f8-9b0a-27037cdaf90b
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---a72d9daa-7ab3-448b-ba81-1cf4c957a391
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---a9471071-09de-4f21-88d6-15c0466ac42b
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---b89edb8e-2209-477f-a564-efd5af111e28
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---d3693baf-a9b6-4f44-8136-1c42d9aae138
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           +---e90cdf26-5c5c-4692-a5a5-e39d01f573e8
+|   |           |   +---assets
+|   |           |   |   \---lab_viz
+|   |           |   \---sections
+|   |           |       +---electricity
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---charge_intro
+|   |           |       |               \---electric_field_demo
+|   |           |       +---motion
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |       |   \---parts
+|   |           |       |       |       +---gravity_demo
+|   |           |       |       |       \---text_intro
+|   |           |       |       \---page_002
+|   |           |       |           \---parts
+|   |           |       |               \---projectile_demo
+|   |           |       +---optics
+|   |           |       |   \---packages
+|   |           |       |       \---page_001
+|   |           |       |           \---parts
+|   |           |       |               +---lens_ray_demo
+|   |           |       |               \---light_intro
+|   |           |       \---vectors
+|   |           |           \---packages
+|   |           |               \---page_001
+|   |           |                   \---parts
+|   |           |                       +---vectors_intro
+|   |           |                       \---vector_add_demo
+|   |           \---ea1d2382-dc97-4a3d-8c79-f161403b78e1
+|   |               +---assets
+|   |               |   \---lab_viz
+|   |               \---sections
+|   |                   +---electricity
+|   |                   |   \---packages
+|   |                   |       \---page_001
+|   |                   |           \---parts
+|   |                   |               +---charge_intro
+|   |                   |               \---electric_field_demo
+|   |                   +---motion
+|   |                   |   \---packages
+|   |                   |       +---page_001
+|   |                   |       |   \---parts
+|   |                   |       |       +---gravity_demo
+|   |                   |       |       \---text_intro
+|   |                   |       \---page_002
+|   |                   |           \---parts
+|   |                   |               \---projectile_demo
+|   |                   +---optics
+|   |                   |   \---packages
+|   |                   |       \---page_001
+|   |                   |           \---parts
+|   |                   |               +---lens_ray_demo
+|   |                   |               \---light_intro
+|   |                   \---vectors
+|   |                       \---packages
+|   |                           \---page_001
+|   |                               \---parts
+|   |                                   +---vectors_intro
+|   |                                   \---vector_add_demo
+|   +---dumps
+|   +---roaming
+|   |       experience_profile.json
+|   |       jobs.json
+|   |       lab_prefs.json
+|   |       registry.json
+|   |       ui_config.json
+|   |       
+|   \---store
+|       \---runs
+|           +---electric_field
+|           |   +---1b3f94c2-cf57-4280-89bf-e5a6296260ab
+|           |   |       run.json
+|           |   |       
+|           |   +---2506fa81-56c2-480f-b553-36d53ff621f5
+|           |   |       run.json
+|           |   |       
+|           |   +---7984c2d3-a9e4-47fb-b629-1d265e6ff23b
+|           |   |       run.json
+|           |   |       
+|           |   +---a06cf4e5-a54e-44a2-89e0-42e09a84026a
+|           |   |       run.json
+|           |   |       
+|           |   +---b32daa8e-a7d9-45a3-9368-bf0cfd1d696d
+|           |   |       run.json
+|           |   |       
+|           |   +---b6f1c21f-232a-4965-93f4-87fd23de1537
+|           |   |       run.json
+|           |   |       
+|           |   +---c85f4a38-4e50-4df8-be1a-a5830d316584
+|           |   |       run.json
+|           |   |       
+|           |   +---cd07b184-c613-4c08-8c4a-7554d4201b79
+|           |   |       run.json
+|           |   |       
+|           |   +---cf1c93d8-91e2-4dd9-8392-d896f9a56f40
+|           |   |       run.json
+|           |   |       
+|           |   \---f6e2db53-f904-4dfc-8a08-f42ccde8b36f
+|           |           run.json
+|           |           
+|           +---gravity
+|           |   +---14057a40-b7c4-4e57-81f9-916df01f2004
+|           |   +---3cdca323-df10-410f-9955-32a15fe9714b
+|           |   +---502cd529-9caf-44cc-adbd-dab94236d347
+|           |   +---53710484-e4b1-431b-a753-c5319c422dd7
+|           |   +---53f10d59-8186-420e-8cd1-d848c5c778c0
+|           |   |       run.json
+|           |   |       
+|           |   +---68b01eb9-4eff-4bc1-86d5-8fc0e9f6264d
+|           |   +---74f5a4d1-2328-4f46-8f3f-fa846d184453
+|           |   +---762db668-b364-476d-b0a3-020d72dda0f4
+|           |   +---7ccf9b98-79b5-4ff8-9339-092d14dc5086
+|           |   +---cb9b47af-3c72-4cd2-b576-fb7cb6b4cf52
+|           |   +---d45fe70d-7ef5-4d8d-a9db-646e1e65501d
+|           |   +---e43f728f-fe0b-485c-8b33-d47d599d52cc
+|           |   +---e98f566a-cf72-41e2-806f-72b2b1ac968e
+|           |   |       run.json
+|           |   |       
+|           |   +---f1c19146-2ffc-448b-9941-c18c04721790
+|           |   +---f26cbc12-7235-4cb4-8074-df7861a495ae
+|           |   \---f5200bc5-5e1d-429e-848b-1ed63a915cb9
+|           |           run.json
+|           |           
+|           +---lens_ray
+|           |   +---0d484935-abf0-4af2-9a72-1e635bb45f98
+|           |   |       run.json
+|           |   |       
+|           |   +---12a5bb12-d4ab-4567-8db3-84a90742c790
+|           |   |       run.json
+|           |   |       
+|           |   +---39e23af7-3938-4379-ae67-434deef54aee
+|           |   |       run.json
+|           |   |       
+|           |   +---81b2af69-a593-4f66-a08f-6db5287d3152
+|           |   |       run.json
+|           |   |       
+|           |   +---c8921718-6f14-4b1e-aedb-bb5e7c1fdbf8
+|           |   |       run.json
+|           |   |       
+|           |   +---e137d227-7d0b-430b-9a2a-95c0e82e09c3
+|           |   |       run.json
+|           |   |       
+|           |   \---effa3473-04c0-4141-b085-978351ab6f4c
+|           |           run.json
+|           |           
+|           +---projectile
+|           |   +---09764572-72ab-4d9d-9631-663f9cdfafc0
+|           |   |       run.json
+|           |   |       
+|           |   +---5020ea51-044d-486c-9398-8cd8b81c3895
+|           |   |       run.json
+|           |   |       
+|           |   +---8997c396-ee93-4f45-bec9-028f506d09fc
+|           |   |       run.json
+|           |   |       
+|           |   +---92f62b67-16f4-431b-bc24-167489a30280
+|           |   |       run.json
+|           |   |       
+|           |   +---990c65c0-24d5-4da4-bb3b-b47d572c0f99
+|           |   |       run.json
+|           |   |       
+|           |   +---9f4312f1-0de6-4f35-b601-8fc84c5d11b0
+|           |   |       run.json
+|           |   |       
+|           |   +---a2349b3b-c4ff-4f5b-abae-44b1da9722be
+|           |   |       run.json
+|           |   |       
+|           |   +---a62681d7-ea0f-4216-9a4e-607655222661
+|           |   |       run.json
+|           |   |       
+|           |   \---ee74fdc2-b308-42dc-871d-0cf7dd32f52b
+|           |           run.json
+|           |           
+|           \---vector_add
+|               +---074ad5cf-2903-4c58-b75d-fdec8b382daf
+|               +---1945b99c-5a9b-4ef8-8cee-d7f579acf66a
+|               |       run.json
+|               |       
+|               +---1bc05efd-8811-4fc3-84ad-cd5f004cd73a
+|               +---220cd7bb-9b88-4b94-9cd4-dfbdf6633271
+|               +---261c0de0-ad4a-4df3-aa68-8414830b080d
+|               |       run.json
+|               |       
+|               +---330665c8-1687-4f03-8cf4-ef48ff10fae3
+|               +---3e2fe415-193f-466d-b2d2-c9a67cee06ab
+|               |       run.json
+|               |       
+|               +---52a2a5ed-e6dd-4025-9aac-6951d4148a23
+|               +---5cdef1b2-11bd-4d35-b5fd-e64409e81411
+|               |       run.json
+|               |       
+|               +---60b6a8ab-6a0b-4e4c-8360-4564e47f060a
+|               +---86599a71-5c84-4f75-83d7-509e093bef0c
+|               +---89b47394-98e8-4241-9b1e-6e37fc3bb88c
+|               +---caa27f9d-1b13-4f6f-983b-1e61f0aa148e
+|               +---e5c23dc8-b610-4a78-973f-6a80df4af295
+|               
++---diagnostics
+|   |   fs_ops.py
+|   |   README.md
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           fs_ops.cpython-314.pyc
+|           __init__.cpython-314.pyc
+|           
++---docs
+|   |   app_summary.md
+|   |   README.md
+|   |   
+|   +---checkpoints
+|   |   +---history
+|   |   |       app_summary_2025-12-22_77b4895_oldest.md
+|   |   |       app_summary_2025-12-23_77b4895_old.md
+|   |   |       app_summary_previous.md
+|   |   |       app_summary_pre_edit.md
+|   |   |       
+|   |   \---inputs
+|   |           app_summary_new_input.md
+|   |           app_summary_old_input.md
+|   |           
+|   +---handbook
+|   |       app_handbook.md
+|   |       
+|   +---overviews
+|   |       v3_overview.md
+|   |       
+|   +---plans
+|   |       core_center_plan.md
+|   |       
+|   +---prompts
+|   |       lucid_flow_prompt.txt
+|   |       
+|   \---snapshots
+|           repo_tree.txt
+|           
++---kernel
+|   |   Cargo.lock
+|   |   Cargo.toml
+|   |   README.md
+|   |   
+|   +---include
+|   |       physicslab_kernel.h
+|   |       
+|   +---src
+|   |       lib.rs
+|   |       
+|   +---target
+|   |   |   .rustc_info.json
+|   |   |   CACHEDIR.TAG
+|   |   |   
+|   |   +---debug
+|   |   |   |   .cargo-lock
+|   |   |   |   test_rust.d
+|   |   |   |   test_rust.exe
+|   |   |   |   test_rust.pdb
+|   |   |   |   
+|   |   |   +---.fingerprint
+|   |   |   |       ...
+

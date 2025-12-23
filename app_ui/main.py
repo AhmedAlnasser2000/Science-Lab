@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -124,24 +125,6 @@ if APP_BUS and CORE_CENTER_BUS_ENDPOINTS:
         print(f"runtime bus: failed to register core_center endpoints ({exc})")
 
 RECOMMENDED_PART_SEQUENCE = ["text_intro", "gravity_demo"]
-DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
-DEBUG_LOG_ENABLED = bool(
-    os.getenv("PHYSICSLAB_UI_DEBUG") == "1" or os.getenv("PHYSICSLAB_BUS_DEBUG") == "1"
-)
-
-
-def _append_debug_log(record: Dict[str, Any]) -> None:
-    if not DEBUG_LOG_ENABLED:
-        return
-    try:
-        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        payload = dict(record)
-        payload.setdefault("timestamp", int(time.time() * 1000))
-        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _log_file:
-            _log_file.write(json.dumps(payload) + "\n")
-    except Exception as exc:  # pragma: no cover - debug aid
-        print(f"[ui_debug] log write failed: {exc!r}", flush=True)
-
 PROFILE_GUIDE_KEYS = {
     "Learner": "learner",
     "Educator": "educator",
@@ -1063,6 +1046,7 @@ BUS_JOB_PROGRESS = BUS_TOPICS.JOB_PROGRESS if BUS_TOPICS else "job.progress"
 BUS_REGISTRY_REQUEST = (
     BUS_TOPICS.CORE_REGISTRY_GET_REQUEST if BUS_TOPICS else "core.registry.get.request"
 )
+BUS_JOBS_GET_REQUEST = BUS_TOPICS.CORE_JOBS_GET_REQUEST if BUS_TOPICS else "core.jobs.get.request"
 BUS_MODULE_INSTALL_REQUEST = (
     BUS_TOPICS.CORE_CONTENT_MODULE_INSTALL_REQUEST
     if BUS_TOPICS
@@ -1126,7 +1110,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._module_job_running = False
         self.pending_module_job_id: Optional[str] = None
         self.pending_module_action: Optional[str] = None
-        self.pending_module_id: str = "physics_v1"
+        self.pending_module_id: str = "physics"
+        self._module_poll_timer: Optional[QtCore.QTimer] = None
+        self._module_poll_deadline: float = 0.0
         self._is_explorer = False
         self._bus_subscriptions: list[str] = []
         self._bus_subscribed = False
@@ -1372,22 +1358,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
         def _wrapped(envelope):
             handler_name = getattr(handler, "__name__", repr(handler))
-            # region agent log
-            _append_debug_log(
-                {
-                    "sessionId": "debug-session",
-                    "runId": "pre-fix",
-                    "hypothesisId": "H1",
-                    "location": "app_ui.main:SystemHealthScreen._subscribe_bus._wrapped",
-                    "message": "bus envelope received",
-                    "data": {
-                        "topic": topic,
-                        "handler": handler_name,
-                        "thread": threading.current_thread().name,
-                    },
-                }
-            )
-            # endregion
             self._bus_dispatch_bridge.envelope_dispatched.emit(handler, envelope)
 
         sub_id = self.bus.subscribe(topic, _wrapped, replay_last=replay_last)
@@ -1568,23 +1538,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _on_job_progress_event(self, envelope: Any) -> None:
         payload = getattr(envelope, "payload", None) or {}
-        # region agent log
-        _append_debug_log(
-            {
-                "sessionId": "debug-session",
-                "runId": "pre-fix",
-                "hypothesisId": "H1",
-                "location": "app_ui.main:SystemHealthScreen._on_job_progress_event",
-                "message": "job progress envelope",
-                "data": {
-                    "payload_job": payload.get("job_id"),
-                    "pending_job": self.pending_report_job,
-                    "percent": payload.get("percent"),
-                    "thread": threading.current_thread().name,
-                },
-            }
-        )
-        # endregion
         if payload.get("job_id") != self.pending_report_job:
             return
         percent = payload.get("percent")
@@ -1622,23 +1575,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _on_module_progress_event(self, envelope: Any) -> None:
         payload = getattr(envelope, "payload", None) or {}
-        # region agent log
-        _append_debug_log(
-            {
-                "sessionId": "debug-session",
-                "runId": "pre-fix",
-                "hypothesisId": "H1",
-                "location": "app_ui.main:SystemHealthScreen._on_module_progress_event",
-                "message": "module progress envelope",
-                "data": {
-                    "payload_job": payload.get("job_id"),
-                    "pending_job": self.pending_module_job_id,
-                    "module_id": payload.get("module_id"),
-                    "thread": threading.current_thread().name,
-                },
-            }
-        )
-        # endregion
         self.module_progress_event.emit(payload)
 
     def _on_module_completed_event(self, envelope: Any) -> None:
@@ -1651,23 +1587,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
         job_id = payload.get("job_id")
         if job_id and self.pending_cleanup_job_id and job_id != self.pending_cleanup_job_id:
             return
-        # region agent log
-        _append_debug_log(
-            {
-                "sessionId": "debug-session",
-                "runId": "pre-fix",
-                "hypothesisId": "H2",
-                "location": "app_ui.main:SystemHealthScreen._handle_cleanup_completed_ui",
-                "message": "cleanup completion payload accepted",
-                "data": {
-                    "job_id": job_id,
-                    "kind": payload.get("kind"),
-                    "pending_job": self.pending_cleanup_job_id,
-                    "thread": threading.current_thread().name,
-                },
-            }
-        )
-        # endregion
         kind = payload.get("kind") or self.pending_cleanup_kind or "cleanup"
         ok = payload.get("ok", True)
         freed = payload.get("freed_bytes", 0)
@@ -1772,6 +1691,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             f"{action.title()} {self._format_module_job_label()}: awaiting progress",
             running=True,
         )
+        self._start_module_poll_timer()
 
     def _show_module_panel(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
         color = "#0d47a1"
@@ -1788,7 +1708,68 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.pending_module_job_id = job_id
         self.pending_module_action = action
         self._module_job_running = bool(running)
+        if not running:
+            self._stop_module_poll_timer()
         self._set_control_enabled(True)
+
+    def _start_module_poll_timer(self) -> None:
+        if not (self.bus and self.pending_module_job_id):
+            return
+        self._stop_module_poll_timer()
+        timer = QtCore.QTimer(self)
+        timer.setInterval(800)
+        timer.timeout.connect(self._poll_module_job_status)
+        self._module_poll_deadline = time.monotonic() + 30.0
+        self._module_poll_timer = timer
+        timer.start()
+
+    def _stop_module_poll_timer(self) -> None:
+        if self._module_poll_timer:
+            self._module_poll_timer.stop()
+            self._module_poll_timer.deleteLater()
+            self._module_poll_timer = None
+        self._module_poll_deadline = 0.0
+
+    def _poll_module_job_status(self) -> None:
+        if not (self.bus and self.pending_module_job_id):
+            self._stop_module_poll_timer()
+            return
+        if self._module_poll_deadline and time.monotonic() > self._module_poll_deadline:
+            self._stop_module_poll_timer()
+            self._show_module_panel(
+                "Module job timeout",
+                f"{(self.pending_module_action or 'Module').title()} {self.pending_module_id}: timed out waiting for completion",
+                running=False,
+                ok=False,
+            )
+            self._set_module_job_state(job_id=None, action=None, running=False)
+            return
+        try:
+            response = self.bus.request(
+                BUS_JOBS_GET_REQUEST,
+                {"job_id": self.pending_module_job_id},
+                source="app_ui",
+                timeout_ms=800,
+            )
+        except Exception:
+            return
+        if not response.get("ok"):
+            return
+        job = response.get("job") or {}
+        status = str(job.get("status") or "").upper()
+        ok_flag = job.get("ok")
+        terminal = status in ("COMPLETED", "FAILED") or ok_flag is not None
+        if not terminal:
+            return
+        self._stop_module_poll_timer()
+        payload = {
+            "job_id": self.pending_module_job_id,
+            "module_id": job.get("module_id") or self.pending_module_id,
+            "action": self.pending_module_action,
+            "ok": bool(ok_flag),
+            "error": job.get("error"),
+        }
+        self._handle_module_completed_ui(payload)
 
     def _is_active_module_payload(self, payload: Dict[str, Any]) -> bool:
         if not payload:
@@ -1812,23 +1793,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _handle_module_progress_ui(self, payload: Dict[str, Any]) -> None:
         if not self._is_active_module_payload(payload):
             return
-        # region agent log
-        _append_debug_log(
-            {
-                "sessionId": "debug-session",
-                "runId": "pre-fix",
-                "hypothesisId": "H2",
-                "location": "app_ui.main:SystemHealthScreen._handle_module_progress_ui",
-                "message": "module progress payload applied",
-                "data": {
-                    "job_id": payload.get("job_id"),
-                    "module_id": payload.get("module_id"),
-                    "percent": payload.get("percent"),
-                    "thread": threading.current_thread().name,
-                },
-            }
-        )
-        # endregion
         stage = payload.get("stage") or "Working"
         percent = payload.get("percent")
         percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
@@ -1839,6 +1803,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _handle_module_completed_ui(self, payload: Dict[str, Any]) -> None:
         if not self._is_active_module_payload(payload):
             return
+        self._stop_module_poll_timer()
         ok = bool(payload.get("ok"))
         action = payload.get("action") or (self.pending_module_action or "module")
         error = payload.get("error")
@@ -1922,6 +1887,8 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self.pending_job_id: Optional[str] = None
         self.pending_module_id: Optional[str] = None
         self.pending_action: Optional[str] = None
+        self._job_poll_timer: Optional[QtCore.QTimer] = None
+        self._job_poll_deadline: float = 0.0
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -2174,6 +2141,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             f"{action.title()} {module_id}: awaiting progress (job {job_id[:8]})",
             running=True,
         )
+        self._start_job_poll_timer()
 
     def _is_active_payload(self, payload: Dict[str, Any]) -> bool:
         if not payload:
@@ -2216,6 +2184,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         payload = getattr(envelope, "payload", None) or {}
         if not self._is_active_payload(payload):
             return
+        self._stop_job_poll_timer()
         ok = bool(payload.get("ok"))
         error = payload.get("error")
         module_id = payload.get("module_id") or self.pending_module_id or "module"
@@ -2237,6 +2206,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             return
         if not self._is_active_payload(payload):
             return
+        self._stop_module_poll_timer()
         ok = bool(payload.get("ok"))
         error = payload.get("error")
         module_id = self.pending_module_id or "module"
@@ -2290,31 +2260,96 @@ def _run_pack_job(action: str, pack_id: str) -> Dict[str, Any]:
     repo_pack = repo_root / pack_id
     store_pack = store_root / pack_id
 
+    log_path = r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log"
+
+    def _agent_log(message: str, data: Dict[str, Any], hypothesis_id: str) -> None:
+        # region agent log
+        try:
+            with open(log_path, "a", encoding="utf-8") as _fh:
+                _fh.write(
+                    json.dumps(
+                        {
+                            "sessionId": "debug-session",
+                            "runId": "baseline",
+                            "hypothesisId": hypothesis_id,
+                            "location": "app_ui/main.py:_run_pack_job",
+                            "message": message,
+                            "data": data,
+                            "timestamp": int(time.time() * 1000),
+                        }
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # endregion
+
+    _agent_log(
+        "pack_job_start",
+        {
+            "action": action,
+            "pack_id": pack_id,
+            "repo_pack": str(repo_pack),
+            "store_pack": str(store_pack),
+            "repo_exists": repo_pack.exists(),
+            "store_exists": store_pack.exists(),
+        },
+        hypothesis_id="H1",
+    )
+
     repo_root.mkdir(parents=True, exist_ok=True)
     store_root.mkdir(parents=True, exist_ok=True)
 
     try:
         if action == "install":
             if not repo_pack.exists():
+                _agent_log(
+                    "pack_job_missing_repo",
+                    {"action": action, "pack_id": pack_id, "repo_pack": str(repo_pack)},
+                    hypothesis_id="H1",
+                )
                 return {"ok": False, "message": f"Pack '{pack_id}' not found in repo."}
             if store_pack.exists():
                 safe_rmtree(store_pack)
             safe_copytree(repo_pack, store_pack)
-            return {"ok": True, "message": f"Installed {pack_id}."}
+            result = {"ok": True, "message": f"Installed {pack_id}."}
+            _agent_log(
+                "pack_job_complete",
+                {"action": action, "pack_id": pack_id, "ok": True, "store_pack": str(store_pack)},
+                hypothesis_id="H1",
+            )
+            return result
         if action == "uninstall":
             if not store_pack.exists():
+                _agent_log(
+                    "pack_job_missing_store",
+                    {"action": action, "pack_id": pack_id, "store_pack": str(store_pack)},
+                    hypothesis_id="H1",
+                )
                 return {"ok": False, "message": f"Pack '{pack_id}' not installed."}
             safe_rmtree(store_pack)
-            return {"ok": True, "message": f"Uninstalled {pack_id}."}
+            result = {"ok": True, "message": f"Uninstalled {pack_id}."}
+            _agent_log(
+                "pack_job_complete",
+                {"action": action, "pack_id": pack_id, "ok": True, "store_pack": str(store_pack)},
+                hypothesis_id="H1",
+            )
+            return result
         return {"ok": False, "message": "Unknown action."}
     except Exception as exc:
-        return {
+        result = {
             "ok": False,
             "message": (
                 f"{action} failed: pack={pack_id} src={repo_pack} "
                 f"dst={store_pack} err={exc!r}"
             ),
         }
+        _agent_log(
+            "pack_job_error",
+            {"action": action, "pack_id": pack_id, "error": str(exc)},
+            hypothesis_id="H1",
+        )
+        return result
 
 
 class ComponentManagementScreen(QtWidgets.QWidget):
@@ -2959,6 +2994,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
             return
         if not self._is_active_payload(payload):
             return
+        self._stop_job_poll_timer()
         ok = bool(payload.get("ok"))
         error = payload.get("error")
         module_id = self.pending_module_id or "module"
@@ -2978,6 +3014,66 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.pending_job_id = job_id
         self.pending_module_id = module_id
         self.pending_action = action if running else None
+        if not running:
+            self._stop_job_poll_timer()
+
+    def _start_job_poll_timer(self) -> None:
+        if not (self.bus and self.pending_job_id):
+            return
+        self._stop_job_poll_timer()
+        timer = QtCore.QTimer(self)
+        timer.setInterval(800)
+        timer.timeout.connect(self._poll_job_status)
+        self._job_poll_deadline = time.monotonic() + 30.0
+        self._job_poll_timer = timer
+        timer.start()
+
+    def _stop_job_poll_timer(self) -> None:
+        if self._job_poll_timer:
+            self._job_poll_timer.stop()
+            self._job_poll_timer.deleteLater()
+            self._job_poll_timer = None
+        self._job_poll_deadline = 0.0
+
+    def _poll_job_status(self) -> None:
+        if not (self.bus and self.pending_job_id):
+            self._stop_job_poll_timer()
+            return
+        if self._job_poll_deadline and time.monotonic() > self._job_poll_deadline:
+            self._stop_job_poll_timer()
+            self._show_progress_panel(
+                "Module job timeout",
+                f"{(self.pending_action or 'Module').title()} {self.pending_module_id or 'module'}: timed out waiting for completion",
+                running=False,
+                ok=False,
+            )
+            self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            return
+        try:
+            response = self.bus.request(
+                BUS_JOBS_GET_REQUEST,
+                {"job_id": self.pending_job_id},
+                source="app_ui",
+                timeout_ms=800,
+            )
+        except Exception:
+            return
+        if not response.get("ok"):
+            return
+        job = response.get("job") or {}
+        status = str(job.get("status") or "").upper()
+        ok_flag = job.get("ok")
+        terminal = status in ("COMPLETED", "FAILED") or ok_flag is not None
+        if not terminal:
+            return
+        self._stop_job_poll_timer()
+        payload = {
+            "job_id": self.pending_job_id,
+            "job_type": job.get("job_type"),
+            "ok": ok_flag,
+            "error": job.get("error"),
+        }
+        self._on_job_completed_event(SimpleNamespace(payload=payload))
 
     def _show_progress_panel(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
         color = "#0d47a1"
@@ -3591,16 +3687,6 @@ def main():
     profile = ui_config.load_experience_profile()
     print(f"Experience profile: {profile}")
     app = QtWidgets.QApplication(sys.argv)
-    _append_debug_log(
-        {
-            "sessionId": "debug-session",
-            "runId": "pre-fix",
-            "hypothesisId": "H0",
-            "location": "app_ui.main:main",
-            "message": "BOOT main() reached",
-            "data": {"profile": profile},
-        }
-    )
     apply_ui_config_styles(app)
     window = MainWindow(profile)
     window.show()

@@ -11,6 +11,10 @@
     "electric_field": {
       "show_grid": true,
       "show_axes": false
+    },
+    "projectile": {
+      "show_grid": true,
+      "show_axes": true
     }
   }
 }

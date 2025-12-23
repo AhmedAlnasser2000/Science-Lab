@@ -55,22 +55,6 @@ class _StickyBusProxy:
         )
 
 
-DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
-
-
-def _agent_log(payload: Dict[str, object]) -> None:
-    # region agent log
-    try:
-        data = dict(payload)
-        data.setdefault("timestamp", int(time.time() * 1000))
-        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _log_file:
-            _log_file.write(json.dumps(data) + "\n")
-    except Exception:
-        pass
-    # endregion
-
-
 def register_core_center_endpoints(bus: Any) -> None:
     """Register Core Center request handlers on the provided bus."""
 
@@ -155,41 +139,11 @@ def register_core_center_endpoints(bus: Any) -> None:
     def _handle_jobs_list(envelope) -> Dict[str, object]:
         payload = envelope.payload or {}
         limit = payload.get("limit")
-        _agent_log(
-            {
-                "sessionId": "debug-session",
-                "runId": "pre-fix",
-                "hypothesisId": "H1",
-                "location": "core_center.bus_endpoints:_handle_jobs_list",
-                "message": "jobs list request",
-                "data": {"limit": limit},
-            }
-        )
         try:
             jobs = job_manager.get_job_history(limit=limit)
             result = {"ok": True, "jobs": jobs or []}
-            _agent_log(
-                {
-                    "sessionId": "debug-session",
-                    "runId": "pre-fix",
-                    "hypothesisId": "H1",
-                    "location": "core_center.bus_endpoints:_handle_jobs_list",
-                    "message": "jobs list success",
-                    "data": {"count": len(result["jobs"])},
-                }
-            )
             return result
         except Exception as exc:
-            _agent_log(
-                {
-                    "sessionId": "debug-session",
-                    "runId": "pre-fix",
-                    "hypothesisId": "H1",
-                    "location": "core_center.bus_endpoints:_handle_jobs_list",
-                    "message": "jobs list error",
-                    "data": {"error": repr(exc)},
-                }
-            )
             return {"ok": True, "jobs": []}
 
     def _handle_jobs_get(envelope) -> Dict[str, object]:
