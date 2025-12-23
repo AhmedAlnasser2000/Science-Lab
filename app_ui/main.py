@@ -13,6 +13,7 @@ from . import config as ui_config
 from . import kernel_bridge
 from .labs import registry as lab_registry
 from .labs.host import LabHost
+from .labs.host import DEFAULT_POLICY as LAB_DEFAULT_POLICY
 
 
 def _ensure_safe_font(app: QtWidgets.QApplication, min_point_size: int = 10) -> None:
@@ -55,6 +56,22 @@ except Exception as exc:  # pragma: no cover
     CORE_CENTER_AVAILABLE = False
     CORE_CENTER_ERROR = str(exc)
     CORE_CENTER_BUS_ENDPOINTS = None
+
+try:
+    from component_runtime import registry as component_registry
+    from component_runtime.context import ComponentContext, StorageRoots
+    from component_runtime.host import ComponentHost
+    from component_runtime import demo_component as _component_demo  # noqa: F401
+
+    COMPONENT_RUNTIME_AVAILABLE = True
+    COMPONENT_RUNTIME_ERROR = ""
+except Exception as exc:  # pragma: no cover
+    component_registry = None
+    ComponentContext = None
+    StorageRoots = None
+    ComponentHost = None
+    COMPONENT_RUNTIME_AVAILABLE = False
+    COMPONENT_RUNTIME_ERROR = str(exc)
 
 BUS_COMM_REPORT_REQUEST = (
     getattr(BUS_TOPICS, "RUNTIME_BUS_REPORT_REQUEST", "runtime.bus.report.request")
@@ -258,6 +275,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         on_open_module_mgmt,
         on_open_content_mgmt,
         on_open_diagnostics,
+        on_open_component_sandbox,
         on_quit,
         experience_profile: str,
     ):
@@ -268,6 +286,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         self.on_open_module_mgmt = on_open_module_mgmt
         self.on_open_content_mgmt = on_open_content_mgmt
         self.on_open_diagnostics = on_open_diagnostics
+        self.on_open_component_sandbox = on_open_component_sandbox
         self.on_quit = on_quit
         self.profile = experience_profile
 
@@ -327,6 +346,9 @@ class MainMenuScreen(QtWidgets.QWidget):
 
         if self.profile in ("Educator", "Explorer"):
             self._add_button("System Health / Storage", self.on_open_diagnostics)
+
+        if self.profile == "Explorer" and self.on_open_component_sandbox and COMPONENT_RUNTIME_AVAILABLE:
+            self._add_button("Component Sandbox", self.on_open_component_sandbox)
 
         self._add_button("Settings", self.on_open_settings)
         self._add_button("Quit", self.on_quit)
@@ -2712,6 +2734,106 @@ class ContentManagementScreen(QtWidgets.QWidget):
         return str(title or fallback or default)
 
 
+class ComponentSandboxScreen(QtWidgets.QWidget):
+    def __init__(self, on_back, context_provider: Callable[[], "ComponentContext"]):
+        super().__init__()
+        self.on_back = on_back
+        self.context_provider = context_provider
+        self._host: Optional["ComponentHost"] = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        header_row = QtWidgets.QHBoxLayout()
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        header_row.addWidget(back_btn)
+        title = QtWidgets.QLabel("Component Sandbox")
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        header_row.addWidget(title)
+        header_row.addStretch()
+        layout.addLayout(header_row)
+
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setStyleSheet("color: #444;")
+        layout.addWidget(self.status_label)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        layout.addWidget(splitter, stretch=1)
+
+        left_panel = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        self.component_list = QtWidgets.QListWidget()
+        self.component_list.itemDoubleClicked.connect(self._open_selected)
+        left_layout.addWidget(self.component_list, stretch=1)
+
+        button_row = QtWidgets.QHBoxLayout()
+        self.open_btn = QtWidgets.QPushButton("Open")
+        self.open_btn.clicked.connect(self._open_selected)
+        button_row.addWidget(self.open_btn)
+        self.close_btn = QtWidgets.QPushButton("Close")
+        self.close_btn.clicked.connect(self._close_component)
+        button_row.addWidget(self.close_btn)
+        left_layout.addLayout(button_row)
+        splitter.addWidget(left_panel)
+
+        self.host_container = QtWidgets.QWidget()
+        host_layout = QtWidgets.QVBoxLayout(self.host_container)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+
+        if ComponentHost is None or component_registry is None:
+            msg = "Component runtime unavailable."
+            if COMPONENT_RUNTIME_ERROR:
+                msg = f"{msg} {COMPONENT_RUNTIME_ERROR}"
+            error_label = QtWidgets.QLabel(msg)
+            error_label.setStyleSheet("color: #b00;")
+            host_layout.addWidget(error_label)
+            self.open_btn.setEnabled(False)
+            self.close_btn.setEnabled(False)
+        else:
+            self._host = ComponentHost()
+            host_layout.addWidget(self._host, stretch=1)
+
+        splitter.addWidget(self.host_container)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        splitter.setChildrenCollapsible(False)
+
+        self.refresh_components()
+
+    def refresh_components(self) -> None:
+        self.component_list.clear()
+        if component_registry is None:
+            return
+        registry = component_registry.get_registry()
+        for meta in registry.list_components():
+            label = f"{meta.display_name} ({meta.component_id})"
+            item = QtWidgets.QListWidgetItem(label)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, meta.component_id)
+            self.component_list.addItem(item)
+
+    def _open_selected(self) -> None:
+        if component_registry is None or self._host is None:
+            return
+        item = self.component_list.currentItem()
+        if not item:
+            self.status_label.setText("Select a component to open.")
+            return
+        component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        component = component_registry.get_registry().get_component(component_id)
+        if not component:
+            self.status_label.setText(f"Component '{component_id}' is not available.")
+            return
+        context = self.context_provider()
+        self._host.mount(component, context)
+        self.status_label.setText(f"Opened: {component_id}")
+
+    def _close_component(self) -> None:
+        if self._host is None:
+            return
+        self._host.unmount()
+        self.status_label.setText("Component closed.")
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, initial_profile: str):
         super().__init__()
@@ -2732,6 +2854,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_module_management,
             self._open_content_management,
             self._open_diagnostics,
+            self._open_component_sandbox,
             self._quit_app,
             self.current_profile,
         )
@@ -2749,12 +2872,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_content_browser_from_management,
             bus=APP_BUS,
         )
+        self.component_sandbox = ComponentSandboxScreen(
+            self._show_main_menu,
+            self._build_component_context,
+        )
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.content_browser)
         self.stacked.addWidget(self.system_health)
         self.stacked.addWidget(self.module_management)
         self.stacked.addWidget(self.content_management)
+        self.stacked.addWidget(self.component_sandbox)
         self._show_main_menu()
 
     def _show_module_management(self):
@@ -2871,10 +2999,44 @@ class MainWindow(QtWidgets.QMainWindow):
             self.system_health.prepare()
             self.stacked.setCurrentWidget(self.system_health)
 
+    def _open_component_sandbox(self):
+        self._dispose_lab_widget()
+        if not COMPONENT_RUNTIME_AVAILABLE:
+            QtWidgets.QMessageBox.warning(self, "Components", "Component runtime unavailable.")
+            return
+        if self.component_sandbox:
+            self.component_sandbox.refresh_components()
+            self.stacked.setCurrentWidget(self.component_sandbox)
+
     def _quit_app(self):
         app = QtWidgets.QApplication.instance()
         if app:
             app.quit()
+
+    def _build_component_context(self) -> "ComponentContext":
+        policy = dict(LAB_DEFAULT_POLICY)
+        policy_topic = getattr(BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request") if BUS_TOPICS else "core.policy.get.request"
+        if APP_BUS and policy_topic:
+            try:
+                response = APP_BUS.request(policy_topic, {}, source="app_ui", timeout_ms=1000)
+            except Exception:
+                response = {"ok": False}
+            if response.get("ok") and isinstance(response.get("policy"), dict):
+                policy.update(response["policy"])
+        storage = StorageRoots(
+            roaming=Path("data/roaming"),
+            store=Path("data/store"),
+            runs=Path("data/store/runs"),
+            runs_local=Path("data/store/runs_local"),
+        )
+        return ComponentContext(
+            bus=APP_BUS,
+            policy=policy,
+            storage=storage,
+            profile=self.current_profile,
+            reduced_motion=ui_config.get_reduced_motion(),
+            content_adapter=self.adapter,
+        )
 
     def _dispose_lab_widget(self):
         if self.lab_widget is not None:

@@ -2,7 +2,7 @@
 
 ## App at a glance (verified features)
 - PyQt6 desktop app using a QStackedWidget main window with multiple screens and labs (Anchor: `app_ui/main.py:MainWindow.__init__`).
-- Quick Start selects the first READY lab part and opens it directly; if none are READY, routes to Content Management with an install message (Anchor: `app_ui/main.py:MainWindow._start_physics`, `app_ui/main.py:MainWindow._find_quick_start_part`).
+- Quick Start selects the first READY lab part and opens it directly; if none are READY, it routes to Content Management with an install message (Anchor: `app_ui/main.py:MainWindow._start_physics`, `app_ui/main.py:MainWindow._find_quick_start_part`).
 - Physics Content always opens the full Content Browser (Anchor: `app_ui/main.py:MainWindow._open_content_browser`, `app_ui/main.py:ContentBrowserScreen`).
 - Registered labs: gravity, projectile, electric_field, lens_ray, vector_add (Anchor: `app_ui/labs/registry.py`).
 - LabHost wraps lab widgets with guide panel, export menu (policy-gated), Grid/Axes toggles, and run context injection (Anchor: `app_ui/labs/host.py:LabHost`).
@@ -10,7 +10,7 @@
 - Runtime bus is local, in-process pub/sub + request/reply with sticky topics and optional debug logging (Anchor: `runtime_bus/bus.py:RuntimeBus`, `runtime_bus/bus.py:BUS_DEBUG`).
 
 ## High-level architecture (modules + boundaries)
-- `app_ui/`: UI, navigation, and labs (entry: `python -m app_ui.main`) (Anchor: `app_ui/main.py:main`).
+- `app_ui/`: UI, navigation, labs (entry: `python -m app_ui.main`) (Anchor: `app_ui/main.py:main`).
 - `content_system/`: content hierarchy loader + part installer (Anchor: `content_system/loader.py:list_tree`, `content_system/loader.py:download_part`).
 - `runtime_bus/`: in-process bus types and topics (Anchor: `runtime_bus/bus.py`, `runtime_bus/messages.py`, `runtime_bus/topics.py`).
 - `core_center/`: optional discovery/registry/jobs/storage/policy endpoints (Anchor: `core_center/bus_endpoints.py:register_core_center_endpoints`).
@@ -63,7 +63,6 @@
 - Message envelope schema (Anchor: `runtime_bus/messages.py:MessageEnvelope`).
 - Topic constants (Anchor: `runtime_bus/topics.py`).
 - Global bus instance via `get_global_bus()` (Anchor: `runtime_bus/bus.py:get_global_bus`, `app_ui/main.py:APP_BUS`).
-- UI registers a runtime bus diagnostics handler for `runtime.bus.report.request` (Anchor: `app_ui/main.py:_handle_bus_comm_report`, `runtime_bus/topics.py:RUNTIME_BUS_REPORT_REQUEST`).
 
 ## Core Center (optional; bus endpoints + jobs)
 - Optional import in UI; endpoints registered when available (Anchor: `app_ui/main.py:CORE_CENTER_BUS_ENDPOINTS`, `core_center/bus_endpoints.py:register_core_center_endpoints`).
@@ -74,7 +73,6 @@
 - Policy defaults + overrides (Anchor: `core_center/policy_manager.py:DEFAULT_POLICY`, `core_center/policy_manager.py:resolve_policy`).
 - Run directories allocated in `data/store/runs/<lab>/<run>` with retention (Anchor: `core_center/storage_manager.py:allocate_run_dir`, `core_center/storage_manager.py:enforce_run_retention`).
 - Endpoints: report, cleanup, policy, registry, run_dir allocation, module install/uninstall, jobs list/get (Anchor: `core_center/bus_endpoints.py:register_core_center_endpoints`).
-- Sticky topics for report/cleanup are emitted via `_StickyBusProxy` (Anchor: `core_center/bus_endpoints.py:_StickyBusProxy`).
 
 ## UI packs and theming
 - Startup applies UI pack via `apply_ui_config_styles` and `ui_system.manager` (Anchor: `app_ui/main.py:apply_ui_config_styles`, `ui_system/manager.py:resolve_pack`).
@@ -113,29 +111,9 @@
 - ModuleManagerScreen exists but is not routed in the main navigation (Anchor: `app_ui/main.py:ModuleManagerScreen`, `app_ui/main.py:MainWindow.__init__`).
 - Content loader is hard-wired to `physics_v1` roots (Anchor: `content_system/loader.py:REPO_BASE`, `content_system/loader.py:STORE_BASE`).
 - Content loader does not validate JSON against schemas (Anchor: `content_system/loader.py:_load_json`).
-- `schemas/part_manifest.schema.json` contains duplicate `allOf` keys (Anchor: `schemas/part_manifest.schema.json`).
-- `core_center/storage_report.py` has unreachable code after a `return` in `report_text` (Anchor: `core_center/storage_report.py:report_text`).
+- `schemas/part_manifest.schema.json` contains duplicate `allOf` keys (direct file reference: `schemas/part_manifest.schema.json`).
+- `core_center/storage_report.py` has unreachable code after a `return` (direct file reference: `core_center/storage_report.py:report_text`).
 - `content_store/physics_v1/assets/lab_viz/` is not present in the repo tree (direct repo reference: `content_store/physics_v1/assets/lab_viz`).
-- `_viz_canvas.py` exists but is not referenced by current lab code (Anchor: `app_ui/labs/_viz_canvas.py`, `rg -n "_viz_canvas" app_ui/labs` -> none).
-
-## Milestones and versioning
-- Versioning convention used in commit messages:
-  - V<major>.<minor> is used for changes, improvements, and additions.
-  - V<major>.<minor>.<patch> is used for fixes and refactors.
-  Anchor: `git log --oneline -n 60` (see Verification Appendix).
-
-## Delta vs previous checkpoint
-- Added: LabContext and per-lab prefs (Grid/Axes) with persistence (Anchor: `app_ui/labs/context.py`, `app_ui/labs/prefs_store.py`, `app_ui/labs/host.py:_on_prefs_changed`).
-- Added: shared rendering helpers (Vec2, ViewTransform, painter primitives) (Anchor: `app_ui/labs/shared/*`).
-- Modified: LabHost context injection order (tries `set_context` then `set_lab_context`) (Anchor: `app_ui/labs/host.py:_apply_lab_context`).
-- Modified: Lab rendering description updated to shared primitives + RenderCanvas layers (Anchor: `app_ui/labs/electric_field_lab.py`, `app_ui/labs/lens_ray_lab.py`, `app_ui/labs/vector_add_lab.py`).
-- Modified: SystemHealth description now uses job history button (jobs list) rather than runtime bus communication report (Anchor: `app_ui/main.py:SystemHealthScreen._show_comm_report`).
-- Removed: claim that SVG sprites are required by current labs; current lab code does not call RenderKit sprite helpers (Anchor: `app_ui/labs/*_lab.py`, `app_ui/labs/renderkit/primitives.py`).
-
-## Legacy / Needs manual re-verify
-- ModuleManagerScreen behavior is not reachable through current navigation; if you intend to use it, wire it into MainWindow and re-verify its UI flow (Anchor: `app_ui/main.py:ModuleManagerScreen`).
-- Sprite-based lab visuals referenced in `content_repo/physics_v1/assets/lab_viz` are not used by current lab code; manual verification required if these assets are reintroduced (Anchor: `content_repo/physics_v1/assets/lab_viz`, `app_ui/labs/renderkit/primitives.py`).
-- Runtime bus diagnostics endpoint is registered, but no UI exposes it; manual verification required if you add a UI hook (Anchor: `app_ui/main.py:_handle_bus_comm_report`).
 
 ## What to read next (file pointers)
 - Entry + routing: `app_ui/main.py`
@@ -147,6 +125,24 @@
 - Core storage/policy: `core_center/storage_manager.py`, `core_center/storage_report.py`, `core_center/policy_manager.py`
 - Content manifests: `content_repo/physics_v1/module_manifest.json`, `content_repo/physics_v1/sections/**/package_manifest.json`
 - UI packs: `ui_system/manager.py`, `ui_repo/ui_v1/packs/*/ui_pack_manifest.json`
+
+## Milestones and versioning
+- Versioning convention (observed in commit messages):
+  - V<major>.<minor> is used for changes, improvements, and additions.
+  - V<major>.<minor>.<patch> is used for fixes and refactors.
+  Anchor: `git log --oneline -n 40` (see Verification Appendix).
+
+## Delta vs previous checkpoint
+- Added: LabContext and per-lab prefs (Grid/Axes) with persistence (Anchor: `app_ui/labs/context.py`, `app_ui/labs/prefs_store.py`, `app_ui/labs/host.py:_on_prefs_changed`).
+- Added: shared rendering helpers (Vec2, ViewTransform, painter primitives) (Anchor: `app_ui/labs/shared/*`).
+- Modified: LabHost context injection order (tries `set_context` then `set_lab_context`) (Anchor: `app_ui/labs/host.py:_apply_lab_context`).
+- Modified: Lab rendering description updated to shared primitives + RenderCanvas layers (Anchor: `app_ui/labs/electric_field_lab.py`, `app_ui/labs/lens_ray_lab.py`, `app_ui/labs/vector_add_lab.py`).
+- Modified: SystemHealth description now uses job history button (jobs list) rather than runtime bus communication report (Anchor: `app_ui/main.py:SystemHealthScreen._show_comm_report`).
+- Removed: claim that SVG sprites are required by current labs; current lab code does not call RenderKit sprite helpers (Anchor: `app_ui/labs/*_lab.py`, `app_ui/labs/renderkit/primitives.py`).
+
+## Legacy / Needs manual re-verify
+- ModuleManagerScreen behavior is not reachable through current navigation; if you intend to use it, wire it into MainWindow and re-verify its UI flow (Anchor: `app_ui/main.py:ModuleManagerScreen`).
+- Any sprite-based lab visuals referenced by assets in `content_repo/physics_v1/assets/lab_viz/` require manual UI verification; current labs do not call RenderKit sprite helpers (Anchor: `content_repo/physics_v1/assets/lab_viz`, `app_ui/labs/renderkit/primitives.py`).
 
 # Detailed Addendum (Checkpoint-ready)
 
@@ -173,8 +169,8 @@ ModuleManagerScreen includes a gravity-demo run preview that uses the kernel bri
 - Missing DLL triggers `KernelNotAvailable` and switches Gravity Lab to Python backend (Anchor: `app_ui/kernel_bridge.py:KernelNotAvailable`, `app_ui/labs/gravity_lab.py:GravityLabWidget._init_backend`).
 - Kernel status error raises RuntimeError with the kernel message (Anchor: `app_ui/kernel_bridge.py:_fetch_error`, `app_ui/labs/gravity_lab.py:GravityLabWidget._tick`).
 
-### Manual UI verification required
-- Verify the gravity demo run preview in ModuleManagerScreen if it is wired into navigation.
+### Requires manual UI verification
+- Verify the gravity demo run preview in ModuleManagerScreen if you wire it into navigation.
 
 ## B) UI packs and theming lifecycle (explained)
 
@@ -210,9 +206,6 @@ ModuleManagerScreen includes a gravity-demo run preview that uses the kernel bri
 ### Back behavior
 - Screen Back buttons return to MainMenuScreen.
 - Lab Back returns to ContentBrowserScreen.
-
-### Manual UI verification required
-- Confirm back navigation flows for each screen (Main Menu, Content Browser, System Health, Content Management).
 
 ## D) Asset pipeline and RenderKit resolution (explained)
 
@@ -301,74 +294,15 @@ Caching:
 
 # Verification Appendix
 
-Timestamp: 2025-12-23T06:34:43.6075828+03:00
+Timestamp: 2025-12-22T20:29:20.0948346+03:00
 Commit: 77b4895
 
 Commands run:
 - `git rev-parse --short HEAD` -> `77b4895`
-- `git log --oneline -n 60` -> see command output below
-- `python -m py_compile app_ui/**/*.py runtime_bus/**/*.py content_system/**/*.py ui_system/**/*.py core_center/**/*.py` -> FAILED (`[Errno 22] Invalid argument: 'app_ui/**/*.py'`)
-- `python -m py_compile (Get-ChildItem -Recurse -Filter *.py app_ui, runtime_bus, content_system, ui_system, core_center | ForEach-Object { $_.FullName })` -> OK
+- `git log --oneline -n 40` -> see terminal output (captured during verification)
+- `python -m py_compile app_ui/**/*.py` -> FAILED (`[Errno 22] Invalid argument: 'app_ui/**/*.py'`)
+- `python -m py_compile (Get-ChildItem -Recurse -Filter *.py app_ui | ForEach-Object { $_.FullName })` -> OK
 - `python -c "import app_ui.main; print('import ok')"` -> `import ok`
-
-Command output: git log --oneline -n 60
-- 77b4895 feat(v4.4F): add LabContext + per-lab user prefs (grid/axes) via LabHost
-- 20faa90 refactor(v4.4E): standardize labs on shared viewport mapping
-- f7a463b refactor(v4.4E): unify viewport transforms via shared viewport
-- f2f397e chore(v4.4D): enforce LF via gitattributes
-- c18a5f5 fix(v4.4C): vector add lab ax undefined crash
-- f427aa5 refactor(v4.4B): migrate remaining labs to shared lab library
-- 105612a feat(v4.4B): add shared lab library folder (math2d/viewport/primitives)
-- 9fbc91b refactor(v4.4A): migrate vector add lab to shared_lib primitives
-- 38747a8 docs(v4.3h): verify and correct app_summary checkpoint
-- de3aaa0 feat(v4.3g): quick start launches lab directly instead of content browser
-- ded9cd4 feat(v4.3e): implement Module + Content Management screens
-- 6d7c443 feat(v4.3c): add lab RenderKit + governed asset resolver and upgrade new labs
-- 2518e2c feat(v4.3b): add Qt rendering canvases to new labs
-- 7629f11 fix(v4.3): guard None in new labs load_part/config parsing
-- 29f8213 feat(v4.3): recreate 3 labs and wire into content repo/store
-- 8775ab6 chore: align gemini content rule scope (content/docs/schemas only) (#3)
-- 4b953cd chore: align gemini content rule scope (content/docs/schemas only) (#2)
-- d330857 chore: checkpoint before V3 release
-- bbed3c9 V4.2: add Gemini content authoring rules
-- 0a7ecf8 V4.1A: Improve Content Browser default splitter sizing
-- 9a65900 feat: V3.4D add policy-gated lab export actions and Explorer telemetry hooks
-- dabb454 feat: V3.4C standardize lab part metadata with schema support
-- 514b99e feat: V3.4B add persistent job history and jobs report via bus
-- 5d0f944 feat: V3.4A enforce run retention and add run storage accounting
-- 22b1242 fix: V3.3F prevent duplicate module job subscriptions and reset UI state for repeated install/uninstall
-- e00cd1a fix: V3.3E marshal bus events to Qt thread and correct registry store entries after uninstall
-- ec9fd63 docs: V3.3D document V3 bus/governor features and add runtime state schemas
-- 4a9cd9b feat: V3.3C add System Health Explorer controls for local module install/uninstall with progress panel
-- 6ac02ba feat: V3.3B add core_center.demo_install CLI to trigger local module install/uninstall via runtime_bus
-- ecb2072 feat: V3.3A add local content module install/uninstall jobs (repo->store) with registry refresh
-- b05388a feat: V3.2J expand Core Center registry to track content modules, UI packs, and labs
-- 27122d7 fix: V3.2I prevent QFont point size -1 when opening Settings/applying UI pack
-- ceb9320 feat: V3.2H add core policy manager and feed resolved policy into LabHost
-- e3705d9 fix: V3.2G add missing runtime_bus topic constant for run dir allocation
-- 71ed393 feat: V3.2F add runtime bus communication report endpoint and System Health viewer
-- d574b97 feat: V3.2.2C System Health uses job-based report/cleanup via runtime_bus (no UI freeze)
-- f5faec0 feat: V3.2.2B run storage report + cleanup via Job Manager jobs over runtime_bus
-- 453ea4b feat: V3.2.2A add core_center Job Manager skeleton with bus job.* topics
-- 4d201cd feat: V3.2.1 serve Core Center storage report over runtime_bus with graceful fallback
-- 71c9b66 feat: V3.1 add runtime_bus (pub/sub + request/reply) with topics + demo
-- bcca86f feat: add LabHost + profile-tiered lab guides; unify config + reduced-motion hooks; extend loader assets
-- 36035f2 feat: core center system health screen (V2.8A)
-- e20b9bb feat: add optics/electricity/vectors sections + projectile lab (V2.7)
-- 2ecd3b8 checkpoint: before V2.7 sections + projectile
-- a2cd6c2 feat: gravity simulation screen + kernel bridge (V2.5)
-- ace06ed feat: content browser with async install + viewer (V2.4)
-- cf36210 feat: settings dialog for ui packs + reduced motion + profile
-- 71e1840 feat: apply ui pack on app_ui startup
-- e807feb feat: add quantum_smooth ui pack (v2)
-- a319386 feat: add ui_system pack loader + demo (V2.2A)
-- 74c6a67 feat: add core_center registry + storage reporting (V2.1)
-- 98d3edf checkpoint: V1 stable before V2.1
-- fa9e92e Stop tracking build outputs
-- 47d6a51 Resolve README merge conflict
-- a77d85b V1: schemas + content loader + Rust kernel builds
-- d50a551 V1 scaffolding + schemas + initial structure
-- 182aeda Initial commit
 
 Manual run command:
 - `python -m app_ui.main`
@@ -378,9 +312,9 @@ Auto-verified vs manual:
 - Manual required: UI behavior and rendering (see checklist below).
 
 Manual UI verification checklist:
-- Launch app: `python -m app_ui.main`.
-- Navigate Home -> Content Browser -> open a READY part.
-- Open each lab (gravity, projectile, electric_field, lens_ray, vector_add) and confirm rendering.
-- Verify LabHost guide panel + profile gating behavior.
-- Verify grid/axes prefs toggles and persistence (`data/roaming/lab_prefs.json`).
-- Verify System Health / Module Management / Content Management screens presence and gating (if wired).
+- Launch the app: `python -m app_ui.main`.
+- Open each lab (gravity, projectile, electric_field, lens_ray, vector_add) and confirm it renders and responds.
+- Toggle Grid/Axes in LabHost for electric_field, lens_ray, vector_add and confirm persistence (`data/roaming/lab_prefs.json`).
+- Content Browser: install a part and open a lab and a markdown part.
+- System Health: refresh report, run cleanup, view job history (Explorer profile).
+- Module Management + Content Management: module install/uninstall jobs update status and panels.
