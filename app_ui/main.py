@@ -58,6 +58,7 @@ except Exception as exc:  # pragma: no cover
     CORE_CENTER_BUS_ENDPOINTS = None
 
 try:
+    from component_runtime import packs as component_packs
     from component_runtime import registry as component_registry
     from component_runtime.context import ComponentContext, StorageRoots
     from component_runtime.host import ComponentHost
@@ -66,6 +67,7 @@ try:
     COMPONENT_RUNTIME_AVAILABLE = True
     COMPONENT_RUNTIME_ERROR = ""
 except Exception as exc:  # pragma: no cover
+    component_packs = None
     component_registry = None
     ComponentContext = None
     StorageRoots = None
@@ -2801,6 +2803,19 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         lab_button_row.addWidget(self.open_lab_btn)
         left_layout.addLayout(lab_button_row)
 
+        pack_label = QtWidgets.QLabel("Pack Components")
+        pack_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        left_layout.addWidget(pack_label)
+        self.pack_list = QtWidgets.QListWidget()
+        self.pack_list.itemDoubleClicked.connect(self._open_selected_pack_component)
+        left_layout.addWidget(self.pack_list, stretch=1)
+
+        pack_button_row = QtWidgets.QHBoxLayout()
+        self.open_pack_btn = QtWidgets.QPushButton("Open selected pack component")
+        self.open_pack_btn.clicked.connect(self._open_selected_pack_component)
+        pack_button_row.addWidget(self.open_pack_btn)
+        left_layout.addLayout(pack_button_row)
+
         splitter.addWidget(left_panel)
 
         self.host_container = QtWidgets.QWidget()
@@ -2830,12 +2845,20 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
     def refresh_components(self) -> None:
         self.component_list.clear()
         self.lab_list.clear()
+        self.pack_list.clear()
         if component_registry is None:
             return
         try:
             component_registry.register_lab_components(lab_registry)
         except Exception:
             pass
+        pack_manifests = []
+        if component_packs is not None:
+            try:
+                pack_manifests = component_packs.load_installed_packs()
+                component_registry.register_pack_components(pack_manifests)
+            except Exception:
+                pack_manifests = []
         registry = component_registry.get_registry()
         for meta in registry.list_components():
             label = f"{meta.display_name} ({meta.component_id})"
@@ -2847,6 +2870,25 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             item = QtWidgets.QListWidgetItem(f"{title} ({lab_id})")
             item.setData(QtCore.Qt.ItemDataRole.UserRole, lab_id)
             self.lab_list.addItem(item)
+        for pack in pack_manifests:
+            manifest = pack.get("manifest") if isinstance(pack, dict) else None
+            if not isinstance(manifest, dict):
+                continue
+            pack_id = manifest.get("pack_id") or "pack"
+            components = manifest.get("components")
+            if not isinstance(components, list):
+                continue
+            for component in components:
+                if not isinstance(component, dict):
+                    continue
+                component_id = component.get("component_id")
+                display_name = component.get("display_name") or component_id
+                if not component_id:
+                    continue
+                label = f"{display_name} ({component_id}) [{pack_id}]"
+                item = QtWidgets.QListWidgetItem(label)
+                item.setData(QtCore.Qt.ItemDataRole.UserRole, component_id)
+                self.pack_list.addItem(item)
 
     def _open_selected(self) -> None:
         if component_registry is None or self._host is None:
@@ -2886,6 +2928,22 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         context = self.context_provider()
         self._host.mount(component, context)
         self.status_label.setText(f"Opened lab component: {lab_id}")
+
+    def _open_selected_pack_component(self) -> None:
+        if component_registry is None or self._host is None:
+            return
+        item = self.pack_list.currentItem()
+        if not item:
+            self.status_label.setText("Select a pack component to open.")
+            return
+        component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        component = component_registry.get_registry().get_component(component_id)
+        if not component:
+            self.status_label.setText(f"Pack component '{component_id}' is not registered.")
+            return
+        context = self.context_provider()
+        self._host.mount(component, context)
+        self.status_label.setText(f"Opened pack component: {component_id}")
 
 
 class ComponentHostScreen(QtWidgets.QWidget):
@@ -2991,6 +3049,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 component_registry.register_lab_components(lab_registry)
             except Exception:
                 pass
+            if component_packs is not None:
+                try:
+                    pack_manifests = component_packs.load_installed_packs()
+                    component_registry.register_pack_components(pack_manifests)
+                except Exception:
+                    pass
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.content_browser)

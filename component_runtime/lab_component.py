@@ -52,6 +52,9 @@ class LabHostComponent:
 
     @staticmethod
     def _resolve_part(ctx: ComponentContext, lab_id: str) -> Tuple[Optional[str], Dict, Dict]:
+        if ctx.part_id and isinstance(ctx.detail, dict):
+            manifest = ctx.detail.get("manifest") or {}
+            return ctx.part_id, manifest, ctx.detail
         adapter = ctx.content_adapter
         if not adapter:
             return None, {}, {}

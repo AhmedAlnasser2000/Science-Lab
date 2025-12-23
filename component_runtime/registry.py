@@ -60,3 +60,56 @@ def register_lab_components(lab_registry) -> None:
                 lab_registry,
             )
         )
+
+
+def register_pack_components(pack_manifests) -> None:
+    from pathlib import Path
+
+    from .lab_preset import LabPresetLauncherComponent
+    from .markdown_panel import MarkdownPanelComponent
+    from .types import ComponentKind
+
+    for entry in pack_manifests or []:
+        manifest = entry.get("manifest") if isinstance(entry, dict) else entry
+        if not isinstance(manifest, dict):
+            continue
+        pack_root = entry.get("pack_root") if isinstance(entry, dict) else None
+        if pack_root is None:
+            pack_root = Path(".")
+        components = manifest.get("components")
+        if not isinstance(components, list):
+            continue
+        for component in components:
+            if not isinstance(component, dict):
+                continue
+            component_id = component.get("component_id")
+            impl = component.get("impl")
+            display_name = component.get("display_name") or component_id
+            kind = component.get("kind", "other")
+            if not isinstance(component_id, str) or not component_id.strip():
+                continue
+            try:
+                parsed_kind = ComponentKind(kind)
+            except Exception:
+                parsed_kind = ComponentKind.OTHER if hasattr(ComponentKind, "OTHER") else ComponentKind.PANEL
+            if impl == "builtin:markdown_panel":
+                _REGISTRY.register(
+                    lambda component_id=component_id, display_name=display_name, parsed_kind=parsed_kind, pack_root=pack_root, component=component: MarkdownPanelComponent(
+                        component_id,
+                        display_name,
+                        parsed_kind,
+                        pack_root,
+                        component.get("assets") or {},
+                        component.get("params") or {},
+                    )
+                )
+            elif impl == "builtin:lab_preset":
+                _REGISTRY.register(
+                    lambda component_id=component_id, display_name=display_name, parsed_kind=parsed_kind, pack_root=pack_root, component=component: LabPresetLauncherComponent(
+                        component_id,
+                        display_name,
+                        parsed_kind,
+                        pack_root,
+                        component.get("params") or {},
+                    )
+                )

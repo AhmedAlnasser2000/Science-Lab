@@ -12,6 +12,7 @@ class ComponentKind(str, Enum):
     PANEL = "panel"
     LAB = "lab"
     TOOL = "tool"
+    OTHER = "other"
 
 
 @dataclass(frozen=True)
