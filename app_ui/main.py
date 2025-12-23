@@ -1743,10 +1743,22 @@ class SystemHealthScreen(QtWidgets.QWidget):
             )
         except Exception as exc:  # pragma: no cover - defensive
             self._set_module_job_state(job_id=None, action=None, running=False)
+            self._show_module_panel(
+                "Module job failed",
+                f"{action.title()} {self._format_module_job_label()}: {exc}",
+                running=False,
+                ok=False,
+            )
             QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
             return
         if not response.get("ok") or not response.get("job_id"):
             self._set_module_job_state(job_id=None, action=None, running=False)
+            self._show_module_panel(
+                "Module job failed",
+                f"{action.title()} {self._format_module_job_label()}: {response.get('error') or 'unknown'}",
+                running=False,
+                ok=False,
+            )
             QtWidgets.QMessageBox.warning(
                 self,
                 "Module",
@@ -2133,10 +2145,22 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             )
         except Exception as exc:  # pragma: no cover - defensive
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            self._show_progress_panel(
+                "Module job failed",
+                f"{action.title()} {module_id}: {exc}",
+                running=False,
+                ok=False,
+            )
             QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
             return
         if not response.get("ok") or not response.get("job_id"):
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            self._show_progress_panel(
+                "Module job failed",
+                f"{action.title()} {module_id}: {response.get('error') or 'unknown'}",
+                running=False,
+                ok=False,
+            )
             QtWidgets.QMessageBox.warning(
                 self,
                 "Module",
@@ -2836,10 +2860,22 @@ class ContentManagementScreen(QtWidgets.QWidget):
             )
         except Exception as exc:  # pragma: no cover - defensive
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            self._show_progress_panel(
+                "Module job failed",
+                f"{action.title()} {module_id}: {exc}",
+                running=False,
+                ok=False,
+            )
             QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
             return
         if not response.get("ok") or not response.get("job_id"):
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+            self._show_progress_panel(
+                "Module job failed",
+                f"{action.title()} {module_id}: {response.get('error') or 'unknown'}",
+                running=False,
+                ok=False,
+            )
             QtWidgets.QMessageBox.warning(
                 self,
                 "Module",

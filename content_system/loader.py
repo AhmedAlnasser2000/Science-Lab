@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from diagnostics.fs_ops import safe_copytree
 STATUS_READY = "READY"
 STATUS_NOT_INSTALLED = "NOT_INSTALLED"
 STATUS_UNAVAILABLE = "UNAVAILABLE"
@@ -368,7 +369,7 @@ def download_part(part_id: str) -> Dict[str, Any]:
     repo_part_dir = repo_manifest_path.parent
     store_part_dir = STORE_BASE / rel_manifest.parent
     try:
-        shutil.copytree(repo_part_dir, store_part_dir, dirs_exist_ok=True)
+        safe_copytree(repo_part_dir, store_part_dir)
     except Exception as exc:  # pragma: no cover - defensive
         return {"status": STATUS_UNAVAILABLE, "reason": f"failed to copy part directory: {exc}"}
 
