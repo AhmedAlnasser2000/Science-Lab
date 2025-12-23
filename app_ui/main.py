@@ -1965,7 +1965,9 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self.pending_module_id: Optional[str] = None
         self.pending_action: Optional[str] = None
         self._job_poll_timer: Optional[QtCore.QTimer] = None
-        self._job_poll_deadline: float = 0.0
+        self._job_poll_job_id: Optional[str] = None
+        self._job_poll_started_ms: Optional[float] = None
+        self._job_poll_timeout_ms: int = 30000
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -2283,7 +2285,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             return
         if not self._is_active_payload(payload):
             return
-        self._stop_module_poll_timer()
+        self._stop_job_poll_timer()
         ok = bool(payload.get("ok"))
         error = payload.get("error")
         module_id = self.pending_module_id or "module"
@@ -2303,6 +2305,8 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self.pending_job_id = job_id
         self.pending_module_id = module_id
         self.pending_action = action if running else None
+        if not running:
+            self._stop_job_poll_timer()
 
     def _show_progress_panel(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
         color = "#0d47a1"
@@ -2314,6 +2318,71 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self.progress_title.setStyleSheet(f"font-weight: bold; color: {color};")
         self.progress_details.setText(details)
         self.progress_panel.setVisible(True)
+
+    def _start_job_poll_timer(self) -> None:
+        job_id = self.pending_job_id
+        if not (self.bus and job_id):
+            return
+        self._stop_job_poll_timer()
+        self._job_poll_job_id = job_id
+        self._job_poll_started_ms = time.monotonic() * 1000
+        timer = QtCore.QTimer(self)
+        timer.setInterval(800)
+        timer.timeout.connect(self._poll_job_status)
+        self._job_poll_timer = timer
+        timer.start()
+
+    def _stop_job_poll_timer(self) -> None:
+        timer = getattr(self, "_job_poll_timer", None)
+        if timer:
+            timer.stop()
+            timer.deleteLater()
+        self._job_poll_timer = None
+        self._job_poll_job_id = None
+        self._job_poll_started_ms = None
+
+    def _poll_job_status(self) -> None:
+        job_id = self._job_poll_job_id or self.pending_job_id
+        if not (self.bus and job_id):
+            self._stop_job_poll_timer()
+            return
+        if self._job_poll_started_ms is not None and self._job_poll_timeout_ms:
+            elapsed_ms = (time.monotonic() * 1000) - self._job_poll_started_ms
+            if elapsed_ms > self._job_poll_timeout_ms:
+                self._stop_job_poll_timer()
+                self._show_progress_panel(
+                    "Module job timeout",
+                    f"{(self.pending_action or 'Module').title()} {self.pending_module_id or 'module'}: timed out waiting for completion",
+                    running=False,
+                    ok=False,
+                )
+                self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+                return
+        try:
+            response = self.bus.request(
+                BUS_JOBS_GET_REQUEST,
+                {"job_id": job_id},
+                source="app_ui",
+                timeout_ms=800,
+            )
+        except Exception:
+            return
+        if not response.get("ok"):
+            return
+        job = response.get("job") or {}
+        status = str(job.get("status") or "").upper()
+        ok_flag = job.get("ok")
+        terminal = status in ("COMPLETED", "FAILED") or ok_flag is not None
+        if not terminal:
+            return
+        self._stop_job_poll_timer()
+        payload = {
+            "job_id": job_id,
+            "job_type": job.get("job_type"),
+            "ok": ok_flag,
+            "error": job.get("error"),
+        }
+        self._on_job_completed_event(SimpleNamespace(payload=payload))
 
 
 def _format_pack_label(pack: Dict[str, Any]) -> str:
@@ -2828,6 +2897,10 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.pending_module_id: Optional[str] = None
         self.pending_action: Optional[str] = None
         self._selected_module_status: Optional[str] = None
+        self._job_poll_timer: Optional[QtCore.QTimer] = None
+        self._job_poll_job_id: Optional[str] = None
+        self._job_poll_started_ms: Optional[float] = None
+        self._job_poll_timeout_ms: int = 30000
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -3344,41 +3417,48 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self._set_module_action_enabled()
 
     def _start_job_poll_timer(self) -> None:
-        if not (self.bus and self.pending_job_id):
+        job_id = self.pending_job_id
+        if not (self.bus and job_id):
             return
         self._stop_job_poll_timer()
+        self._job_poll_job_id = job_id
+        self._job_poll_started_ms = time.monotonic() * 1000
         timer = QtCore.QTimer(self)
         timer.setInterval(800)
         timer.timeout.connect(self._poll_job_status)
-        self._job_poll_deadline = time.monotonic() + 30.0
         self._job_poll_timer = timer
         timer.start()
 
     def _stop_job_poll_timer(self) -> None:
-        if self._job_poll_timer:
-            self._job_poll_timer.stop()
-            self._job_poll_timer.deleteLater()
-            self._job_poll_timer = None
-        self._job_poll_deadline = 0.0
+        timer = getattr(self, "_job_poll_timer", None)
+        if timer:
+            timer.stop()
+            timer.deleteLater()
+        self._job_poll_timer = None
+        self._job_poll_job_id = None
+        self._job_poll_started_ms = None
 
     def _poll_job_status(self) -> None:
-        if not (self.bus and self.pending_job_id):
+        job_id = self._job_poll_job_id or self.pending_job_id
+        if not (self.bus and job_id):
             self._stop_job_poll_timer()
             return
-        if self._job_poll_deadline and time.monotonic() > self._job_poll_deadline:
-            self._stop_job_poll_timer()
-            self._show_progress_panel(
-                "Module job timeout",
-                f"{(self.pending_action or 'Module').title()} {self.pending_module_id or 'module'}: timed out waiting for completion",
-                running=False,
-                ok=False,
-            )
-            self._set_job_state(job_id=None, module_id=None, action=None, running=False)
-            return
+        if self._job_poll_started_ms is not None and self._job_poll_timeout_ms:
+            elapsed_ms = (time.monotonic() * 1000) - self._job_poll_started_ms
+            if elapsed_ms > self._job_poll_timeout_ms:
+                self._stop_job_poll_timer()
+                self._show_progress_panel(
+                    "Module job timeout",
+                    f"{(self.pending_action or 'Module').title()} {self.pending_module_id or 'module'}: timed out waiting for completion",
+                    running=False,
+                    ok=False,
+                )
+                self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+                return
         try:
             response = self.bus.request(
                 BUS_JOBS_GET_REQUEST,
-                {"job_id": self.pending_job_id},
+                {"job_id": job_id},
                 source="app_ui",
                 timeout_ms=800,
             )
@@ -3394,7 +3474,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
             return
         self._stop_job_poll_timer()
         payload = {
-            "job_id": self.pending_job_id,
+            "job_id": job_id,
             "job_type": job.get("job_type"),
             "ok": ok_flag,
             "error": job.get("error"),
