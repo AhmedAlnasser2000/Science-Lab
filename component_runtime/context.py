@@ -23,3 +23,6 @@ class ComponentContext:
     profile: str
     reduced_motion: bool
     content_adapter: Optional[Any] = None
+    part_id: Optional[str] = None
+    detail: Optional[Dict[str, Any]] = None
+    asset_root: Optional[Path] = None

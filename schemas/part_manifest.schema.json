@@ -23,6 +23,9 @@
     "part_id": {
       "$ref": "common.schema.json#/$defs/identifier"
     },
+    "component_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
     "title": {
       "$ref": "common.schema.json#/$defs/title"
     },

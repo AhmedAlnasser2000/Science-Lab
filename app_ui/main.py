@@ -716,12 +716,13 @@ class PlaceholderDialog(QtWidgets.QDialog):
 
 
 class ContentBrowserScreen(QtWidgets.QWidget):
-    def __init__(self, adapter: "ContentSystemAdapter", on_back, get_profile, open_lab):
+    def __init__(self, adapter: "ContentSystemAdapter", on_back, get_profile, open_lab, open_component):
         super().__init__()
         self.adapter = adapter
         self.on_back = on_back
         self.get_profile = get_profile
         self.open_lab = open_lab
+        self.open_component = open_component
         self.current_part_id: Optional[str] = None
         self.current_part_info: Optional[Dict] = None
         self.current_part_detail: Optional[Dict] = None
@@ -975,6 +976,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         content = manifest.get("content") or {}
         asset = content.get("asset_path")
         behavior = manifest.get("behavior") or {}
+        component_id = detail.get("component_id") or manifest.get("component_id")
         lab_id = None
         detail_lab = (detail.get("lab") if isinstance(detail, dict) else None)
         if isinstance(detail_lab, dict):
@@ -997,6 +999,13 @@ class ContentBrowserScreen(QtWidgets.QWidget):
             lab_id = "projectile"
         if not lab_id and self.current_part_id == "projectile_demo":
             lab_id = "projectile"
+        if component_id:
+            if detail.get("status") != STATUS_READY:
+                QtWidgets.QMessageBox.information(self, "Open", "Install this part first.")
+                return
+            self.open_component(component_id, self.current_part_id, manifest, detail)
+            return
+
         if lab_id:
             if detail.get("status") != STATUS_READY:
                 QtWidgets.QMessageBox.information(self, "Open", "Install this lab first.")
@@ -2879,6 +2888,59 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         self.status_label.setText(f"Opened lab component: {lab_id}")
 
 
+class ComponentHostScreen(QtWidgets.QWidget):
+    def __init__(self, on_back):
+        super().__init__()
+        self.on_back = on_back
+        self._host: Optional["ComponentHost"] = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        header = QtWidgets.QHBoxLayout()
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        header.addWidget(back_btn)
+        title = QtWidgets.QLabel("Component Viewer")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header.addWidget(title)
+        header.addStretch()
+        self.close_btn = QtWidgets.QPushButton("Close")
+        self.close_btn.clicked.connect(self._close_component)
+        header.addWidget(self.close_btn)
+        layout.addLayout(header)
+
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setStyleSheet("color: #444;")
+        layout.addWidget(self.status_label)
+
+        if ComponentHost is None or component_registry is None:
+            msg = "Component runtime unavailable."
+            if COMPONENT_RUNTIME_ERROR:
+                msg = f"{msg} {COMPONENT_RUNTIME_ERROR}"
+            error_label = QtWidgets.QLabel(msg)
+            error_label.setStyleSheet("color: #b00;")
+            layout.addWidget(error_label)
+            self.close_btn.setEnabled(False)
+        else:
+            self._host = ComponentHost()
+            layout.addWidget(self._host, stretch=1)
+
+    def open_component(self, component_id: str, context: "ComponentContext") -> None:
+        if component_registry is None or self._host is None:
+            return
+        component = component_registry.get_registry().get_component(component_id)
+        if not component:
+            self.status_label.setText(f"Component '{component_id}' is not registered.")
+            return
+        self._host.mount(component, context)
+        self.status_label.setText(f"Opened component: {component_id}")
+
+    def _close_component(self) -> None:
+        if self._host is None:
+            return
+        self._host.unmount()
+        self.status_label.setText("Component closed.")
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, initial_profile: str):
         super().__init__()
@@ -2909,6 +2971,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_main_menu,
             lambda: self.current_profile,
             self._open_lab,
+            self._open_component_from_part,
         )
         self.system_health = SystemHealthScreen(self._show_main_menu, cleanup_enabled=CORE_CENTER_AVAILABLE, bus=APP_BUS)
         self.content_management = ContentManagementScreen(
@@ -2921,6 +2984,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_main_menu,
             self._build_component_context,
         )
+        self.component_host = ComponentHostScreen(self._show_content_browser)
+
+        if component_registry is not None:
+            try:
+                component_registry.register_lab_components(lab_registry)
+            except Exception:
+                pass
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.content_browser)
@@ -2928,6 +2998,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.module_management)
         self.stacked.addWidget(self.content_management)
         self.stacked.addWidget(self.component_sandbox)
+        self.stacked.addWidget(self.component_host)
         self._show_main_menu()
 
     def _show_module_management(self):
@@ -2993,6 +3064,7 @@ class MainWindow(QtWidgets.QMainWindow):
         detail = self.adapter.get_part(part_id)
         manifest = detail.get("manifest") or {}
         behavior = manifest.get("behavior") or {}
+        component_id = detail.get("component_id") or manifest.get("component_id")
         lab_id = None
         detail_lab = detail.get("lab") if isinstance(detail, dict) else None
         if isinstance(detail_lab, dict):
@@ -3015,6 +3087,9 @@ class MainWindow(QtWidgets.QMainWindow):
             lab_id = "projectile"
         if not lab_id and part_id == "projectile_demo":
             lab_id = "projectile"
+        if component_id and detail.get("status") == STATUS_READY:
+            self._open_component_from_part(component_id, part_id, manifest, detail)
+            return
         if lab_id and detail.get("status") == STATUS_READY:
             self._open_lab(lab_id, part_id, manifest, detail)
             return
@@ -3053,12 +3128,32 @@ class MainWindow(QtWidgets.QMainWindow):
             self.component_sandbox.refresh_components()
             self.stacked.setCurrentWidget(self.component_sandbox)
 
+    def _open_component_from_part(
+        self,
+        component_id: str,
+        part_id: Optional[str],
+        manifest: Dict[str, Any],
+        detail: Dict[str, Any],
+    ) -> None:
+        self._dispose_lab_widget()
+        if not COMPONENT_RUNTIME_AVAILABLE or self.component_host is None:
+            QtWidgets.QMessageBox.warning(self, "Components", "Component runtime unavailable.")
+            return
+        context = self._build_component_context(part_id=part_id, detail=detail)
+        self.component_host.open_component(component_id, context)
+        self.stacked.setCurrentWidget(self.component_host)
+
     def _quit_app(self):
         app = QtWidgets.QApplication.instance()
         if app:
             app.quit()
 
-    def _build_component_context(self) -> "ComponentContext":
+    def _build_component_context(
+        self,
+        *,
+        part_id: Optional[str] = None,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> "ComponentContext":
         policy = dict(LAB_DEFAULT_POLICY)
         policy_topic = getattr(BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request") if BUS_TOPICS else "core.policy.get.request"
         if APP_BUS and policy_topic:
@@ -3074,6 +3169,13 @@ class MainWindow(QtWidgets.QMainWindow):
             runs=Path("data/store/runs"),
             runs_local=Path("data/store/runs_local"),
         )
+        asset_root = None
+        if isinstance(detail, dict):
+            paths = detail.get("paths")
+            if isinstance(paths, dict):
+                store_manifest = paths.get("store_manifest")
+                if isinstance(store_manifest, str):
+                    asset_root = Path(store_manifest).resolve().parent
         return ComponentContext(
             bus=APP_BUS,
             policy=policy,
@@ -3081,6 +3183,9 @@ class MainWindow(QtWidgets.QMainWindow):
             profile=self.current_profile,
             reduced_motion=ui_config.get_reduced_motion(),
             content_adapter=self.adapter,
+            part_id=part_id,
+            detail=detail,
+            asset_root=asset_root,
         )
 
     def _dispose_lab_widget(self):

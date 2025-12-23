@@ -70,6 +70,13 @@ def _extract_lab_metadata(manifest: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return info
 
 
+def _extract_component_id(manifest: Dict[str, Any]) -> Optional[str]:
+    value = manifest.get("component_id")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 def _safe_relative(path: Path, base: Path) -> Optional[Path]:
     try:
         return path.relative_to(base)
@@ -271,6 +278,9 @@ def list_tree() -> Dict[str, Any]:
                     "status": status,
                     "reason": reason,
                 }
+                component_id = _extract_component_id(repo_manifest)
+                if component_id:
+                    part_entry["component_id"] = component_id
                 lab_info = _extract_lab_metadata(repo_manifest)
                 if lab_info:
                     part_entry["lab"] = lab_info
@@ -320,6 +330,7 @@ def get_part(part_id: str) -> Dict[str, Any]:
         }
 
     lab_info = _extract_lab_metadata(repo_manifest)
+    component_id = _extract_component_id(repo_manifest)
 
     result = {
         "status": status,
@@ -331,6 +342,8 @@ def get_part(part_id: str) -> Dict[str, Any]:
             "assets": asset_paths,
         },
     }
+    if component_id:
+        result["component_id"] = component_id
     if lab_info:
         result["lab"] = lab_info
     return result
