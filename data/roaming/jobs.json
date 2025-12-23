@@ -1,5 +1,160 @@
 [
   {
+    "job_id": "daba3e0b-d579-49fd-9f8f-27245952897a",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "FAILED",
+    "progress": 0.0,
+    "result": null,
+    "error": "module not installed: physics",
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:09.164006+00:00",
+    "finished_at": "2025-12-23T10:59:09.164751+00:00",
+    "ok": false,
+    "result_summary": null
+  },
+  {
+    "job_id": "3a497f8c-cdb6-426a-9e3c-0daf0ff03b7c",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:07.916095+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-23T10:59:07.937155+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "3a4f0c42-7505-4189-82a9-26c7a7c82d4f",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:07.260135+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-23T10:59:07.339638+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "f725bb09-547e-4c59-abc2-5e7e1ffea808",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:07.059065+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-23T10:59:07.133235+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "57427e41-0567-4936-bb5f-5734e3dca9d5",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:06.835197+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-23T10:59:06.906907+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "c80251b9-215e-4bb5-a7e7-35043775af19",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:06.594825+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-23T10:59:06.671115+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "c6433d2e-177c-4626-b694-e65ab99f745d",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:06.402963+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-23T10:59:06.481523+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "aef1ce3e-4314-4183-bb96-028b8e103339",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-23T10:59:05.259902+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-23T10:59:05.320205+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
     "job_id": "ff105366-fb57-43a6-9f94-db3270ca64ca",
     "job_type": "core.module.uninstall",
     "source": "core_center",
@@ -5568,39 +5723,6 @@
     "status": "completed",
     "started_at": "2025-12-17T06:10:45.987665+00:00",
     "finished_at": "2025-12-17T06:10:45.998388+00:00",
-    "ok": true,
-    "error": null,
-    "result_summary": null
-  },
-  {
-    "job_id": "5092ea71-6771-4b4a-955c-bf7375c8ffa3",
-    "job_type": "core.report.generate",
-    "source": "core_center",
-    "status": "completed",
-    "started_at": "2025-12-17T06:10:43.819798+00:00",
-    "finished_at": "2025-12-17T06:10:43.830953+00:00",
-    "ok": true,
-    "error": null,
-    "result_summary": null
-  },
-  {
-    "job_id": "60ab892b-214f-4e8b-aeb6-87bf879a6221",
-    "job_type": "core.cleanup.cache",
-    "source": "core_center",
-    "status": "running",
-    "started_at": "2025-12-17T06:10:43.815995+00:00",
-    "finished_at": null,
-    "ok": null,
-    "error": null,
-    "result_summary": null
-  },
-  {
-    "job_id": "49f429c1-e7cd-419c-9e30-498c12246861",
-    "job_type": "core.report.generate",
-    "source": "core_center",
-    "status": "completed",
-    "started_at": "2025-12-17T06:10:38.963540+00:00",
-    "finished_at": "2025-12-17T06:10:38.974658+00:00",
     "ok": true,
     "error": null,
     "result_summary": null

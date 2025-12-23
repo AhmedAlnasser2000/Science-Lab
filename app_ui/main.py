@@ -2827,6 +2827,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.pending_job_id: Optional[str] = None
         self.pending_module_id: Optional[str] = None
         self.pending_action: Optional[str] = None
+        self._selected_module_status: Optional[str] = None
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -2986,13 +2987,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
                 return status != STATUS_READY
             return True
 
+        module_status = data.get("status", "")
         module_item = QtWidgets.QTreeWidgetItem(
-            [self._display_name(module.get("title"), module.get("module_id"), "Module"), data.get("status", "")]
+            [self._display_name(module.get("title"), module.get("module_id"), "Module"), module_status]
         )
         module_item.setData(
             0,
             QtCore.Qt.ItemDataRole.UserRole,
-            {"type": "module", "module_id": module.get("module_id")},
+            {"type": "module", "module_id": module.get("module_id"), "status": module_status},
         )
         added_any = False
         for section in module.get("sections", []):
@@ -3023,6 +3025,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
                             "module_id": module.get("module_id"),
                             "status": status,
                             "reason": part.get("reason"),
+                            "module_status": module_status,
                         },
                     )
                     pkg_item.addChild(part_item)
@@ -3068,12 +3071,15 @@ class ContentManagementScreen(QtWidgets.QWidget):
             self.install_part_btn.setEnabled(status != STATUS_READY)
             self.install_module_btn.setVisible(True)
             self.uninstall_module_btn.setVisible(True)
+            self.pending_module_id = data.get("module_id")
+            self._selected_module_status = data.get("module_status") or status
+            self._set_module_action_enabled()
         elif node_type == "module":
             module_id = data.get("module_id") or "module"
             self.detail_title.setText(f"Module {module_id}")
-            self.detail_status_pill.set_status(item.text(1))
+            module_status = data.get("status") or item.text(1)
+            self.detail_status_pill.set_status(module_status)
             self.detail_meta.setText(f"Module ID: {module_id}")
-            module_status = item.text(1)
             if module_status == STATUS_READY:
                 self.detail_action.setText("Action: Uninstall Module.")
             else:
@@ -3082,6 +3088,9 @@ class ContentManagementScreen(QtWidgets.QWidget):
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(True)
             self.uninstall_module_btn.setVisible(True)
+            self.pending_module_id = module_id
+            self._selected_module_status = module_status
+            self._set_module_action_enabled()
         else:
             self._clear_details()
 
@@ -3095,6 +3104,8 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.install_part_btn.setVisible(False)
         self.install_module_btn.setVisible(False)
         self.uninstall_module_btn.setVisible(False)
+        self.pending_module_id = None
+        self._selected_module_status = None
 
     def _on_item_double_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
@@ -3145,6 +3156,28 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.install_thread = None
         QtWidgets.QMessageBox.warning(self, "Install", f"Failed to install: {error}")
 
+    def _set_module_action_enabled(self) -> None:
+        if not (hasattr(self, "install_module_btn") and hasattr(self, "uninstall_module_btn")):
+            return
+        if not self.bus:
+            self.install_module_btn.setEnabled(False)
+            self.uninstall_module_btn.setEnabled(False)
+            return
+        if self.pending_job_id:
+            self.install_module_btn.setEnabled(False)
+            self.uninstall_module_btn.setEnabled(False)
+            return
+        status = self._selected_module_status or ""
+        if status == STATUS_READY:
+            self.install_module_btn.setEnabled(False)
+            self.uninstall_module_btn.setEnabled(True)
+        elif status:
+            self.install_module_btn.setEnabled(True)
+            self.uninstall_module_btn.setEnabled(False)
+        else:
+            self.install_module_btn.setEnabled(True)
+            self.uninstall_module_btn.setEnabled(True)
+
     def _start_module_job(self, action: str) -> None:
         module_id = self._selected_module_id()
         if not module_id:
@@ -3155,6 +3188,12 @@ class ContentManagementScreen(QtWidgets.QWidget):
             return
         if self.pending_job_id:
             QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            return
+        if action == "install" and self._selected_module_status == STATUS_READY:
+            QtWidgets.QMessageBox.information(self, "Module", "Module already installed.")
+            return
+        if action == "uninstall" and self._selected_module_status != STATUS_READY:
+            QtWidgets.QMessageBox.information(self, "Module", "Module already uninstalled.")
             return
         topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
         self._set_job_state(job_id=None, module_id=module_id, action=action, running=True)
@@ -3201,6 +3240,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
             f"{action.title()} {module_id}: awaiting progress (job {job_id[:8]})",
             running=True,
         )
+        self._start_job_poll_timer()
 
     def _selected_module_id(self) -> Optional[str]:
         if self.current_selection and self.current_selection.get("type") == "module":
@@ -3263,6 +3303,10 @@ class ContentManagementScreen(QtWidgets.QWidget):
         )
         self._set_status(f"{action.title()} {module_id}: {summary}")
         self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+        self._selected_module_status = STATUS_READY if ok and action == "install" else self._selected_module_status
+        if ok and action == "uninstall":
+            self._selected_module_status = STATUS_NOT_INSTALLED
+        self._set_module_action_enabled()
         self.refresh_tree()
 
     def _on_job_completed_event(self, envelope: Any) -> None:
@@ -3285,6 +3329,10 @@ class ContentManagementScreen(QtWidgets.QWidget):
         )
         self._set_status(f"{action.title()} {module_id}: {summary}")
         self._set_job_state(job_id=None, module_id=None, action=None, running=False)
+        self._selected_module_status = STATUS_READY if ok and action == "install" else self._selected_module_status
+        if ok and action == "uninstall":
+            self._selected_module_status = STATUS_NOT_INSTALLED
+        self._set_module_action_enabled()
         self.refresh_tree()
 
     def _set_job_state(self, *, job_id: Optional[str], module_id: Optional[str], action: Optional[str], running: bool) -> None:
@@ -3293,6 +3341,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.pending_action = action if running else None
         if not running:
             self._stop_job_poll_timer()
+        self._set_module_action_enabled()
 
     def _start_job_poll_timer(self) -> None:
         if not (self.bus and self.pending_job_id):
