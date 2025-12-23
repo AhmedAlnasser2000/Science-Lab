@@ -2762,6 +2762,10 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         left_panel = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
+
+        component_label = QtWidgets.QLabel("Components")
+        component_label.setStyleSheet("font-weight: bold;")
+        left_layout.addWidget(component_label)
         self.component_list = QtWidgets.QListWidget()
         self.component_list.itemDoubleClicked.connect(self._open_selected)
         left_layout.addWidget(self.component_list, stretch=1)
@@ -2774,6 +2778,20 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         self.close_btn.clicked.connect(self._close_component)
         button_row.addWidget(self.close_btn)
         left_layout.addLayout(button_row)
+
+        lab_label = QtWidgets.QLabel("Labs")
+        lab_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        left_layout.addWidget(lab_label)
+        self.lab_list = QtWidgets.QListWidget()
+        self.lab_list.itemDoubleClicked.connect(self._open_selected_lab_component)
+        left_layout.addWidget(self.lab_list, stretch=1)
+
+        lab_button_row = QtWidgets.QHBoxLayout()
+        self.open_lab_btn = QtWidgets.QPushButton("Open selected lab as component")
+        self.open_lab_btn.clicked.connect(self._open_selected_lab_component)
+        lab_button_row.addWidget(self.open_lab_btn)
+        left_layout.addLayout(lab_button_row)
+
         splitter.addWidget(left_panel)
 
         self.host_container = QtWidgets.QWidget()
@@ -2802,14 +2820,24 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
 
     def refresh_components(self) -> None:
         self.component_list.clear()
+        self.lab_list.clear()
         if component_registry is None:
             return
+        try:
+            component_registry.register_lab_components(lab_registry)
+        except Exception:
+            pass
         registry = component_registry.get_registry()
         for meta in registry.list_components():
             label = f"{meta.display_name} ({meta.component_id})"
             item = QtWidgets.QListWidgetItem(label)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, meta.component_id)
             self.component_list.addItem(item)
+        for lab_id, plugin in lab_registry.list_labs().items():
+            title = getattr(plugin, "title", lab_id)
+            item = QtWidgets.QListWidgetItem(f"{title} ({lab_id})")
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, lab_id)
+            self.lab_list.addItem(item)
 
     def _open_selected(self) -> None:
         if component_registry is None or self._host is None:
@@ -2832,6 +2860,23 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             return
         self._host.unmount()
         self.status_label.setText("Component closed.")
+
+    def _open_selected_lab_component(self) -> None:
+        if component_registry is None or self._host is None:
+            return
+        item = self.lab_list.currentItem()
+        if not item:
+            self.status_label.setText("Select a lab to open as a component.")
+            return
+        lab_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        component_id = f"labhost:{lab_id}"
+        component = component_registry.get_registry().get_component(component_id)
+        if not component:
+            self.status_label.setText(f"Lab component '{component_id}' is not registered.")
+            return
+        context = self.context_provider()
+        self._host.mount(component, context)
+        self.status_label.setText(f"Opened lab component: {lab_id}")
 
 
 class MainWindow(QtWidgets.QMainWindow):

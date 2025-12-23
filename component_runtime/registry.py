@@ -46,3 +46,17 @@ def get_registry() -> ComponentRegistry:
 
 def register_component(factory: Callable[[], Component]) -> None:
     _REGISTRY.register(factory)
+
+
+def register_lab_components(lab_registry) -> None:
+    from .lab_component import make_lab_component
+
+    for lab_id, plugin in lab_registry.list_labs().items():
+        display_name = getattr(plugin, "title", lab_id)
+        _REGISTRY.register(
+            lambda lab_id=lab_id, display_name=display_name: make_lab_component(
+                lab_id,
+                display_name,
+                lab_registry,
+            )
+        )
