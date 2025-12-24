@@ -1,5 +1,540 @@
 [
   {
+    "job_id": "e689cbeb-450b-446c-b3f5-f022bfd0d908",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "text": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 179463 bytes\n  total: 183800 bytes\n\nRuns storage: 4337 bytes\n  Runs per lab:\n    - electric_field: 10 runs, 1390 bytes\n    - gravity: 16 runs, 396 bytes\n    - lens_ray: 7 runs, 931 bytes\n    - projectile: 9 runs, 1215 bytes\n    - vector_add: 15 runs, 405 bytes\n\nComponents:\n  physics [module] repo present 21956 bytes @ content_repo\\physics_v1\n  default [ui_pack] repo present 1274 bytes @ ui_repo\\ui_v1\\packs\\default\n  quantum_smooth [ui_pack] repo present 1664 bytes @ ui_repo\\ui_v1\\packs\\quantum_smooth\n  gravity [lab] app present 8791 bytes @ app_ui\\labs\n  projectile [lab] app present 10439 bytes @ app_ui\\labs\n  electric_field [lab] app present 13627 bytes @ app_ui\\labs\n  lens_ray [lab] app present 16049 bytes @ app_ui\\labs\n  vector_add [lab] app present 11692 bytes @ app_ui\\labs\n  physics [module] store present 21956 bytes @ content_store\\physics_v1",
+      "json": {
+        "roots": {
+          "store": 4337,
+          "cache": 0,
+          "dumps": 0,
+          "roaming": 179463,
+          "total": 183800
+        },
+        "components": [
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_repo\\physics_v1"
+          },
+          {
+            "id": "default",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1274,
+            "install_path": "ui_repo\\ui_v1\\packs\\default"
+          },
+          {
+            "id": "quantum_smooth",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1664,
+            "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth"
+          },
+          {
+            "id": "gravity",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 8791,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "projectile",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 10439,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "electric_field",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 13627,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "lens_ray",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 16049,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "vector_add",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 11692,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "store",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_store\\physics_v1"
+          }
+        ],
+        "runs": {
+          "total_bytes": 4337,
+          "labs": {
+            "electric_field": {
+              "run_count": 10,
+              "bytes": 1390
+            },
+            "gravity": {
+              "run_count": 16,
+              "bytes": 396
+            },
+            "lens_ray": {
+              "run_count": 7,
+              "bytes": 931
+            },
+            "projectile": {
+              "run_count": 9,
+              "bytes": 1215
+            },
+            "vector_add": {
+              "run_count": 15,
+              "bytes": 405
+            }
+          }
+        },
+        "registry_summary": {
+          "total": 9,
+          "by_type": {
+            "module": 2,
+            "ui_pack": 2,
+            "lab": 5
+          },
+          "by_source": {
+            "repo": 3,
+            "app": 5,
+            "store": 1
+          }
+        }
+      }
+    },
+    "error": null,
+    "payload": {},
+    "started_at": "2025-12-24T14:19:00.454810+00:00",
+    "stage": "ready",
+    "finished_at": "2025-12-24T14:19:00.494284+00:00",
+    "ok": true,
+    "result_summary": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 179463 bytes\n  total: 183800 bytes\n\nRuns"
+  },
+  {
+    "job_id": "e107117e-aff5-4b81-98e4-b812c1f9c232",
+    "job_type": "core.component_pack.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 90,
+    "result": {
+      "pack_id": "welcome_pack",
+      "install_path": "component_store\\component_v1\\packs\\welcome_pack",
+      "text": "Installed welcome_pack"
+    },
+    "error": null,
+    "payload": {
+      "pack_id": "welcome_pack"
+    },
+    "started_at": "2025-12-24T14:18:50.863231+00:00",
+    "stage": "installed to store",
+    "finished_at": "2025-12-24T14:18:50.868385+00:00",
+    "ok": true,
+    "result_summary": "Installed welcome_pack"
+  },
+  {
+    "job_id": "fb4545f8-24a2-4ddd-bd6f-e539bfcf4c5e",
+    "job_type": "core.component_pack.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 90,
+    "result": {
+      "pack_id": "welcome_pack",
+      "text": "Uninstalled welcome_pack"
+    },
+    "error": null,
+    "payload": {
+      "pack_id": "welcome_pack"
+    },
+    "started_at": "2025-12-24T14:18:47.127297+00:00",
+    "stage": "removed from store",
+    "finished_at": "2025-12-24T14:18:47.129251+00:00",
+    "ok": true,
+    "result_summary": "Uninstalled welcome_pack"
+  },
+  {
+    "job_id": "6ca1abc5-73e4-4d68-b685-5a6d7b58b246",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "message": "already uninstalled"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:18:37.854936+00:00",
+    "stage": "already uninstalled",
+    "finished_at": "2025-12-24T14:18:37.855748+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "fc991757-a1f3-4d91-9be4-0cf358406c42",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "message": "already uninstalled"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:18:37.494743+00:00",
+    "stage": "already uninstalled",
+    "finished_at": "2025-12-24T14:18:37.495650+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "bd006015-5af3-42b6-922e-e4522aebc0da",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "message": "already uninstalled"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:18:37.254965+00:00",
+    "stage": "already uninstalled",
+    "finished_at": "2025-12-24T14:18:37.255785+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "9fce0783-9f07-48bc-8674-09f48b6f7c8f",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "message": "already uninstalled"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:18:36.998795+00:00",
+    "stage": "already uninstalled",
+    "finished_at": "2025-12-24T14:18:36.999556+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "fa6b4baf-3bbd-4e98-b2da-279fcc4760dc",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "message": "already uninstalled"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:18:36.607612+00:00",
+    "stage": "already uninstalled",
+    "finished_at": "2025-12-24T14:18:36.608432+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "3962dc22-8b26-459f-acf0-ced4d6088a53",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "message": "already uninstalled"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:18:36.095176+00:00",
+    "stage": "already uninstalled",
+    "finished_at": "2025-12-24T14:18:36.096078+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "c2d534a5-68e8-4e79-a5fe-a9abeaf4eb29",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "message": "already uninstalled"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:18:33.415677+00:00",
+    "stage": "already uninstalled",
+    "finished_at": "2025-12-24T14:18:33.416602+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "f056cc44-79fe-41d9-8355-e53aa86c4b8b",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "FAILED",
+    "progress": 0.0,
+    "result": null,
+    "error": "module not installed: physics",
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:19.734806+00:00",
+    "finished_at": "2025-12-24T13:58:19.735494+00:00",
+    "ok": false,
+    "result_summary": null
+  },
+  {
+    "job_id": "1eb98bed-a9e5-4b6c-9f74-2eb331502b15",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "FAILED",
+    "progress": 0.0,
+    "result": null,
+    "error": "module not installed: physics",
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:18.958794+00:00",
+    "finished_at": "2025-12-24T13:58:18.959571+00:00",
+    "ok": false,
+    "result_summary": null
+  },
+  {
+    "job_id": "dc67bad4-297a-44b8-ad63-49b86eb83ea3",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "FAILED",
+    "progress": 0.0,
+    "result": null,
+    "error": "module not installed: physics",
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:17.814596+00:00",
+    "finished_at": "2025-12-24T13:58:17.815280+00:00",
+    "ok": false,
+    "result_summary": null
+  },
+  {
+    "job_id": "2d48ff22-ae64-4ac1-9995-632cb171153b",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:17.358451+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T13:58:17.382987+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "d70e4941-fda9-463c-b4da-ac57d4240c39",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:16.862471+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T13:58:16.929028+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "0d101f21-c637-4d1e-9044-42ceb106f10f",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:16.070640+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T13:58:16.139764+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "a1aa2e57-e7e7-4968-bf7f-5a3a1ebfc444",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:14.743060+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T13:58:14.801518+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "9aa744f5-a3c1-42a0-b709-3becaac31389",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "FAILED",
+    "progress": 0.0,
+    "result": null,
+    "error": "module not installed: physics",
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:58:01.886717+00:00",
+    "finished_at": "2025-12-24T13:58:01.888144+00:00",
+    "ok": false,
+    "result_summary": null
+  },
+  {
+    "job_id": "aa6a0eca-7d38-4724-ab06-61b32b7861ec",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "FAILED",
+    "progress": 0.0,
+    "result": null,
+    "error": "module not installed: physics",
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:57:53.318758+00:00",
+    "finished_at": "2025-12-24T13:57:53.319990+00:00",
+    "ok": false,
+    "result_summary": null
+  },
+  {
+    "job_id": "d6dd468e-0ad0-4bc4-b5b5-e667956fba3c",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "FAILED",
+    "progress": 0.0,
+    "result": null,
+    "error": "module not installed: physics",
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T13:57:46.542883+00:00",
+    "finished_at": "2025-12-24T13:57:46.544201+00:00",
+    "ok": false,
+    "result_summary": null
+  },
+  {
+    "job_id": "139f7ae9-aa87-48a0-b5c4-a249f1b0f560",
+    "job_type": "core.component_pack.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 90,
+    "result": {
+      "pack_id": "welcome_pack",
+      "install_path": "component_store\\component_v1\\packs\\welcome_pack",
+      "text": "Installed welcome_pack"
+    },
+    "error": null,
+    "payload": {
+      "pack_id": "welcome_pack"
+    },
+    "started_at": "2025-12-24T13:57:32.062414+00:00",
+    "stage": "installed to store",
+    "finished_at": "2025-12-24T13:57:32.068151+00:00",
+    "ok": true,
+    "result_summary": "Installed welcome_pack"
+  },
+  {
+    "job_id": "78c79984-3516-4550-94ca-e6ada33a6a6a",
+    "job_type": "core.component_pack.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 90,
+    "result": {
+      "pack_id": "welcome_pack",
+      "text": "Uninstalled welcome_pack"
+    },
+    "error": null,
+    "payload": {
+      "pack_id": "welcome_pack"
+    },
+    "started_at": "2025-12-24T13:57:29.815867+00:00",
+    "stage": "removed from store",
+    "finished_at": "2025-12-24T13:57:29.818177+00:00",
+    "ok": true,
+    "result_summary": "Uninstalled welcome_pack"
+  },
+  {
     "job_id": "3180be15-a8db-4f7f-9f74-97fac0d9d5c4",
     "job_type": "core.module.uninstall",
     "source": "core_center",
@@ -5053,314 +5588,6 @@
     "started_at": "2025-12-23T07:35:27.759762+00:00",
     "stage": "removing module",
     "finished_at": "2025-12-23T07:35:27.760864+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "dea4b598-597e-4dd3-92fe-fbe3128af9c8",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:27.575365+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:27.576377+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "814622e9-f529-4d8b-81bd-6f7b7f6d6277",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:27.408353+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:27.409421+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "39a484be-d03f-458a-8cef-16e086af231f",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:27.216170+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:27.217482+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "cf954d50-a41a-44e9-b5c0-5128cae5ff32",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:27.031464+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:27.032439+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "e94cfb23-d82e-4b00-a108-98f8a7baab23",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:26.839600+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:26.841345+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "dc97689c-3af7-4634-a6a0-8d4d0029d52f",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:26.647616+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:26.648946+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "dd717679-a3da-48d4-85f2-8df1c3b1635f",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:26.447681+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:26.449287+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "7a65ce96-7c83-4e6e-88e0-6c0676a92cd1",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:26.232210+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:26.233317+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "cdf3a988-4eb0-45f5-af07-0c39306bda0b",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:25.825119+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:25.826190+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "7c8c87f0-6ebd-42c7-807a-11ff9ecad5db",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:25.215972+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:25.217202+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "52761a27-cd71-409a-b4dc-4c664fc435f1",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:24.895283+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:24.896267+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "b70b18fe-10b3-4607-a2a7-533861f0f38a",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:24.592278+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:24.593491+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "825cad3a-abed-4244-b4d5-a996c84dd229",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:24.327485+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:24.328627+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "fe7f5afd-e26f-4c20-90a5-b174193ba352",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:23.743620+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:23.744748+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "297d68e4-dce6-48bc-9e3e-4dd75e997bf5",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:23.207695+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:23.208998+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "010c3590-34b2-4571-9cab-aea0a123781b",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:21.984068+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:22.041747+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "d3693baf-a9b6-4f44-8136-1c42d9aae138",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:21.303535+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:21.362710+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "2aeb48d2-a7aa-481e-8baa-16c5cb97c874",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:21.055588+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:21.110770+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "3a6c8b88-4bd8-46f5-96ae-f0beb97f3650",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:20.807716+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:20.865163+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "b89edb8e-2209-477f-a564-efd5af111e28",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:20.431454+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:20.490610+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "a9471071-09de-4f21-88d6-15c0466ac42b",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:19.735472+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:19.794366+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "5f5342ac-919a-461d-b10b-180123fdce69",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:19.167742+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:19.223905+00:00",
     "ok": false,
     "result_summary": null
   }

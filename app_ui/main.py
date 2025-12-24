@@ -1961,12 +1961,14 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self._bus_dispatch_bridge = _BusDispatchBridge(self)
         self._bus_subscriptions: list[str] = []
         self.modules: list[Dict[str, Any]] = []
+        self._module_index: Dict[str, Dict[str, Any]] = {}
         self.pending_job_id: Optional[str] = None
         self.pending_module_id: Optional[str] = None
         self.pending_action: Optional[str] = None
         self._job_poll_timer: Optional[QtCore.QTimer] = None
         self._job_poll_job_id: Optional[str] = None
         self._job_poll_started_ms: Optional[float] = None
+        self._job_poll_timeout_ms: int = 30000
         self._job_poll_timeout_ms: int = 30000
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -2142,6 +2144,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
 
     def _populate_table(self) -> None:
         self.table.setRowCount(len(self.modules))
+        self._module_index = {m.get("id"): m for m in self.modules if m.get("id")}
         for row, mod in enumerate(self.modules):
             mod_id = mod.get("id") or ""
             repo = "Yes" if mod.get("repo") else "No"
@@ -2158,7 +2161,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             actions_layout.setContentsMargins(0, 0, 0, 0)
             install_btn = QtWidgets.QPushButton("Install")
             uninstall_btn = QtWidgets.QPushButton("Uninstall")
-            install_btn.setEnabled(bool(mod.get("repo")))
+            install_btn.setEnabled(bool(mod.get("repo")) and not mod.get("store"))
             uninstall_btn.setEnabled(bool(mod.get("store")))
             install_btn.clicked.connect(lambda _=False, m=mod_id: self._start_job("install", m))
             uninstall_btn.clicked.connect(lambda _=False, m=mod_id: self._start_job("uninstall", m))
@@ -2174,6 +2177,13 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             return
         if self.pending_job_id:
             QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            return
+        entry = self._module_index.get(module_id, {})
+        if action == "install" and entry.get("store"):
+            QtWidgets.QMessageBox.information(self, "Module", "Module already installed.")
+            return
+        if action == "uninstall" and not entry.get("store"):
+            QtWidgets.QMessageBox.information(self, "Module", "Module already uninstalled.")
             return
         topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
         self._set_job_state(job_id=None, module_id=module_id, action=action, running=True)

@@ -468,6 +468,16 @@ def _validate_pack_id(payload: Dict[str, Any]) -> str:
     return pack_id
 
 
+def _prune_module_staging(module_id: str) -> None:
+    base = Path("data/cache/module_installs") / module_id
+    if not base.exists():
+        return
+    try:
+        safe_rmtree(base)
+    except Exception:
+        pass
+
+
 def _handle_report_job(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
     ctx.progress(5, "preparing")
     ensure_data_roots()
@@ -553,6 +563,11 @@ def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str
     error_msg = ""
     result: Dict[str, Any] = {}
     try:
+        if target_dir.exists() and (target_dir / "module_manifest.json").exists():
+            _module_progress(ctx, resolved_id, 100, "already installed")
+            ok = True
+            result = {"module_id": resolved_id, "install_path": str(target_dir), "message": "already installed"}
+            return result
         if staging_dir.exists():
             safe_rmtree(staging_dir)
         _module_progress(ctx, resolved_id, 5, "preparing staging")
@@ -601,6 +616,7 @@ def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str
                 safe_rmtree(staging_dir)
         except Exception:
             pass
+        _prune_module_staging(resolved_id)
         try:
             if staging_parent.exists() and not any(staging_parent.iterdir()):
                 staging_parent.rmdir()
@@ -610,7 +626,13 @@ def _handle_module_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str
 
 def _handle_module_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
     module_id = _validate_module_id(payload)
-    target_dir, resolved_id = _resolve_installed_module_path(module_id)
+    try:
+        target_dir, resolved_id = _resolve_installed_module_path(module_id)
+    except FileNotFoundError:
+        resolved_id = module_id
+        _module_progress(ctx, resolved_id, 100, "already uninstalled")
+        _module_completed(ctx, resolved_id, "uninstall", True, error=None)
+        return {"module_id": resolved_id, "message": "already uninstalled"}
     ok = False
     error_msg = ""
     result: Dict[str, Any] = {}
@@ -628,6 +650,8 @@ def _handle_module_uninstall(payload: Dict[str, Any], ctx: JobContext) -> Dict[s
         raise RuntimeError(error_msg) from exc
     finally:
         _module_completed(ctx, resolved_id, "uninstall", ok, error=error_msg or None)
+        if ok:
+            _prune_module_staging(resolved_id)
 
 
 def _handle_component_pack_install(payload: Dict[str, Any], ctx: JobContext) -> Dict[str, Any]:
