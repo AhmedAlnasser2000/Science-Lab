@@ -2764,6 +2764,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         *,
         bus=None,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+        component_policy_provider: Optional[Callable[[], "WorkspaceComponentPolicy"]] = None,
     ):
         super().__init__()
         self.on_back = on_back
@@ -4479,6 +4480,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self._job_poll_job_id: Optional[str] = None
         self._job_poll_started_ms: Optional[float] = None
         self._job_poll_timeout_ms: int = 30000
+        self.component_policy_provider = component_policy_provider
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -5458,7 +5460,10 @@ class MainWindow(QtWidgets.QMainWindow):
             workspace_selector_factory=selector_factory,
         )
         self.module_management = ModuleManagementScreen(
-            self._show_main_menu, bus=APP_BUS, workspace_selector_factory=selector_factory
+            self._show_main_menu,
+            bus=APP_BUS,
+            workspace_selector_factory=selector_factory,
+            component_policy_provider=self._get_component_policy,
         )
         self.content_browser = ContentBrowserScreen(
             self.adapter,
