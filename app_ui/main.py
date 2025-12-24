@@ -25,8 +25,13 @@ def _ensure_safe_font(app: QtWidgets.QApplication, min_point_size: int = 10) -> 
         font = app.font()
         point_size = font.pointSize()
         if point_size is None or point_size <= 0:
-            font.setPointSize(max(1, min_point_size))
-            app.setFont(font)
+            pixel_size = font.pixelSize()
+            if isinstance(pixel_size, int) and pixel_size > 0:
+                return
+            safe_size = max(1, int(min_point_size))
+            if safe_size > 0:
+                font.setPointSize(safe_size)
+                app.setFont(font)
     except Exception:
         pass
 
