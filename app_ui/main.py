@@ -5,7 +5,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -15,6 +15,8 @@ from . import kernel_bridge
 from .labs import registry as lab_registry
 from .labs.host import LabHost
 from .labs.host import DEFAULT_POLICY as LAB_DEFAULT_POLICY
+from .widgets.app_header import AppHeader
+from .widgets.workspace_selector import WorkspaceSelector
 from diagnostics.fs_ops import safe_copytree, safe_rmtree
 
 
@@ -272,6 +274,8 @@ class MainMenuScreen(QtWidgets.QWidget):
         on_open_component_sandbox,
         on_quit,
         experience_profile: str,
+        *,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
     ):
         super().__init__()
         self.on_start_physics = on_start_physics
@@ -288,6 +292,14 @@ class MainMenuScreen(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        if workspace_selector_factory:
+            header = AppHeader(
+                title="PhysicsLab",
+                on_back=None,
+                workspace_selector=workspace_selector_factory(),
+            )
+            layout.addWidget(header)
 
         title = QtWidgets.QLabel("PhysicsLab")
         title.setObjectName("title")
@@ -718,7 +730,16 @@ class PlaceholderDialog(QtWidgets.QDialog):
 
 
 class ContentBrowserScreen(QtWidgets.QWidget):
-    def __init__(self, adapter: "ContentSystemAdapter", on_back, get_profile, open_lab, open_component):
+    def __init__(
+        self,
+        adapter: "ContentSystemAdapter",
+        on_back,
+        get_profile,
+        open_lab,
+        open_component,
+        *,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.adapter = adapter
         self.on_back = on_back
@@ -730,18 +751,16 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         self.current_part_detail: Optional[Dict] = None
 
         layout = QtWidgets.QVBoxLayout(self)
-        header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Physics Content Browser")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="Physics Content Browser",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh_tree)
-        header.addWidget(title)
-        header.addStretch()
-        header.addWidget(refresh_btn)
-        header.addWidget(back_btn)
-        layout.addLayout(header)
+        header.add_action_widget(refresh_btn)
+        layout.addWidget(header)
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
@@ -1123,6 +1142,11 @@ BUS_WORKSPACE_TEMPLATES_LIST_REQUEST = (
     if BUS_TOPICS
     else "core.workspace.templates.list.request"
 )
+BUS_WORKSPACE_ACTIVE_CHANGED = (
+    getattr(BUS_TOPICS, "WORKSPACE_ACTIVE_CHANGED", "workspace.active.changed")
+    if BUS_TOPICS
+    else "workspace.active.changed"
+)
 BUS_MODULE_PROGRESS = (
     BUS_TOPICS.CONTENT_INSTALL_PROGRESS if BUS_TOPICS else "content.install.progress"
 )
@@ -1160,7 +1184,14 @@ class SystemHealthScreen(QtWidgets.QWidget):
     module_progress_event = QtCore.pyqtSignal(dict)
     module_completed_event = QtCore.pyqtSignal(dict)
 
-    def __init__(self, on_back, cleanup_enabled: bool = False, *, bus=None):
+    def __init__(
+        self,
+        on_back,
+        cleanup_enabled: bool = False,
+        *,
+        bus=None,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.on_back = on_back
         self.bus = bus
@@ -1192,12 +1223,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
 
-        header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("System Health / Storage")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        header.addWidget(title)
-        header.addStretch()
-        layout.addLayout(header)
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="System Health / Storage",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
+        layout.addWidget(header)
 
         segment_row = QtWidgets.QHBoxLayout()
         self._segment_buttons: list[QtWidgets.QPushButton] = []
@@ -1239,9 +1271,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
         open_store_btn.clicked.connect(lambda: self._open_folder(Path("content_store")))
         overview_top.addWidget(open_store_btn)
         overview_top.addStretch()
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        overview_top.addWidget(back_btn)
         page_overview_layout.addLayout(overview_top)
 
         self.status_label = QtWidgets.QLabel()
@@ -2547,7 +2576,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
 
 class ModuleManagementScreen(QtWidgets.QWidget):
-    def __init__(self, on_back, *, bus=None):
+    def __init__(
+        self,
+        on_back,
+        *,
+        bus=None,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.on_back = on_back
         self.bus = bus
@@ -2566,18 +2601,16 @@ class ModuleManagementScreen(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
 
-        header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Module Management")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        header.addWidget(title)
-        header.addStretch()
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="Module Management",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.clicked.connect(self._refresh_registry)
-        header.addWidget(refresh_btn)
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        header.addWidget(back_btn)
-        layout.addLayout(header)
+        header.add_action_widget(refresh_btn)
+        layout.addWidget(header)
 
         self.status_label = QtWidgets.QLabel()
         layout.addWidget(self.status_label)
@@ -3102,7 +3135,13 @@ def _run_pack_job(action: str, pack_id: str) -> Dict[str, Any]:
 
 
 class ComponentManagementScreen(QtWidgets.QWidget):
-    def __init__(self, on_back, bus=None):
+    def __init__(
+        self,
+        on_back,
+        bus=None,
+        *,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.on_back = on_back
         self.bus = bus
@@ -3117,18 +3156,16 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self._installed_pack_ids: set[str] = set()
 
         layout = QtWidgets.QVBoxLayout(self)
-        header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Component Management")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="Component Management",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        header.addWidget(title)
-        header.addStretch()
-        header.addWidget(refresh_btn)
-        header.addWidget(back_btn)
-        layout.addLayout(header)
+        header.add_action_widget(refresh_btn)
+        layout.addWidget(header)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         layout.addWidget(splitter, stretch=1)
@@ -3462,7 +3499,14 @@ class ComponentManagementScreen(QtWidgets.QWidget):
 
 
 class WorkspaceManagementScreen(QtWidgets.QWidget):
-    def __init__(self, on_back, on_workspace_changed: Callable[[Dict[str, Any]], None], bus=None):
+    def __init__(
+        self,
+        on_back,
+        on_workspace_changed: Callable[[Dict[str, Any]], None],
+        bus=None,
+        *,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.on_back = on_back
         self.on_workspace_changed = on_workspace_changed
@@ -3471,18 +3515,16 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self._workspaces: list[Dict[str, Any]] = []
 
         layout = QtWidgets.QVBoxLayout(self)
-        header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Workspace Management")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="Workspace Management",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        header.addWidget(title)
-        header.addStretch()
-        header.addWidget(refresh_btn)
-        header.addWidget(back_btn)
-        layout.addLayout(header)
+        header.add_action_widget(refresh_btn)
+        layout.addWidget(header)
 
         self.active_label = QtWidgets.QLabel("Active workspace: ?")
         self.active_label.setStyleSheet("color: #444;")
@@ -3727,7 +3769,15 @@ class StatusPill(QtWidgets.QLabel):
 
 
 class ContentManagementScreen(QtWidgets.QWidget):
-    def __init__(self, adapter: "ContentSystemAdapter", on_back, on_open_part=None, *, bus=None):
+    def __init__(
+        self,
+        adapter: "ContentSystemAdapter",
+        on_back,
+        on_open_part=None,
+        *,
+        bus=None,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.adapter = adapter
         self.on_back = on_back
@@ -3749,15 +3799,13 @@ class ContentManagementScreen(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
 
-        header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Content Management")
-        title.setStyleSheet("font-size: 20px; font-weight: bold;")
-        header.addWidget(title)
-        header.addStretch()
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        header.addWidget(back_btn)
-        layout.addLayout(header)
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="Content Management",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
+        layout.addWidget(header)
 
         toolbar = QtWidgets.QHBoxLayout()
         refresh_btn = QtWidgets.QPushButton("Refresh")
@@ -4343,22 +4391,26 @@ class ContentManagementScreen(QtWidgets.QWidget):
 
 
 class ComponentSandboxScreen(QtWidgets.QWidget):
-    def __init__(self, on_back, context_provider: Callable[[], "ComponentContext"]):
+    def __init__(
+        self,
+        on_back,
+        context_provider: Callable[[], "ComponentContext"],
+        *,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.on_back = on_back
         self.context_provider = context_provider
         self._host: Optional["ComponentHost"] = None
 
         layout = QtWidgets.QVBoxLayout(self)
-        header_row = QtWidgets.QHBoxLayout()
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        header_row.addWidget(back_btn)
-        title = QtWidgets.QLabel("Component Sandbox")
-        title.setStyleSheet("font-size: 20px; font-weight: bold;")
-        header_row.addWidget(title)
-        header_row.addStretch()
-        layout.addLayout(header_row)
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="Component Sandbox",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
+        layout.addWidget(header)
 
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setStyleSheet("color: #444;")
@@ -4438,6 +4490,14 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         splitter.setChildrenCollapsible(False)
 
         self.refresh_components()
+
+    def on_workspace_changed(self) -> None:
+        if self._host is not None:
+            try:
+                self._host.unmount()
+                self.status_label.setText("Workspace changed. Reopen a component to refresh context.")
+            except Exception:
+                pass
 
     def refresh_components(self) -> None:
         self.component_list.clear()
@@ -4544,24 +4604,27 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
 
 
 class ComponentHostScreen(QtWidgets.QWidget):
-    def __init__(self, on_back):
+    def __init__(
+        self,
+        on_back,
+        *,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ):
         super().__init__()
         self.on_back = on_back
         self._host: Optional["ComponentHost"] = None
 
         layout = QtWidgets.QVBoxLayout(self)
-        header = QtWidgets.QHBoxLayout()
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        header.addWidget(back_btn)
-        title = QtWidgets.QLabel("Component Viewer")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        header.addWidget(title)
-        header.addStretch()
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title="Component Viewer",
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
         self.close_btn = QtWidgets.QPushButton("Close")
         self.close_btn.clicked.connect(self._close_component)
-        header.addWidget(self.close_btn)
-        layout.addLayout(header)
+        header.add_action_widget(self.close_btn)
+        layout.addWidget(header)
 
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setStyleSheet("color: #444;")
@@ -4609,8 +4672,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lab_widget: Optional[QtWidgets.QWidget] = None
         self.lab_host_widget: Optional[QtWidgets.QWidget] = None
         self.workspace_info: Dict[str, Any] = self._ensure_workspace_context()
+        self._workspace_selectors: list[WorkspaceSelector] = []
+        self._workspace_event_sub: Optional[str] = None
+        self._workspace_event_bridge = _BusDispatchBridge(self)
         self._esc_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape), self)
         self._esc_shortcut.activated.connect(self._handle_escape_back)
+
+        selector_factory = self._make_workspace_selector
 
         self.main_menu = MainMenuScreen(
             self._start_physics,
@@ -4624,33 +4692,49 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_component_sandbox,
             self._quit_app,
             self.current_profile,
+            workspace_selector_factory=selector_factory,
         )
-        self.module_management = ModuleManagementScreen(self._show_main_menu, bus=APP_BUS)
+        self.module_management = ModuleManagementScreen(
+            self._show_main_menu, bus=APP_BUS, workspace_selector_factory=selector_factory
+        )
         self.content_browser = ContentBrowserScreen(
             self.adapter,
             self._show_main_menu,
             lambda: self.current_profile,
             self._open_lab,
             self._open_component_from_part,
+            workspace_selector_factory=selector_factory,
         )
-        self.system_health = SystemHealthScreen(self._show_main_menu, cleanup_enabled=CORE_CENTER_AVAILABLE, bus=APP_BUS)
+        self.system_health = SystemHealthScreen(
+            self._show_main_menu,
+            cleanup_enabled=CORE_CENTER_AVAILABLE,
+            bus=APP_BUS,
+            workspace_selector_factory=selector_factory,
+        )
         self.content_management = ContentManagementScreen(
             self.adapter,
             self._show_main_menu,
             self._open_content_browser_from_management,
             bus=APP_BUS,
+            workspace_selector_factory=selector_factory,
         )
-        self.component_management = ComponentManagementScreen(self._show_main_menu, bus=APP_BUS)
+        self.component_management = ComponentManagementScreen(
+            self._show_main_menu, bus=APP_BUS, workspace_selector_factory=selector_factory
+        )
         self.workspace_management = WorkspaceManagementScreen(
             self._show_main_menu,
             self._on_workspace_changed,
             bus=APP_BUS,
+            workspace_selector_factory=selector_factory,
         )
         self.component_sandbox = ComponentSandboxScreen(
             self._show_main_menu,
             self._build_component_context,
+            workspace_selector_factory=selector_factory,
         )
-        self.component_host = ComponentHostScreen(self._show_content_browser)
+        self.component_host = ComponentHostScreen(
+            self._show_content_browser, workspace_selector_factory=selector_factory
+        )
 
         if component_registry is not None:
             try:
@@ -4673,6 +4757,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.workspace_management)
         self.stacked.addWidget(self.component_sandbox)
         self.stacked.addWidget(self.component_host)
+        self._refresh_workspace_selectors()
+
+        if APP_BUS and BUS_WORKSPACE_ACTIVE_CHANGED:
+            try:
+                def _workspace_bridge(envelope):
+                    self._workspace_event_bridge.envelope_dispatched.emit(
+                        self._handle_workspace_envelope, envelope
+                    )
+
+                self._workspace_event_sub = APP_BUS.subscribe(
+                    BUS_WORKSPACE_ACTIVE_CHANGED,
+                    _workspace_bridge,
+                    replay_last=True,
+                )
+            except Exception:
+                self._workspace_event_sub = None
+
         self._show_main_menu()
 
     def _open_workspace_management(self):
@@ -4701,6 +4802,94 @@ class MainWindow(QtWidgets.QMainWindow):
         if current is self.main_menu:
             return
         self._show_main_menu()
+
+    def _make_workspace_selector(self) -> WorkspaceSelector:
+        selector = WorkspaceSelector(
+            list_workspaces=self._list_workspaces,
+            activate_workspace=self._activate_workspace,
+            get_active_workspace_id=lambda: (self.workspace_info or {}).get("id"),
+        )
+        self._workspace_selectors.append(selector)
+        return selector
+
+    def _refresh_workspace_selectors(self) -> None:
+        active_id = (self.workspace_info or {}).get("id")
+        for selector in list(self._workspace_selectors):
+            try:
+                selector.refresh(active_id)
+            except Exception:
+                continue
+
+    def _handle_workspace_envelope(self, envelope: Any) -> None:
+        payload = getattr(envelope, "payload", None) or {}
+        workspace = payload.get("workspace")
+        if not isinstance(workspace, dict):
+            return
+        current_id = (self.workspace_info or {}).get("id")
+        incoming_id = workspace.get("id")
+        if incoming_id and current_id == incoming_id:
+            self._refresh_workspace_selectors()
+        self._on_workspace_changed(workspace, notify_bus=False)
+
+    def _list_workspaces(self) -> List[Dict[str, object]]:
+        if APP_BUS and BUS_WORKSPACE_LIST_REQUEST:
+            try:
+                response = APP_BUS.request(
+                    BUS_WORKSPACE_LIST_REQUEST,
+                    {},
+                    source="app_ui",
+                    timeout_ms=2000,
+                )
+                if response.get("ok"):
+                    return response.get("workspaces") or []
+            except Exception:
+                pass
+        ws = self.workspace_info if isinstance(self.workspace_info, dict) else None
+        return [ws] if ws else []
+
+    def _activate_workspace(self, workspace_id: str) -> bool:
+        workspace_id = str(workspace_id or "").strip()
+        if not workspace_id:
+            return False
+        if not (APP_BUS and BUS_WORKSPACE_SET_ACTIVE_REQUEST):
+            QtWidgets.QMessageBox.warning(self, "Workspace", "Runtime bus unavailable.")
+            return False
+        try:
+            response = APP_BUS.request(
+                BUS_WORKSPACE_SET_ACTIVE_REQUEST,
+                {"workspace_id": workspace_id},
+                source="app_ui",
+                timeout_ms=1500,
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Workspace", f"Set active failed: {exc}")
+            return False
+        if not response.get("ok"):
+            QtWidgets.QMessageBox.warning(
+                self, "Workspace", response.get("error") or "Set active failed."
+            )
+            return False
+        workspace = response.get("workspace")
+        if isinstance(workspace, dict):
+            self._on_workspace_changed(workspace, notify_bus=False)
+            self._publish_workspace_changed(workspace)
+            return True
+        return False
+
+    def _publish_workspace_changed(self, workspace: Dict[str, Any]) -> None:
+        if not isinstance(workspace, dict):
+            return
+        if not (APP_BUS and BUS_WORKSPACE_ACTIVE_CHANGED):
+            return
+        try:
+            APP_BUS.publish(
+                BUS_WORKSPACE_ACTIVE_CHANGED,
+                {"workspace": workspace},
+                source="app_ui",
+                sticky=True,
+            )
+        except Exception:
+            pass
 
     def _ensure_workspace_context(self) -> Dict[str, Any]:
         info = self._request_workspace_info()
@@ -4764,15 +4953,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self._dispose_lab_widget()
         self.stacked.setCurrentWidget(self.main_menu)
 
-    def _on_workspace_changed(self, workspace: Dict[str, Any]) -> None:
+    def _on_workspace_changed(self, workspace: Dict[str, Any], *, notify_bus: bool = True) -> None:
         if isinstance(workspace, dict):
             self.workspace_info = workspace
+        self._refresh_workspace_selectors()
         if self.system_health:
             try:
                 self.system_health._update_runs_workspace_label()
                 self.system_health._refresh_runs_list()
             except Exception:
                 pass
+        if self.component_sandbox:
+            try:
+                self.component_sandbox.on_workspace_changed()
+            except Exception:
+                pass
+        if notify_bus:
+            self._publish_workspace_changed(self.workspace_info)
 
     def _start_physics(self):
         quick_part = self._find_quick_start_part()

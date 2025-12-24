@@ -40,6 +40,7 @@ CORE_WORKSPACE_LIST_REQUEST = "core.workspace.list.request"
 CORE_WORKSPACE_CREATE_REQUEST = "core.workspace.create.request"
 CORE_WORKSPACE_DELETE_REQUEST = "core.workspace.delete.request"
 CORE_WORKSPACE_TEMPLATES_LIST_REQUEST = "core.workspace.templates.list.request"
+WORKSPACE_ACTIVE_CHANGED = "workspace.active.changed"
 CORE_CONTENT_MODULE_INSTALL_REQUEST = "core.content.module.install.request"
 CORE_CONTENT_MODULE_UNINSTALL_REQUEST = "core.content.module.uninstall.request"
 CORE_COMPONENT_PACK_INSTALL_REQUEST = "core.component_pack.install.request"
@@ -85,6 +86,7 @@ __all__ = [
     "CORE_WORKSPACE_CREATE_REQUEST",
     "CORE_WORKSPACE_DELETE_REQUEST",
     "CORE_WORKSPACE_TEMPLATES_LIST_REQUEST",
+    "WORKSPACE_ACTIVE_CHANGED",
     "CORE_CONTENT_MODULE_INSTALL_REQUEST",
     "CORE_CONTENT_MODULE_UNINSTALL_REQUEST",
     "CORE_COMPONENT_PACK_INSTALL_REQUEST",
