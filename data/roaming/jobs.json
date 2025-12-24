@@ -1,5 +1,937 @@
 [
   {
+    "job_id": "6a521abf-4892-4e5d-ab6e-17fb256c1e5b",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "text": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 200956 bytes\n  total: 205293 bytes\n\nRuns storage: 4337 bytes\n  Runs per lab:\n    - electric_field: 10 runs, 1390 bytes\n    - gravity: 16 runs, 396 bytes\n    - lens_ray: 7 runs, 931 bytes\n    - projectile: 9 runs, 1215 bytes\n    - vector_add: 15 runs, 405 bytes\n\nComponents:\n  physics [module] repo present 21956 bytes @ content_repo\\physics_v1\n  default [ui_pack] repo present 1274 bytes @ ui_repo\\ui_v1\\packs\\default\n  quantum_smooth [ui_pack] repo present 1664 bytes @ ui_repo\\ui_v1\\packs\\quantum_smooth\n  gravity [lab] app present 8791 bytes @ app_ui\\labs\n  projectile [lab] app present 10439 bytes @ app_ui\\labs\n  electric_field [lab] app present 13627 bytes @ app_ui\\labs\n  lens_ray [lab] app present 16049 bytes @ app_ui\\labs\n  vector_add [lab] app present 11692 bytes @ app_ui\\labs\n  physics [module] store present 21956 bytes @ content_store\\physics_v1",
+      "json": {
+        "roots": {
+          "store": 4337,
+          "cache": 0,
+          "dumps": 0,
+          "roaming": 200956,
+          "total": 205293
+        },
+        "components": [
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_repo\\physics_v1"
+          },
+          {
+            "id": "default",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1274,
+            "install_path": "ui_repo\\ui_v1\\packs\\default"
+          },
+          {
+            "id": "quantum_smooth",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1664,
+            "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth"
+          },
+          {
+            "id": "gravity",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 8791,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "projectile",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 10439,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "electric_field",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 13627,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "lens_ray",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 16049,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "vector_add",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 11692,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "store",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_store\\physics_v1"
+          }
+        ],
+        "runs": {
+          "total_bytes": 4337,
+          "labs": {
+            "electric_field": {
+              "run_count": 10,
+              "bytes": 1390
+            },
+            "gravity": {
+              "run_count": 16,
+              "bytes": 396
+            },
+            "lens_ray": {
+              "run_count": 7,
+              "bytes": 931
+            },
+            "projectile": {
+              "run_count": 9,
+              "bytes": 1215
+            },
+            "vector_add": {
+              "run_count": 15,
+              "bytes": 405
+            }
+          }
+        },
+        "registry_summary": {
+          "total": 9,
+          "by_type": {
+            "module": 2,
+            "ui_pack": 2,
+            "lab": 5
+          },
+          "by_source": {
+            "repo": 3,
+            "app": 5,
+            "store": 1
+          }
+        }
+      }
+    },
+    "error": null,
+    "payload": {},
+    "started_at": "2025-12-24T15:40:55.002175+00:00",
+    "stage": "ready",
+    "finished_at": "2025-12-24T15:40:55.047361+00:00",
+    "ok": true,
+    "result_summary": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 200956 bytes\n  total: 205293 bytes\n\nRuns"
+  },
+  {
+    "job_id": "d10df80b-4bc6-41ae-8377-9f210c6844b2",
+    "job_type": "core.cleanup.dumps",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 0.0,
+    "result": {
+      "freed_bytes": 0,
+      "result": {
+        "removed": [],
+        "bytes_freed": 0
+      }
+    },
+    "error": null,
+    "payload": {
+      "kind": "dumps"
+    },
+    "started_at": "2025-12-24T15:40:55.000518+00:00",
+    "finished_at": "2025-12-24T15:40:55.001443+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "e03ef838-68f7-4c84-9d4f-9fd5dc8743e2",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "text": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 196647 bytes\n  total: 200984 bytes\n\nRuns storage: 4337 bytes\n  Runs per lab:\n    - electric_field: 10 runs, 1390 bytes\n    - gravity: 16 runs, 396 bytes\n    - lens_ray: 7 runs, 931 bytes\n    - projectile: 9 runs, 1215 bytes\n    - vector_add: 15 runs, 405 bytes\n\nComponents:\n  physics [module] repo present 21956 bytes @ content_repo\\physics_v1\n  default [ui_pack] repo present 1274 bytes @ ui_repo\\ui_v1\\packs\\default\n  quantum_smooth [ui_pack] repo present 1664 bytes @ ui_repo\\ui_v1\\packs\\quantum_smooth\n  gravity [lab] app present 8791 bytes @ app_ui\\labs\n  projectile [lab] app present 10439 bytes @ app_ui\\labs\n  electric_field [lab] app present 13627 bytes @ app_ui\\labs\n  lens_ray [lab] app present 16049 bytes @ app_ui\\labs\n  vector_add [lab] app present 11692 bytes @ app_ui\\labs\n  physics [module] store present 21956 bytes @ content_store\\physics_v1",
+      "json": {
+        "roots": {
+          "store": 4337,
+          "cache": 0,
+          "dumps": 0,
+          "roaming": 196647,
+          "total": 200984
+        },
+        "components": [
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_repo\\physics_v1"
+          },
+          {
+            "id": "default",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1274,
+            "install_path": "ui_repo\\ui_v1\\packs\\default"
+          },
+          {
+            "id": "quantum_smooth",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1664,
+            "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth"
+          },
+          {
+            "id": "gravity",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 8791,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "projectile",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 10439,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "electric_field",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 13627,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "lens_ray",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 16049,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "vector_add",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 11692,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "store",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_store\\physics_v1"
+          }
+        ],
+        "runs": {
+          "total_bytes": 4337,
+          "labs": {
+            "electric_field": {
+              "run_count": 10,
+              "bytes": 1390
+            },
+            "gravity": {
+              "run_count": 16,
+              "bytes": 396
+            },
+            "lens_ray": {
+              "run_count": 7,
+              "bytes": 931
+            },
+            "projectile": {
+              "run_count": 9,
+              "bytes": 1215
+            },
+            "vector_add": {
+              "run_count": 15,
+              "bytes": 405
+            }
+          }
+        },
+        "registry_summary": {
+          "total": 9,
+          "by_type": {
+            "module": 2,
+            "ui_pack": 2,
+            "lab": 5
+          },
+          "by_source": {
+            "repo": 3,
+            "app": 5,
+            "store": 1
+          }
+        }
+      }
+    },
+    "error": null,
+    "payload": {},
+    "started_at": "2025-12-24T15:40:50.076077+00:00",
+    "stage": "ready",
+    "finished_at": "2025-12-24T15:40:50.122712+00:00",
+    "ok": true,
+    "result_summary": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 196647 bytes\n  total: 200984 bytes\n\nRuns"
+  },
+  {
+    "job_id": "304bbd3f-82fd-40b4-a34d-72d75e0e800a",
+    "job_type": "core.cleanup.cache",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 0.0,
+    "result": {
+      "freed_bytes": 0,
+      "result": {
+        "removed": [
+          "data\\cache\\module_installs",
+          "data\\cache\\pack_installs"
+        ],
+        "bytes_freed": 0
+      }
+    },
+    "error": null,
+    "payload": {
+      "kind": "cache"
+    },
+    "started_at": "2025-12-24T15:40:50.024137+00:00",
+    "finished_at": "2025-12-24T15:40:50.073499+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "86787c84-ecb8-4a96-861e-6d9f3df9e6f1",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "text": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 192245 bytes\n  total: 196582 bytes\n\nRuns storage: 4337 bytes\n  Runs per lab:\n    - electric_field: 10 runs, 1390 bytes\n    - gravity: 16 runs, 396 bytes\n    - lens_ray: 7 runs, 931 bytes\n    - projectile: 9 runs, 1215 bytes\n    - vector_add: 15 runs, 405 bytes\n\nComponents:\n  physics [module] repo present 21956 bytes @ content_repo\\physics_v1\n  default [ui_pack] repo present 1274 bytes @ ui_repo\\ui_v1\\packs\\default\n  quantum_smooth [ui_pack] repo present 1664 bytes @ ui_repo\\ui_v1\\packs\\quantum_smooth\n  gravity [lab] app present 8791 bytes @ app_ui\\labs\n  projectile [lab] app present 10439 bytes @ app_ui\\labs\n  electric_field [lab] app present 13627 bytes @ app_ui\\labs\n  lens_ray [lab] app present 16049 bytes @ app_ui\\labs\n  vector_add [lab] app present 11692 bytes @ app_ui\\labs\n  physics [module] store present 21956 bytes @ content_store\\physics_v1",
+      "json": {
+        "roots": {
+          "store": 4337,
+          "cache": 0,
+          "dumps": 0,
+          "roaming": 192245,
+          "total": 196582
+        },
+        "components": [
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_repo\\physics_v1"
+          },
+          {
+            "id": "default",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1274,
+            "install_path": "ui_repo\\ui_v1\\packs\\default"
+          },
+          {
+            "id": "quantum_smooth",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1664,
+            "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth"
+          },
+          {
+            "id": "gravity",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 8791,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "projectile",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 10439,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "electric_field",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 13627,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "lens_ray",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 16049,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "vector_add",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 11692,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "store",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_store\\physics_v1"
+          }
+        ],
+        "runs": {
+          "total_bytes": 4337,
+          "labs": {
+            "electric_field": {
+              "run_count": 10,
+              "bytes": 1390
+            },
+            "gravity": {
+              "run_count": 16,
+              "bytes": 396
+            },
+            "lens_ray": {
+              "run_count": 7,
+              "bytes": 931
+            },
+            "projectile": {
+              "run_count": 9,
+              "bytes": 1215
+            },
+            "vector_add": {
+              "run_count": 15,
+              "bytes": 405
+            }
+          }
+        },
+        "registry_summary": {
+          "total": 9,
+          "by_type": {
+            "module": 2,
+            "ui_pack": 2,
+            "lab": 5
+          },
+          "by_source": {
+            "repo": 3,
+            "app": 5,
+            "store": 1
+          }
+        }
+      }
+    },
+    "error": null,
+    "payload": {},
+    "started_at": "2025-12-24T15:40:45.403885+00:00",
+    "stage": "ready",
+    "finished_at": "2025-12-24T15:40:45.442807+00:00",
+    "ok": true,
+    "result_summary": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 192245 bytes\n  total: 196582 bytes\n\nRuns"
+  },
+  {
+    "job_id": "9c76aa9c-c7fe-4236-9eba-1ca26644eb29",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "text": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 187922 bytes\n  total: 192259 bytes\n\nRuns storage: 4337 bytes\n  Runs per lab:\n    - electric_field: 10 runs, 1390 bytes\n    - gravity: 16 runs, 396 bytes\n    - lens_ray: 7 runs, 931 bytes\n    - projectile: 9 runs, 1215 bytes\n    - vector_add: 15 runs, 405 bytes\n\nComponents:\n  physics [module] repo present 21956 bytes @ content_repo\\physics_v1\n  default [ui_pack] repo present 1274 bytes @ ui_repo\\ui_v1\\packs\\default\n  quantum_smooth [ui_pack] repo present 1664 bytes @ ui_repo\\ui_v1\\packs\\quantum_smooth\n  gravity [lab] app present 8791 bytes @ app_ui\\labs\n  projectile [lab] app present 10439 bytes @ app_ui\\labs\n  electric_field [lab] app present 13627 bytes @ app_ui\\labs\n  lens_ray [lab] app present 16049 bytes @ app_ui\\labs\n  vector_add [lab] app present 11692 bytes @ app_ui\\labs\n  physics [module] store present 21956 bytes @ content_store\\physics_v1",
+      "json": {
+        "roots": {
+          "store": 4337,
+          "cache": 0,
+          "dumps": 0,
+          "roaming": 187922,
+          "total": 192259
+        },
+        "components": [
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_repo\\physics_v1"
+          },
+          {
+            "id": "default",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1274,
+            "install_path": "ui_repo\\ui_v1\\packs\\default"
+          },
+          {
+            "id": "quantum_smooth",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1664,
+            "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth"
+          },
+          {
+            "id": "gravity",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 8791,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "projectile",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 10439,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "electric_field",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 13627,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "lens_ray",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 16049,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "vector_add",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 11692,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "store",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_store\\physics_v1"
+          }
+        ],
+        "runs": {
+          "total_bytes": 4337,
+          "labs": {
+            "electric_field": {
+              "run_count": 10,
+              "bytes": 1390
+            },
+            "gravity": {
+              "run_count": 16,
+              "bytes": 396
+            },
+            "lens_ray": {
+              "run_count": 7,
+              "bytes": 931
+            },
+            "projectile": {
+              "run_count": 9,
+              "bytes": 1215
+            },
+            "vector_add": {
+              "run_count": 15,
+              "bytes": 405
+            }
+          }
+        },
+        "registry_summary": {
+          "total": 9,
+          "by_type": {
+            "module": 2,
+            "ui_pack": 2,
+            "lab": 5
+          },
+          "by_source": {
+            "repo": 3,
+            "app": 5,
+            "store": 1
+          }
+        }
+      }
+    },
+    "error": null,
+    "payload": {},
+    "started_at": "2025-12-24T14:33:45.263006+00:00",
+    "stage": "ready",
+    "finished_at": "2025-12-24T14:33:45.301585+00:00",
+    "ok": true,
+    "result_summary": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 187922 bytes\n  total: 192259 bytes\n\nRuns"
+  },
+  {
+    "job_id": "c7ae6f85-b544-432e-9f23-310cd7650b8a",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:46.239514+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:46.262953+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "5894f465-ed7f-4518-955b-d50b1d517c65",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:45.487445+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:45.541943+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "170abfc3-88b4-4ecd-ab4e-55c4f18386fa",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:45.087341+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:45.112564+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "b10ec949-c289-4df4-a041-d145413a7fc7",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:44.438433+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:44.490463+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "8c94fdca-7145-4ad5-a4a5-27a23a2e6aee",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:43.495034+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:43.520685+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "b89fd88b-3f0b-4879-82f5-861c7c54abb7",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:42.358652+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:42.414227+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "c4e7c404-f518-46cb-aa8f-a85d768f7970",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:41.326124+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:41.351178+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "257be428-27cd-4abb-9aba-db58d8539cb8",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:40.654295+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:40.707893+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "97dba898-ad13-40cc-ba64-ab0cd64e2548",
+    "job_type": "core.module.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-24T14:28:38.990659+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:39.014496+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "78d6f82f-026e-4633-96ed-34eaf62a96a6",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics_v1"
+    },
+    "started_at": "2025-12-24T14:28:37.527218+00:00",
+    "stage": "registry updated",
+    "finished_at": "2025-12-24T14:28:37.580939+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "19be63e8-32bf-4ea2-aa38-66afbd7f45c1",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "text": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 183786 bytes\n  total: 188123 bytes\n\nRuns storage: 4337 bytes\n  Runs per lab:\n    - electric_field: 10 runs, 1390 bytes\n    - gravity: 16 runs, 396 bytes\n    - lens_ray: 7 runs, 931 bytes\n    - projectile: 9 runs, 1215 bytes\n    - vector_add: 15 runs, 405 bytes\n\nComponents:\n  physics [module] repo present 21956 bytes @ content_repo\\physics_v1\n  default [ui_pack] repo present 1274 bytes @ ui_repo\\ui_v1\\packs\\default\n  quantum_smooth [ui_pack] repo present 1664 bytes @ ui_repo\\ui_v1\\packs\\quantum_smooth\n  gravity [lab] app present 8791 bytes @ app_ui\\labs\n  projectile [lab] app present 10439 bytes @ app_ui\\labs\n  electric_field [lab] app present 13627 bytes @ app_ui\\labs\n  lens_ray [lab] app present 16049 bytes @ app_ui\\labs\n  vector_add [lab] app present 11692 bytes @ app_ui\\labs\n  physics [module] store present 21956 bytes @ content_store\\physics_v1",
+      "json": {
+        "roots": {
+          "store": 4337,
+          "cache": 0,
+          "dumps": 0,
+          "roaming": 183786,
+          "total": 188123
+        },
+        "components": [
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_repo\\physics_v1"
+          },
+          {
+            "id": "default",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1274,
+            "install_path": "ui_repo\\ui_v1\\packs\\default"
+          },
+          {
+            "id": "quantum_smooth",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1664,
+            "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth"
+          },
+          {
+            "id": "gravity",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 8791,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "projectile",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 10439,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "electric_field",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 13627,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "lens_ray",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 16049,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "vector_add",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 11692,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "store",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_store\\physics_v1"
+          }
+        ],
+        "runs": {
+          "total_bytes": 4337,
+          "labs": {
+            "electric_field": {
+              "run_count": 10,
+              "bytes": 1390
+            },
+            "gravity": {
+              "run_count": 16,
+              "bytes": 396
+            },
+            "lens_ray": {
+              "run_count": 7,
+              "bytes": 931
+            },
+            "projectile": {
+              "run_count": 9,
+              "bytes": 1215
+            },
+            "vector_add": {
+              "run_count": 15,
+              "bytes": 405
+            }
+          }
+        },
+        "registry_summary": {
+          "total": 9,
+          "by_type": {
+            "module": 2,
+            "ui_pack": 2,
+            "lab": 5
+          },
+          "by_source": {
+            "repo": 3,
+            "app": 5,
+            "store": 1
+          }
+        }
+      }
+    },
+    "error": null,
+    "payload": {},
+    "started_at": "2025-12-24T14:28:28.270393+00:00",
+    "stage": "ready",
+    "finished_at": "2025-12-24T14:28:28.312286+00:00",
+    "ok": true,
+    "result_summary": "Storage Roots:\n  store: 4337 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 183786 bytes\n  total: 188123 bytes\n\nRuns"
+  },
+  {
     "job_id": "e689cbeb-450b-446c-b3f5-f022bfd0d908",
     "job_type": "core.report.generate",
     "source": "core_center",
@@ -5350,244 +6282,6 @@
     "started_at": "2025-12-23T07:35:35.567294+00:00",
     "stage": "staged copy complete",
     "finished_at": "2025-12-23T07:35:35.625917+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "911109e9-c336-41f8-9b0a-27037cdaf90b",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 55,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:34.271495+00:00",
-    "stage": "staged copy complete",
-    "finished_at": "2025-12-23T07:35:34.330277+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "9ef50a0f-70d0-4a1d-9815-cfd28489a466",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:30.839588+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:30.841034+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "882c47a0-6c84-4ba2-b51a-899c7785b9b7",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:30.591967+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:30.593106+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "1f9f56ff-7347-4d97-bed1-ca1368a57c78",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:30.375502+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:30.376587+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "2a17e017-01c0-454d-a88c-ef71f03112c3",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:30.161961+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:30.162892+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "faef19dd-fd03-4ad8-9f1a-8526b82c4d43",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:29.967089+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:29.967984+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "b169a126-3c35-4fc8-a620-f2c72a9a0408",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:29.744163+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:29.745322+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "2a23665e-7b56-4b7a-b22b-b8f60971a0ca",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:29.575862+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:29.577144+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "6af5b690-6fad-43cb-8fbe-173224051538",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:29.327090+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:29.327933+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "99cb05a6-f92b-4e5b-af15-2919aa24ab78",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:29.128142+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:29.129221+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "e04fd255-8945-48db-9a2d-bcf21b8affaa",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:28.920693+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:28.921777+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "1589e5de-4ea1-4b36-a455-aa7ac5e806aa",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:28.727084+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:28.728015+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "77d80e74-fd03-4f1f-800d-d6d64e3eb813",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:28.535633+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:28.536841+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "af4ac323-cee7-445e-b448-55f8ab017373",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:28.319598+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:28.320602+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "e70508b4-f646-4b48-a98c-34eaf76c9abe",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:28.127227+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:28.128171+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "6cc8469b-9496-4a4f-9769-af11a1af4edc",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:27.959736+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:27.960932+00:00",
-    "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "947ade4b-b5b4-474c-91a8-c3b604390034",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 10,
-    "result": null,
-    "error": "[WinError 5] Access is denied: 'content_store\\\\physics_v1\\\\sections\\\\electricity\\\\packages\\\\page_001\\\\parts\\\\charge_intro'",
-    "started_at": "2025-12-23T07:35:27.759762+00:00",
-    "stage": "removing module",
-    "finished_at": "2025-12-23T07:35:27.760864+00:00",
     "ok": false,
     "result_summary": null
   }

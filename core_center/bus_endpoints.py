@@ -27,6 +27,15 @@ POLICY_REQUEST_TOPIC = getattr(
 REGISTRY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_REGISTRY_GET_REQUEST", "core.registry.get.request"
 )
+RUNS_LIST_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_RUNS_LIST_REQUEST", "core.runs.list.request"
+)
+RUNS_DELETE_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_RUNS_DELETE_REQUEST", "core.runs.delete.request"
+)
+RUNS_PRUNE_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_RUNS_PRUNE_REQUEST", "core.runs.prune.request"
+)
 INVENTORY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_INVENTORY_GET_REQUEST", "core.inventory.get.request"
 )
@@ -122,6 +131,44 @@ def register_core_center_endpoints(bus: Any) -> None:
         summary = summarize_registry(records)
         return {"ok": True, "registry": records, "summary": summary}
 
+    def _handle_runs_list(envelope) -> Dict[str, object]:  # noqa: ARG001
+        try:
+            data = storage_manager.list_runs_inventory()
+            return {"ok": True, "roots": data.get("roots"), "labs": data.get("labs")}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _handle_runs_delete(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        lab_id = payload.get("lab_id")
+        run_id = payload.get("run_id")
+        root_kind = payload.get("root_kind") or "runs"
+        if not lab_id or not run_id:
+            return {"ok": False, "error": "lab_id_and_run_id_required"}
+        result = storage_manager.delete_run(str(lab_id), str(run_id), str(root_kind))
+        if not result.get("ok"):
+            return {"ok": False, "error": result.get("error") or "delete_failed"}
+        return {"ok": True}
+
+    def _handle_runs_prune(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        use_policy = payload.get("use_policy", True)
+        keep_last = payload.get("keep_last_per_lab")
+        older_than = payload.get("delete_older_than_days")
+        max_total_mb = payload.get("max_total_mb")
+        if use_policy:
+            policy = policy_manager.resolve_policy()
+            cleanup = (policy.get("runs") or {}).get("cleanup") or {}
+            keep_last = cleanup.get("keep_last_per_lab", keep_last)
+            older_than = cleanup.get("delete_older_than_days", older_than)
+            max_total_mb = cleanup.get("max_total_mb", max_total_mb)
+        result = storage_manager.prune_runs(
+            keep_last_per_lab=keep_last,
+            delete_older_than_days=older_than,
+            max_total_mb=max_total_mb,
+        )
+        return {"ok": True, "summary": result}
+
     def _handle_inventory(envelope) -> Dict[str, object]:  # noqa: ARG001
         try:
             snapshot = inventory_module.get_inventory_snapshot()
@@ -205,6 +252,12 @@ def register_core_center_endpoints(bus: Any) -> None:
         bus.register_handler(POLICY_REQUEST_TOPIC, _handle_policy)
     if REGISTRY_REQUEST_TOPIC:
         bus.register_handler(REGISTRY_REQUEST_TOPIC, _handle_registry)
+    if RUNS_LIST_REQUEST_TOPIC:
+        bus.register_handler(RUNS_LIST_REQUEST_TOPIC, _handle_runs_list)
+    if RUNS_DELETE_REQUEST_TOPIC:
+        bus.register_handler(RUNS_DELETE_REQUEST_TOPIC, _handle_runs_delete)
+    if RUNS_PRUNE_REQUEST_TOPIC:
+        bus.register_handler(RUNS_PRUNE_REQUEST_TOPIC, _handle_runs_prune)
     if INVENTORY_REQUEST_TOPIC:
         bus.register_handler(INVENTORY_REQUEST_TOPIC, _handle_inventory)
     if MODULE_INSTALL_REQUEST_TOPIC:

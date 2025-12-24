@@ -12,6 +12,13 @@ DEFAULT_POLICY = {
     "low_end_mode": False,
     "fps_cap": 60,
     "runs_keep_last_n": 10,
+    "runs": {
+        "cleanup": {
+            "keep_last_per_lab": 10,
+            "delete_older_than_days": 0,
+            "max_total_mb": 0,
+        }
+    },
     "exports_enabled": False,
     "reduced_motion_enforced": False,
     "telemetry_enabled": False,
@@ -42,5 +49,16 @@ def resolve_policy() -> Dict[str, object]:
     policy = get_default_policy()
     overrides = load_overrides()
     for key, value in overrides.items():
-        policy[key] = value
+        if isinstance(value, dict) and isinstance(policy.get(key), dict):
+            merged = dict(policy.get(key, {}))
+            for sub_key, sub_val in value.items():
+                if isinstance(sub_val, dict) and isinstance(merged.get(sub_key), dict):
+                    nested = dict(merged.get(sub_key, {}))
+                    nested.update(sub_val)
+                    merged[sub_key] = nested
+                else:
+                    merged[sub_key] = sub_val
+            policy[key] = merged
+        else:
+            policy[key] = value
     return policy

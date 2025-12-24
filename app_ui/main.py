@@ -1050,6 +1050,15 @@ BUS_INVENTORY_REQUEST = (
     BUS_TOPICS.CORE_INVENTORY_GET_REQUEST if BUS_TOPICS else "core.inventory.get.request"
 )
 BUS_JOBS_GET_REQUEST = BUS_TOPICS.CORE_JOBS_GET_REQUEST if BUS_TOPICS else "core.jobs.get.request"
+BUS_RUNS_LIST_REQUEST = (
+    BUS_TOPICS.CORE_RUNS_LIST_REQUEST if BUS_TOPICS else "core.runs.list.request"
+)
+BUS_RUNS_DELETE_REQUEST = (
+    BUS_TOPICS.CORE_RUNS_DELETE_REQUEST if BUS_TOPICS else "core.runs.delete.request"
+)
+BUS_RUNS_PRUNE_REQUEST = (
+    BUS_TOPICS.CORE_RUNS_PRUNE_REQUEST if BUS_TOPICS else "core.runs.prune.request"
+)
 BUS_MODULE_INSTALL_REQUEST = (
     BUS_TOPICS.CORE_CONTENT_MODULE_INSTALL_REQUEST
     if BUS_TOPICS
@@ -1142,27 +1151,95 @@ class SystemHealthScreen(QtWidgets.QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         header.addWidget(title)
         header.addStretch()
+        layout.addLayout(header)
+
+        segment_row = QtWidgets.QHBoxLayout()
+        self._segment_buttons: list[QtWidgets.QPushButton] = []
+
+        def _make_segment(label: str, index: int) -> QtWidgets.QPushButton:
+            btn = QtWidgets.QPushButton(label)
+            btn.setCheckable(True)
+            btn.setObjectName("segmentButton")
+            btn.clicked.connect(lambda _=False, i=index: self._set_segment(i))
+            self._segment_buttons.append(btn)
+            return btn
+
+        self._segment_overview_btn = _make_segment("Overview", 0)
+        self._segment_runs_btn = _make_segment("Runs", 1)
+        self._segment_maintenance_btn = _make_segment("Maintenance", 2)
+        self._segment_modules_btn = _make_segment("Modules", 3)
+        self._segment_jobs_btn = _make_segment("Jobs", 4)
+        for btn in self._segment_buttons:
+            segment_row.addWidget(btn)
+        segment_row.addStretch()
+        layout.addLayout(segment_row)
+
+        self._stack = QtWidgets.QStackedWidget()
+        layout.addWidget(self._stack, stretch=1)
+
+        page_overview = QtWidgets.QWidget()
+        page_overview_layout = QtWidgets.QVBoxLayout(page_overview)
+        page_overview_layout.setContentsMargins(0, 0, 0, 0)
+
+        overview_top = QtWidgets.QHBoxLayout()
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.clicked.connect(self._refresh_report)
         self.refresh_btn = refresh_btn
-        header.addWidget(refresh_btn)
-        back_btn = QtWidgets.QPushButton("Back")
-        back_btn.clicked.connect(self.on_back)
-        header.addWidget(back_btn)
-        layout.addLayout(header)
-
-        self.status_label = QtWidgets.QLabel()
-        layout.addWidget(self.status_label)
-
-        folders_row = QtWidgets.QHBoxLayout()
+        overview_top.addWidget(refresh_btn)
         open_data_btn = QtWidgets.QPushButton("Open data folder")
         open_data_btn.clicked.connect(lambda: self._open_folder(Path("data")))
-        folders_row.addWidget(open_data_btn)
+        overview_top.addWidget(open_data_btn)
         open_store_btn = QtWidgets.QPushButton("Open content store")
         open_store_btn.clicked.connect(lambda: self._open_folder(Path("content_store")))
-        folders_row.addWidget(open_store_btn)
-        folders_row.addStretch()
-        layout.addLayout(folders_row)
+        overview_top.addWidget(open_store_btn)
+        overview_top.addStretch()
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        overview_top.addWidget(back_btn)
+        page_overview_layout.addLayout(overview_top)
+
+        self.status_label = QtWidgets.QLabel()
+        page_overview_layout.addWidget(self.status_label)
+
+        self.report_view = QtWidgets.QPlainTextEdit()
+        self.report_view.setReadOnly(True)
+        self.report_view.setPlaceholderText("Storage report will appear here.")
+        page_overview_layout.addWidget(self.report_view, stretch=1)
+        self._stack.addWidget(page_overview)
+
+        page_runs = QtWidgets.QWidget()
+        page_runs_layout = QtWidgets.QVBoxLayout(page_runs)
+        page_runs_layout.setContentsMargins(0, 0, 0, 0)
+
+        runs_toolbar = QtWidgets.QHBoxLayout()
+        self.runs_refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.runs_refresh_btn.clicked.connect(self._refresh_runs_list)
+        runs_toolbar.addWidget(self.runs_refresh_btn)
+        self.runs_prune_btn = QtWidgets.QPushButton("Prune…")
+        self.runs_prune_btn.clicked.connect(self._open_prune_runs_dialog)
+        runs_toolbar.addWidget(self.runs_prune_btn)
+        runs_toolbar.addStretch()
+        page_runs_layout.addLayout(runs_toolbar)
+
+        self.runs_status = QtWidgets.QLabel("")
+        self.runs_status.setStyleSheet("color: #555;")
+        page_runs_layout.addWidget(self.runs_status)
+
+        self.runs_tree = QtWidgets.QTreeWidget()
+        self.runs_tree.setColumnCount(5)
+        self.runs_tree.setHeaderLabels(["Run", "Created", "Size", "Root", "Actions"])
+        header_view = self.runs_tree.header()
+        header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header_view.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        page_runs_layout.addWidget(self.runs_tree, stretch=1)
+        self._stack.addWidget(page_runs)
+
+        page_maintenance = QtWidgets.QWidget()
+        page_maintenance_layout = QtWidgets.QVBoxLayout(page_maintenance)
+        page_maintenance_layout.setContentsMargins(0, 0, 0, 0)
 
         cleanup_row = QtWidgets.QHBoxLayout()
         self.purge_btn = QtWidgets.QPushButton("Purge cache")
@@ -1172,15 +1249,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.prune_btn.clicked.connect(self._prune_dumps)
         cleanup_row.addWidget(self.prune_btn)
         cleanup_row.addStretch()
-        layout.addLayout(cleanup_row)
-
-        comm_row = QtWidgets.QHBoxLayout()
-        self.comm_btn = QtWidgets.QPushButton("Job History")
-        self.comm_btn.clicked.connect(self._show_comm_report)
-        self.comm_btn.setVisible(False)
-        comm_row.addWidget(self.comm_btn)
-        comm_row.addStretch()
-        layout.addLayout(comm_row)
+        page_maintenance_layout.addLayout(cleanup_row)
 
         self.completion_panel = QtWidgets.QFrame()
         self.completion_panel.setVisible(False)
@@ -1199,7 +1268,56 @@ class SystemHealthScreen(QtWidgets.QWidget):
         panel_layout.addLayout(text_box)
         panel_layout.addStretch()
         panel_layout.addWidget(dismiss_btn)
-        layout.addWidget(self.completion_panel)
+        page_maintenance_layout.addWidget(self.completion_panel)
+        page_maintenance_layout.addStretch()
+        self._stack.addWidget(page_maintenance)
+
+        page_modules = QtWidgets.QWidget()
+        page_modules_layout = QtWidgets.QVBoxLayout(page_modules)
+        page_modules_layout.setContentsMargins(0, 0, 0, 0)
+
+        module_row = QtWidgets.QHBoxLayout()
+        self.install_btn = QtWidgets.QPushButton("Install module (local)")
+        self.install_btn.clicked.connect(lambda: self._start_module_job("install"))
+        self.uninstall_btn = QtWidgets.QPushButton("Uninstall module (local)")
+        self.uninstall_btn.clicked.connect(lambda: self._start_module_job("uninstall"))
+        module_row.addWidget(self.install_btn)
+        module_row.addWidget(self.uninstall_btn)
+        module_row.addStretch()
+        page_modules_layout.addLayout(module_row)
+
+        self.module_panel = QtWidgets.QFrame()
+        self.module_panel.setVisible(False)
+        self.module_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
+        module_layout = QtWidgets.QVBoxLayout(self.module_panel)
+        module_header = QtWidgets.QHBoxLayout()
+        self.module_title = QtWidgets.QLabel("Module Status")
+        self.module_title.setStyleSheet("font-weight: bold;")
+        module_header.addWidget(self.module_title)
+        module_header.addStretch()
+        module_dismiss = QtWidgets.QPushButton("Dismiss")
+        module_dismiss.setFixedWidth(80)
+        module_dismiss.clicked.connect(lambda: self.module_panel.setVisible(False))
+        module_header.addWidget(module_dismiss)
+        module_layout.addLayout(module_header)
+        self.module_details = QtWidgets.QLabel("")
+        self.module_details.setWordWrap(True)
+        module_layout.addWidget(self.module_details)
+        page_modules_layout.addWidget(self.module_panel)
+        page_modules_layout.addStretch()
+        self._stack.addWidget(page_modules)
+
+        page_jobs = QtWidgets.QWidget()
+        page_jobs_layout = QtWidgets.QVBoxLayout(page_jobs)
+        page_jobs_layout.setContentsMargins(0, 0, 0, 0)
+
+        comm_row = QtWidgets.QHBoxLayout()
+        self.comm_btn = QtWidgets.QPushButton("Job History")
+        self.comm_btn.clicked.connect(self._show_comm_report)
+        self.comm_btn.setVisible(False)
+        comm_row.addWidget(self.comm_btn)
+        comm_row.addStretch()
+        page_jobs_layout.addLayout(comm_row)
 
         self.comm_panel = QtWidgets.QFrame()
         self.comm_panel.setVisible(False)
@@ -1220,41 +1338,11 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.comm_text.setPlaceholderText("Communication report output")
         self.comm_text.setMaximumHeight(140)
         comm_panel_layout.addWidget(self.comm_text)
-        layout.addWidget(self.comm_panel)
+        page_jobs_layout.addWidget(self.comm_panel)
+        page_jobs_layout.addStretch()
+        self._stack.addWidget(page_jobs)
 
-        module_row = QtWidgets.QHBoxLayout()
-        self.install_btn = QtWidgets.QPushButton("Install module (local)")
-        self.install_btn.clicked.connect(lambda: self._start_module_job("install"))
-        self.uninstall_btn = QtWidgets.QPushButton("Uninstall module (local)")
-        self.uninstall_btn.clicked.connect(lambda: self._start_module_job("uninstall"))
-        module_row.addWidget(self.install_btn)
-        module_row.addWidget(self.uninstall_btn)
-        module_row.addStretch()
-        layout.addLayout(module_row)
-
-        self.module_panel = QtWidgets.QFrame()
-        self.module_panel.setVisible(False)
-        self.module_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
-        module_layout = QtWidgets.QVBoxLayout(self.module_panel)
-        module_header = QtWidgets.QHBoxLayout()
-        self.module_title = QtWidgets.QLabel("Module Status")
-        self.module_title.setStyleSheet("font-weight: bold;")
-        module_header.addWidget(self.module_title)
-        module_header.addStretch()
-        module_dismiss = QtWidgets.QPushButton("Dismiss")
-        module_dismiss.setFixedWidth(80)
-        module_dismiss.clicked.connect(lambda: self.module_panel.setVisible(False))
-        module_header.addWidget(module_dismiss)
-        module_layout.addLayout(module_header)
-        self.module_details = QtWidgets.QLabel("")
-        self.module_details.setWordWrap(True)
-        module_layout.addWidget(self.module_details)
-        layout.addWidget(self.module_panel)
-
-        self.report_view = QtWidgets.QPlainTextEdit()
-        self.report_view.setReadOnly(True)
-        self.report_view.setPlaceholderText("Storage report will appear here.")
-        layout.addWidget(self.report_view, stretch=1)
+        self._set_segment(0)
 
         if not self.refresh_capability:
             self._set_status(f"Core Center unavailable: {CORE_CENTER_ERROR or 'not installed'}")
@@ -1274,6 +1362,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if self.bus and not self._inventory_checked:
             self._refresh_inventory()
 
+    def _set_segment(self, index: int) -> None:
+        if index < 0 or index >= self._stack.count():
+            return
+        self._stack.setCurrentIndex(index)
+        for idx, btn in enumerate(self._segment_buttons):
+            btn.setChecked(idx == index)
     def _set_control_enabled(self, enabled: bool) -> None:
         enable_refresh = bool(self.refresh_capability and enabled)
         self.refresh_btn.setEnabled(enable_refresh)
@@ -1281,6 +1375,11 @@ class SystemHealthScreen(QtWidgets.QWidget):
         cleanup_enabled = bool(enabled and cleanup_available and not self._cleanup_running)
         self.purge_btn.setEnabled(cleanup_enabled)
         self.prune_btn.setEnabled(cleanup_enabled)
+        runs_available = bool(self.bus)
+        if hasattr(self, "runs_refresh_btn"):
+            self.runs_refresh_btn.setEnabled(bool(enabled and runs_available))
+        if hasattr(self, "runs_prune_btn"):
+            self.runs_prune_btn.setEnabled(bool(enabled and runs_available))
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
         )
@@ -1358,6 +1457,175 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.module_panel.setVisible(False)
         self._set_control_enabled(True)
         self._update_module_button_labels()
+
+    def _refresh_runs_list(self) -> None:
+        if not self.bus:
+            self.runs_status.setText("Runtime bus unavailable.")
+            return
+        try:
+            response = self.bus.request(
+                BUS_RUNS_LIST_REQUEST,
+                {},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self.runs_status.setText(f"Runs list failed: {exc}")
+            return
+        if not response.get("ok"):
+            self.runs_status.setText(f"Runs list failed: {response.get('error') or 'unknown'}")
+            return
+        labs = response.get("labs") or {}
+        self._render_runs_list(labs)
+        self.runs_status.setText("Runs list updated.")
+
+    def _render_runs_list(self, labs: Dict[str, Any]) -> None:
+        self.runs_tree.clear()
+        for lab_id, runs in sorted(labs.items()):
+            lab_item = QtWidgets.QTreeWidgetItem([lab_id, "", "", "", ""])
+            self.runs_tree.addTopLevelItem(lab_item)
+            for run in runs or []:
+                run_id = run.get("run_id") or "run"
+                created = run.get("created_at") or ""
+                size_bytes = run.get("size_bytes") or 0
+                size_text = f"{size_bytes/1024/1024:.2f} MB" if size_bytes else "0 MB"
+                root_kind = run.get("root_kind") or "runs"
+                run_item = QtWidgets.QTreeWidgetItem([run_id, created, size_text, root_kind, ""])
+                run_item.setData(
+                    0,
+                    QtCore.Qt.ItemDataRole.UserRole,
+                    {
+                        "lab_id": lab_id,
+                        "run_id": run_id,
+                        "root_kind": root_kind,
+                        "path": run.get("path"),
+                    },
+                )
+                lab_item.addChild(run_item)
+
+                action_widget = QtWidgets.QWidget()
+                action_layout = QtWidgets.QHBoxLayout(action_widget)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                open_btn = QtWidgets.QPushButton("Open")
+                open_btn.clicked.connect(lambda _=False, p=run.get("path"): self._open_folder(Path(p) if p else Path(".")))
+                delete_btn = QtWidgets.QPushButton("Delete")
+                delete_btn.clicked.connect(lambda _=False, info=run_item.data(0, QtCore.Qt.ItemDataRole.UserRole): self._delete_run(info))
+                action_layout.addWidget(open_btn)
+                action_layout.addWidget(delete_btn)
+                self.runs_tree.setItemWidget(run_item, 4, action_widget)
+        self.runs_tree.expandAll()
+
+    def _delete_run(self, info: Optional[Dict[str, Any]]) -> None:
+        if not self.bus or not info:
+            return
+        lab_id = info.get("lab_id")
+        run_id = info.get("run_id")
+        root_kind = info.get("root_kind") or "runs"
+        if not lab_id or not run_id:
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Delete run",
+            f"Delete run {run_id} for {lab_id}?",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        try:
+            response = self.bus.request(
+                BUS_RUNS_DELETE_REQUEST,
+                {"lab_id": lab_id, "run_id": run_id, "root_kind": root_kind},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self.runs_status.setText(f"Delete failed: {exc}")
+            return
+        if not response.get("ok"):
+            self.runs_status.setText(f"Delete failed: {response.get('error') or 'unknown'}")
+            return
+        self.runs_status.setText(f"Deleted run {run_id}.")
+        self._refresh_runs_list()
+
+    def _open_prune_runs_dialog(self) -> None:
+        if not self.bus:
+            self.runs_status.setText("Runtime bus unavailable.")
+            return
+        keep_default = 10
+        older_default = 0
+        max_mb_default = 0
+        try:
+            policy = self.bus.request(
+                getattr(BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request") if BUS_TOPICS else "core.policy.get.request",
+                {},
+                source="app_ui",
+                timeout_ms=1000,
+            )
+            if policy.get("ok"):
+                runs = (policy.get("policy") or {}).get("runs") or {}
+                cleanup = runs.get("cleanup") or {}
+                keep_default = cleanup.get("keep_last_per_lab", keep_default)
+                older_default = cleanup.get("delete_older_than_days", older_default)
+                max_mb_default = cleanup.get("max_total_mb", max_mb_default)
+        except Exception:
+            pass
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Prune runs")
+        layout = QtWidgets.QFormLayout(dialog)
+
+        keep_spin = QtWidgets.QSpinBox()
+        keep_spin.setMinimum(0)
+        keep_spin.setMaximum(1000)
+        keep_spin.setValue(int(keep_default or 0))
+        layout.addRow("Keep last per lab", keep_spin)
+
+        older_spin = QtWidgets.QSpinBox()
+        older_spin.setMinimum(0)
+        older_spin.setMaximum(3650)
+        older_spin.setValue(int(older_default or 0))
+        layout.addRow("Delete older than days", older_spin)
+
+        max_mb_spin = QtWidgets.QSpinBox()
+        max_mb_spin.setMinimum(0)
+        max_mb_spin.setMaximum(102400)
+        max_mb_spin.setValue(int(max_mb_default or 0))
+        layout.addRow("Max total MB (0 = ignore)", max_mb_spin)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        ok_btn = QtWidgets.QPushButton("Prune")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addRow(btn_row)
+
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            response = self.bus.request(
+                BUS_RUNS_PRUNE_REQUEST,
+                {
+                    "use_policy": False,
+                    "keep_last_per_lab": keep_spin.value(),
+                    "delete_older_than_days": older_spin.value(),
+                    "max_total_mb": max_mb_spin.value(),
+                },
+                source="app_ui",
+                timeout_ms=5000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self.runs_status.setText(f"Prune failed: {exc}")
+            return
+        if not response.get("ok"):
+            self.runs_status.setText(f"Prune failed: {response.get('error') or 'unknown'}")
+            return
+        summary = response.get("summary") or {}
+        deleted = summary.get("deleted_count", 0)
+        freed = summary.get("freed_bytes", 0)
+        self.runs_status.setText(f"Pruned {deleted} runs, freed {freed} bytes.")
+        self._refresh_runs_list()
 
     def _show_comm_report(self) -> None:
         if not self.bus:

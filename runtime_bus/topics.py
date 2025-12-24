@@ -30,6 +30,9 @@ CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST = "core.storage.allocate_run_dir.request"
 CORE_POLICY_GET_REQUEST = "core.policy.get.request"
 CORE_REGISTRY_GET_REQUEST = "core.registry.get.request"
 CORE_INVENTORY_GET_REQUEST = "core.inventory.get.request"
+CORE_RUNS_LIST_REQUEST = "core.runs.list.request"
+CORE_RUNS_DELETE_REQUEST = "core.runs.delete.request"
+CORE_RUNS_PRUNE_REQUEST = "core.runs.prune.request"
 CORE_CONTENT_MODULE_INSTALL_REQUEST = "core.content.module.install.request"
 CORE_CONTENT_MODULE_UNINSTALL_REQUEST = "core.content.module.uninstall.request"
 CORE_COMPONENT_PACK_INSTALL_REQUEST = "core.component_pack.install.request"
@@ -65,6 +68,9 @@ __all__ = [
     "CORE_POLICY_GET_REQUEST",
     "CORE_REGISTRY_GET_REQUEST",
     "CORE_INVENTORY_GET_REQUEST",
+    "CORE_RUNS_LIST_REQUEST",
+    "CORE_RUNS_DELETE_REQUEST",
+    "CORE_RUNS_PRUNE_REQUEST",
     "CORE_CONTENT_MODULE_INSTALL_REQUEST",
     "CORE_CONTENT_MODULE_UNINSTALL_REQUEST",
     "CORE_COMPONENT_PACK_INSTALL_REQUEST",
