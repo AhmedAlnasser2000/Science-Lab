@@ -4819,10 +4819,11 @@ class MainWindow(QtWidgets.QMainWindow):
         current = self.stacked.currentWidget()
         if current is self.lab_host_widget:
             return
-        if current is self.component_host:
-            self._show_content_browser()
-            return
         if current is self.main_menu:
+            return
+        on_back = getattr(current, "on_back", None)
+        if callable(on_back):
+            on_back()
             return
         self._show_main_menu()
 
