@@ -3275,6 +3275,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             "error": job.get("error"),
         }
         self._on_job_completed_event(SimpleNamespace(payload=payload))
+# endregion
 
 
 def _format_pack_label(pack: Dict[str, Any]) -> str:
