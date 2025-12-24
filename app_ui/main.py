@@ -1155,6 +1155,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._bus_subscriptions: list[str] = []
         self._bus_subscribed = False
         self._module_signals_connected = False
+        self._runs_active_lab_id: Optional[str] = None
+        self._runs_bulk_edit = False
         self._connect_ui_signals()
         self._bus_dispatch_bridge = _BusDispatchBridge(self)
 
@@ -1267,6 +1269,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         header_view.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header_view.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.runs_tree.itemChanged.connect(self._on_runs_item_changed)
+        self.runs_tree.currentItemChanged.connect(self._on_runs_current_item_changed)
+        self.runs_tree.itemClicked.connect(self._on_runs_item_clicked)
         page_runs_layout.addWidget(self.runs_tree, stretch=1)
         self._stack.addWidget(page_runs)
 
@@ -1526,6 +1530,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _render_runs_list(self, labs: Dict[str, Any]) -> None:
         self._runs_syncing = True
         self.runs_tree.clear()
+        self._runs_active_lab_id = None
         for lab_id, runs in sorted(labs.items()):
             lab_item = QtWidgets.QTreeWidgetItem([lab_id, "", "", "", ""])
             lab_item.setFlags(lab_item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
@@ -1610,7 +1615,29 @@ class SystemHealthScreen(QtWidgets.QWidget):
                     parent.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
                 else:
                     parent.setCheckState(0, QtCore.Qt.CheckState.PartiallyChecked)
+        self._set_runs_active_lab_from_item(item)
         self._update_runs_delete_buttons()
+
+    def _on_runs_current_item_changed(
+        self,
+        current: Optional[QtWidgets.QTreeWidgetItem],
+        previous: Optional[QtWidgets.QTreeWidgetItem],
+    ) -> None:
+        self._set_runs_active_lab_from_item(current)
+        self._update_runs_delete_buttons()
+
+    def _on_runs_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
+        self._set_runs_active_lab_from_item(item)
+        self._update_runs_delete_buttons()
+
+    def _set_runs_active_lab_from_item(self, item: Optional[QtWidgets.QTreeWidgetItem]) -> None:
+        if item is None or getattr(self, "_runs_bulk_edit", False):
+            return
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        if data.get("type") == "lab":
+            self._runs_active_lab_id = data.get("lab_id")
+        elif data.get("type") == "run":
+            self._runs_active_lab_id = data.get("lab_id")
 
     def _selected_run_items(self) -> list[Dict[str, Any]]:
         items: list[Dict[str, Any]] = []
@@ -1638,6 +1665,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
         return items
 
     def _current_lab_group(self) -> Optional[QtWidgets.QTreeWidgetItem]:
+        if self._runs_active_lab_id:
+            root = self.runs_tree.invisibleRootItem()
+            for i in range(root.childCount()):
+                lab_item = root.child(i)
+                data = lab_item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+                if data.get("lab_id") == self._runs_active_lab_id:
+                    return lab_item
         item = self.runs_tree.currentItem()
         if not item:
             return None
@@ -1686,12 +1720,15 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if lab_item is None:
             self.runs_status.setText("Select a lab group first.")
             return
+        self._runs_bulk_edit = True
         self._runs_syncing = True
         lab_item.setCheckState(0, QtCore.Qt.CheckState.Checked)
         for i in range(lab_item.childCount()):
             child = lab_item.child(i)
             child.setCheckState(0, QtCore.Qt.CheckState.Checked)
         self._runs_syncing = False
+        self._runs_bulk_edit = False
+        self._set_runs_active_lab_from_item(lab_item)
         self._update_runs_delete_buttons()
 
     def _clear_runs_for_lab(self) -> None:
@@ -1699,12 +1736,15 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if lab_item is None:
             self.runs_status.setText("Select a lab group first.")
             return
+        self._runs_bulk_edit = True
         self._runs_syncing = True
         lab_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
         for i in range(lab_item.childCount()):
             child = lab_item.child(i)
             child.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
         self._runs_syncing = False
+        self._runs_bulk_edit = False
+        self._set_runs_active_lab_from_item(lab_item)
         self._update_runs_delete_buttons()
 
     def _delete_all_runs_for_lab(self) -> None:
@@ -4297,6 +4337,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lab_widget: Optional[QtWidgets.QWidget] = None
         self.lab_host_widget: Optional[QtWidgets.QWidget] = None
         self.workspace_info: Dict[str, Any] = self._ensure_workspace_context()
+        self._esc_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape), self)
+        self._esc_shortcut.activated.connect(self._handle_escape_back)
 
         self.main_menu = MainMenuScreen(
             self._start_physics,
@@ -4352,6 +4394,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.component_management)
         self.stacked.addWidget(self.component_sandbox)
         self.stacked.addWidget(self.component_host)
+        self._show_main_menu()
+
+    def _handle_escape_back(self) -> None:
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+        if app.activeModalWidget() is not None:
+            return
+        focus = app.focusWidget()
+        if isinstance(focus, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
+            return
+        if isinstance(focus, QtWidgets.QComboBox) and focus.isEditable():
+            return
+        current = self.stacked.currentWidget()
+        if current is self.lab_host_widget:
+            return
+        if current is self.component_host:
+            self._show_content_browser()
+            return
+        if current is self.main_menu:
+            return
         self._show_main_menu()
 
     def _ensure_workspace_context(self) -> Dict[str, Any]:
