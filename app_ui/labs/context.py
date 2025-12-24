@@ -23,3 +23,5 @@ class LabContext:
     run_dir: Optional[str]
     policy: Dict[str, Any] = field(default_factory=dict)
     user_prefs: LabUserPrefs = field(default_factory=LabUserPrefs)
+    workspace_id: Optional[str] = None
+    workspace_root: Optional[str] = None

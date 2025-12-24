@@ -85,6 +85,12 @@ BUS_COMM_REPORT_REQUEST = (
 BUS_JOBS_LIST_REQUEST = (
     BUS_TOPICS.CORE_JOBS_LIST_REQUEST if BUS_TOPICS else "core.jobs.list.request"
 )
+BUS_WORKSPACE_GET_ACTIVE = (
+    BUS_TOPICS.CORE_WORKSPACE_GET_ACTIVE_REQUEST if BUS_TOPICS else "core.workspace.get_active.request"
+)
+BUS_WORKSPACE_CREATE = (
+    BUS_TOPICS.CORE_WORKSPACE_CREATE_REQUEST if BUS_TOPICS else "core.workspace.create.request"
+)
 
 if APP_BUS:
     def _handle_bus_comm_report(envelope):
@@ -4183,6 +4189,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.stacked)
         self.lab_widget: Optional[QtWidgets.QWidget] = None
         self.lab_host_widget: Optional[QtWidgets.QWidget] = None
+        self.workspace_info: Dict[str, Any] = self._ensure_workspace_context()
 
         self.main_menu = MainMenuScreen(
             self._start_physics,
@@ -4239,6 +4246,58 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.component_sandbox)
         self.stacked.addWidget(self.component_host)
         self._show_main_menu()
+
+    def _ensure_workspace_context(self) -> Dict[str, Any]:
+        info = self._request_workspace_info()
+        if info:
+            return info
+        return self._local_workspace_info("default")
+
+    def _request_workspace_info(self) -> Optional[Dict[str, Any]]:
+        if not (APP_BUS and BUS_WORKSPACE_GET_ACTIVE):
+            return None
+        try:
+            response = APP_BUS.request(BUS_WORKSPACE_GET_ACTIVE, {}, source="app_ui", timeout_ms=1000)
+        except Exception:
+            response = {"ok": False}
+        if response.get("ok"):
+            workspace = response.get("workspace")
+            if isinstance(workspace, dict):
+                return workspace
+            if "id" in response and "paths" in response:
+                return {"id": response.get("id"), "paths": response.get("paths")}
+        if APP_BUS and BUS_WORKSPACE_CREATE:
+            try:
+                response = APP_BUS.request(
+                    BUS_WORKSPACE_CREATE,
+                    {"workspace_id": "default"},
+                    source="app_ui",
+                    timeout_ms=1000,
+                )
+            except Exception:
+                response = {"ok": False}
+            if response.get("ok") and isinstance(response.get("workspace"), dict):
+                return response.get("workspace")
+        return None
+
+    def _local_workspace_info(self, workspace_id: str) -> Dict[str, Any]:
+        safe_id = self._sanitize_workspace_id(workspace_id)
+        root = Path("data") / "workspaces" / safe_id
+        paths = {
+            "root": root,
+            "runs": root / "runs",
+            "runs_local": root / "runs_local",
+            "cache": root / "cache",
+            "store": root / "store",
+            "prefs": root / "prefs",
+        }
+        for path in paths.values():
+            path.mkdir(parents=True, exist_ok=True)
+        return {"id": safe_id, "paths": {name: str(path.resolve()) for name, path in paths.items()}}
+
+    def _sanitize_workspace_id(self, value: str) -> str:
+        clean = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value.strip())
+        return clean or "default"
 
     def _show_module_management(self):
         self._dispose_lab_widget()
@@ -4408,11 +4467,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 response = {"ok": False}
             if response.get("ok") and isinstance(response.get("policy"), dict):
                 policy.update(response["policy"])
+        paths = self.workspace_info.get("paths") if isinstance(self.workspace_info, dict) else {}
+        runs_root = Path(paths.get("runs") or Path("data") / "workspaces" / "default" / "runs")
+        runs_local_root = Path(paths.get("runs_local") or Path("data") / "workspaces" / "default" / "runs_local")
+        store_root = Path(paths.get("store") or Path("data") / "store")
         storage = StorageRoots(
             roaming=Path("data/roaming"),
-            store=Path("data/store"),
-            runs=Path("data/store/runs"),
-            runs_local=Path("data/store/runs_local"),
+            store=store_root,
+            runs=runs_root,
+            runs_local=runs_local_root,
         )
         asset_root = None
         if isinstance(detail, dict):
@@ -4431,6 +4494,8 @@ class MainWindow(QtWidgets.QMainWindow):
             part_id=part_id,
             detail=detail,
             asset_root=asset_root,
+            workspace_id=self.workspace_info.get("id"),
+            workspace_root=Path(paths.get("root")) if isinstance(paths, dict) and paths.get("root") else None,
         )
 
     def _dispose_lab_widget(self):

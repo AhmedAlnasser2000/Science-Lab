@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from .discovery import DATA_ROOTS, compute_disk_usage, ensure_data_roots
+from . import workspace_manager
 from diagnostics.fs_ops import safe_rmtree
 
 
@@ -18,19 +19,23 @@ def get_data_roots() -> Dict[str, str]:
 
 
 def _runs_root() -> Path:
-    ensure_data_roots()
-    store_root = DATA_ROOTS["store"]
-    runs = store_root / "runs"
-    runs.mkdir(parents=True, exist_ok=True)
-    return runs
+    try:
+        paths = workspace_manager.get_active_workspace_paths()
+    except Exception:
+        paths = {}
+    root = Path(paths.get("runs") or Path("data") / "workspaces" / "default" / "runs")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def _runs_local_root() -> Path:
-    ensure_data_roots()
-    store_root = DATA_ROOTS["store"]
-    runs = store_root / "runs_local"
-    runs.mkdir(parents=True, exist_ok=True)
-    return runs
+    try:
+        paths = workspace_manager.get_active_workspace_paths()
+    except Exception:
+        paths = {}
+    root = Path(paths.get("runs_local") or Path("data") / "workspaces" / "default" / "runs_local")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 DEFAULT_KEEP_LAST = 10

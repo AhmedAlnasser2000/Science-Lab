@@ -20,6 +20,9 @@ from .prefs_store import get_lab_prefs, save_lab_prefs
 RUN_DIR_REQUEST_TOPIC = (
     BUS_TOPICS.CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST if BUS_TOPICS else "core.storage.allocate_run_dir.request"
 )
+WORKSPACE_GET_REQUEST_TOPIC = (
+    BUS_TOPICS.CORE_WORKSPACE_GET_ACTIVE_REQUEST if BUS_TOPICS else "core.workspace.get_active.request"
+)
 POLICY_REQUEST_TOPIC = getattr(BUS_TOPICS, "CORE_POLICY_GET_REQUEST", "core.policy.get.request") if BUS_TOPICS else "core.policy.get.request"
 LAB_TELEMETRY_TOPIC = BUS_TOPICS.LAB_TELEMETRY if BUS_TOPICS else "lab.telemetry"
 
@@ -56,10 +59,13 @@ class LabHost(QtWidgets.QWidget):
         self.profile = profile
         self.plugin = plugin
         self.guide_visible = True
+        self.workspace_info = self._init_workspace_info()
         self.policy = self._init_policy()
         self.run_context = self._init_run_context()
         self.run_context.setdefault("policy", self.policy)
         self.run_context.setdefault("profile", self.profile)
+        self.run_context.setdefault("workspace_id", self.workspace_info.get("id"))
+        self.run_context.setdefault("workspace_root", self.workspace_info.get("paths", {}).get("root"))
         self.user_prefs = get_lab_prefs(self.lab_id)
         self.lab_context = LabContext(
             lab_id=self.lab_id,
@@ -69,6 +75,8 @@ class LabHost(QtWidgets.QWidget):
             run_dir=self.run_context.get("run_dir"),
             policy=dict(self.policy),
             user_prefs=self.user_prefs,
+            workspace_id=self.workspace_info.get("id"),
+            workspace_root=self.workspace_info.get("paths", {}).get("root"),
         )
         print(f"[lab_host] policy resolved for {self.lab_id}: {self.policy}")
         self._apply_run_context()
@@ -307,9 +315,59 @@ class LabHost(QtWidgets.QWidget):
                 }
         return self._create_local_run_dir()
 
+    def _init_workspace_info(self) -> Dict[str, object]:
+        info = self._request_workspace_info()
+        if info:
+            return info
+        return self._local_workspace_info("default")
+
+    def _request_workspace_info(self) -> Optional[Dict[str, object]]:
+        if not (self.bus and WORKSPACE_GET_REQUEST_TOPIC):
+            return None
+        try:
+            response = self.bus.request(
+                WORKSPACE_GET_REQUEST_TOPIC,
+                {},
+                source="app_ui",
+                timeout_ms=1000,
+            )
+        except Exception:
+            response = {"ok": False}
+        if response.get("ok"):
+            workspace = response.get("workspace")
+            if isinstance(workspace, dict):
+                return workspace
+            if "id" in response and "paths" in response:
+                return {"id": response.get("id"), "paths": response.get("paths")}
+        return None
+
+    def _local_workspace_info(self, workspace_id: str) -> Dict[str, object]:
+        safe_id = self._sanitize_workspace_id(workspace_id)
+        root = Path("data") / "workspaces" / safe_id
+        paths = {
+            "root": root,
+            "runs": root / "runs",
+            "runs_local": root / "runs_local",
+            "cache": root / "cache",
+            "store": root / "store",
+            "prefs": root / "prefs",
+        }
+        for path in paths.values():
+            path.mkdir(parents=True, exist_ok=True)
+        return {"id": safe_id, "paths": {name: str(path.resolve()) for name, path in paths.items()}}
+
+    def _sanitize_workspace_id(self, value: str) -> str:
+        clean = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value.strip())
+        return clean or "default"
+
     def _create_local_run_dir(self) -> dict:
         run_id = str(uuid.uuid4())
-        base = Path("data/store/runs_local") / self.lab_id
+        paths = self.workspace_info.get("paths") if isinstance(self.workspace_info, dict) else {}
+        base_root = None
+        if isinstance(paths, dict):
+            base_root = paths.get("runs_local")
+        base = Path(base_root) if base_root else Path("data") / "workspaces" / "default" / "runs_local"
+        base = base / self.lab_id
         run_dir = base / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         meta = {
@@ -317,6 +375,7 @@ class LabHost(QtWidgets.QWidget):
             "run_id": run_id,
             "timestamp": QtCore.QDateTime.currentDateTimeUtc().toString(QtCore.Qt.DateFormat.ISODate),
             "source": "app_local",
+            "workspace_id": self.workspace_info.get("id"),
         }
         try:
             (run_dir / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")

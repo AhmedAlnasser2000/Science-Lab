@@ -10,7 +10,7 @@ try:
 except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
-from . import job_manager, storage_manager, policy_manager
+from . import job_manager, storage_manager, policy_manager, workspace_manager
 from . import inventory as inventory_module
 from .registry import load_registry, summarize_registry
 
@@ -38,6 +38,18 @@ RUNS_PRUNE_REQUEST_TOPIC = getattr(
 )
 RUNS_DELETE_MANY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_RUNS_DELETE_MANY_REQUEST", "core.runs.delete_many.request"
+)
+WORKSPACE_GET_ACTIVE_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_WORKSPACE_GET_ACTIVE_REQUEST", "core.workspace.get_active.request"
+)
+WORKSPACE_SET_ACTIVE_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_WORKSPACE_SET_ACTIVE_REQUEST", "core.workspace.set_active.request"
+)
+WORKSPACE_LIST_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_WORKSPACE_LIST_REQUEST", "core.workspace.list.request"
+)
+WORKSPACE_CREATE_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_WORKSPACE_CREATE_REQUEST", "core.workspace.create.request"
 )
 INVENTORY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_INVENTORY_GET_REQUEST", "core.inventory.get.request"
@@ -178,6 +190,42 @@ def register_core_center_endpoints(bus: Any) -> None:
         result = storage_manager.delete_runs_many(items)
         return {"ok": True, **result}
 
+    def _handle_workspace_get_active(envelope) -> Dict[str, object]:  # noqa: ARG001
+        try:
+            info = workspace_manager.get_active_workspace()
+            return {"ok": True, "workspace": info}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _handle_workspace_set_active(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        workspace_id = payload.get("workspace_id") or payload.get("id")
+        if not workspace_id:
+            return {"ok": False, "error": "workspace_id_required"}
+        try:
+            info = workspace_manager.set_active_workspace(str(workspace_id))
+            return {"ok": True, "workspace": info}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _handle_workspace_list(envelope) -> Dict[str, object]:  # noqa: ARG001
+        try:
+            workspaces = workspace_manager.list_workspaces()
+            return {"ok": True, "workspaces": workspaces}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _handle_workspace_create(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        workspace_id = payload.get("workspace_id") or payload.get("id")
+        if not workspace_id:
+            return {"ok": False, "error": "workspace_id_required"}
+        try:
+            info = workspace_manager.create_workspace(str(workspace_id))
+            return {"ok": True, "workspace": info}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def _handle_inventory(envelope) -> Dict[str, object]:  # noqa: ARG001
         try:
             snapshot = inventory_module.get_inventory_snapshot()
@@ -269,6 +317,14 @@ def register_core_center_endpoints(bus: Any) -> None:
         bus.register_handler(RUNS_PRUNE_REQUEST_TOPIC, _handle_runs_prune)
     if RUNS_DELETE_MANY_REQUEST_TOPIC:
         bus.register_handler(RUNS_DELETE_MANY_REQUEST_TOPIC, _handle_runs_delete_many)
+    if WORKSPACE_GET_ACTIVE_REQUEST_TOPIC:
+        bus.register_handler(WORKSPACE_GET_ACTIVE_REQUEST_TOPIC, _handle_workspace_get_active)
+    if WORKSPACE_SET_ACTIVE_REQUEST_TOPIC:
+        bus.register_handler(WORKSPACE_SET_ACTIVE_REQUEST_TOPIC, _handle_workspace_set_active)
+    if WORKSPACE_LIST_REQUEST_TOPIC:
+        bus.register_handler(WORKSPACE_LIST_REQUEST_TOPIC, _handle_workspace_list)
+    if WORKSPACE_CREATE_REQUEST_TOPIC:
+        bus.register_handler(WORKSPACE_CREATE_REQUEST_TOPIC, _handle_workspace_create)
     if INVENTORY_REQUEST_TOPIC:
         bus.register_handler(INVENTORY_REQUEST_TOPIC, _handle_inventory)
     if MODULE_INSTALL_REQUEST_TOPIC:

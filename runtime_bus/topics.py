@@ -34,6 +34,10 @@ CORE_RUNS_LIST_REQUEST = "core.runs.list.request"
 CORE_RUNS_DELETE_REQUEST = "core.runs.delete.request"
 CORE_RUNS_PRUNE_REQUEST = "core.runs.prune.request"
 CORE_RUNS_DELETE_MANY_REQUEST = "core.runs.delete_many.request"
+CORE_WORKSPACE_GET_ACTIVE_REQUEST = "core.workspace.get_active.request"
+CORE_WORKSPACE_SET_ACTIVE_REQUEST = "core.workspace.set_active.request"
+CORE_WORKSPACE_LIST_REQUEST = "core.workspace.list.request"
+CORE_WORKSPACE_CREATE_REQUEST = "core.workspace.create.request"
 CORE_CONTENT_MODULE_INSTALL_REQUEST = "core.content.module.install.request"
 CORE_CONTENT_MODULE_UNINSTALL_REQUEST = "core.content.module.uninstall.request"
 CORE_COMPONENT_PACK_INSTALL_REQUEST = "core.component_pack.install.request"
@@ -73,6 +77,10 @@ __all__ = [
     "CORE_RUNS_DELETE_REQUEST",
     "CORE_RUNS_PRUNE_REQUEST",
     "CORE_RUNS_DELETE_MANY_REQUEST",
+    "CORE_WORKSPACE_GET_ACTIVE_REQUEST",
+    "CORE_WORKSPACE_SET_ACTIVE_REQUEST",
+    "CORE_WORKSPACE_LIST_REQUEST",
+    "CORE_WORKSPACE_CREATE_REQUEST",
     "CORE_CONTENT_MODULE_INSTALL_REQUEST",
     "CORE_CONTENT_MODULE_UNINSTALL_REQUEST",
     "CORE_COMPONENT_PACK_INSTALL_REQUEST",

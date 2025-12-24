@@ -26,3 +26,5 @@ class ComponentContext:
     part_id: Optional[str] = None
     detail: Optional[Dict[str, Any]] = None
     asset_root: Optional[Path] = None
+    workspace_id: Optional[str] = None
+    workspace_root: Optional[Path] = None
