@@ -4659,6 +4659,29 @@ class ComponentHostScreen(QtWidgets.QWidget):
         self.status_label.setText("Component closed.")
 
 
+class LabHostScreen(QtWidgets.QWidget):
+    def __init__(
+        self,
+        on_back,
+        lab_host: QtWidgets.QWidget,
+        title: str,
+        *,
+        workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+    ) -> None:
+        super().__init__()
+        self.on_back = on_back
+
+        layout = QtWidgets.QVBoxLayout(self)
+        selector = workspace_selector_factory() if workspace_selector_factory else None
+        header = AppHeader(
+            title=title,
+            on_back=self.on_back,
+            workspace_selector=selector,
+        )
+        layout.addWidget(header)
+        layout.addWidget(lab_host, stretch=1)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, initial_profile: str):
         super().__init__()
@@ -5207,9 +5230,16 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Lab", f"Failed to open lab: {exc}")
             return
         self.lab_widget = widget
-        self.lab_host_widget = host
-        self.stacked.addWidget(host)
-        self.stacked.setCurrentWidget(host)
+        title = plugin.title if getattr(plugin, "title", None) else f"Lab: {lab_id}"
+        screen = LabHostScreen(
+            self._show_content_browser,
+            host,
+            title,
+            workspace_selector_factory=self._make_workspace_selector,
+        )
+        self.lab_host_widget = screen
+        self.stacked.addWidget(screen)
+        self.stacked.setCurrentWidget(screen)
 
     def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> str:
         fallback = "Guide coming soon for this lab."
