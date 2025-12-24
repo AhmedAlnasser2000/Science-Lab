@@ -9,10 +9,12 @@ PhysicsLab is a **PyQt6 desktop application** that uses a `QStackedWidget` to ma
 *   **Entry Point**: The app starts in `app_ui/main.py:main`, which creates the `QApplication`, applies the active UI pack, and constructs the `MainWindow`.
 *   **Labs**: Interactive simulations (Gravity, Projectile, etc.) are plugins wrapped by a `LabHost`. The host handles common features like the guide panel, export menu, and grid/axes toggles.
 *   **Content**: Content is split between a **Repo** (canonical source) and a **Store** (installed/ready-to-use). The app only runs content that is "READY" (installed in the store).
+*   **Workspaces**: An active workspace is always selected and drives run locations under `data/workspaces/<id>/runs`.
+*   **Components**: Component runtime + packs allow additional panels/tools, with a sandbox and management screen (Explorer).
 *   **Bus**: A local, in-process `RuntimeBus` handles decoupling between components (e.g., System Health requesting storage reports from Core Center).
 *   **Core Center**: An optional backend module for management tasks (registry, jobs, storage, policy). The UI works even if this module is missing.
 
-> **Anchor**: `app_ui/main.py:main`, `app_ui/main.py:MainWindow.__init__`, `app_ui/labs/host.py:LabHost`, `content_system/loader.py:REPO_BASE`, `content_system/loader.py:STORE_BASE`, `app_ui/main.py:ContentBrowserScreen._open_selected`, `runtime_bus/bus.py:RuntimeBus`, `app_ui/main.py:SystemHealthScreen._refresh_report`, `app_ui/main.py:CORE_CENTER_AVAILABLE`
+> **Anchor**: `app_ui/main.py:main`, `app_ui/main.py:MainWindow.__init__`, `app_ui/labs/host.py:LabHost`, `content_system/loader.py:REPO_BASE`, `content_system/loader.py:STORE_BASE`, `app_ui/main.py:ContentBrowserScreen._open_selected`, `runtime_bus/bus.py:RuntimeBus`, `app_ui/main.py:SystemHealthScreen._refresh_report`, `app_ui/main.py:CORE_CENTER_AVAILABLE`, `core_center/workspace_manager.py:get_active_workspace`
 
 ---
 
@@ -40,6 +42,14 @@ PhysicsLab is a **PyQt6 desktop application** that uses a `QStackedWidget` to ma
 4.  Status updates to `READY`.
 
 > **Anchor**: `content_system/loader.py:download_part`, `app_ui/main.py:ContentBrowserScreen._install_selected`, `core_center/bus_endpoints.py:_handle_module_install`
+
+### Workspace Management (Explorer)
+1.  User opens **Workspace Management** from the Main Menu.
+2.  The screen lists workspaces via `core.workspace.list.request`.
+3.  Create can seed a template into `data/workspaces/<id>/prefs`.
+4.  Set Active switches the active workspace and affects runs.
+
+> **Anchor**: `app_ui/main.py:WorkspaceManagementScreen`, `core_center/bus_endpoints.py:_handle_workspace_list`, `core_center/workspace_manager.py:_apply_template`
 
 ---
 
@@ -125,10 +135,10 @@ Core Center is an optional management backend. The UI guards imports (`CORE_CENT
 *   **Discovery**: Scans content and UI packs.
 *   **Registry**: Saved to `data/roaming/registry.json`.
 *   **Jobs**: Background threads for install/cleanup; history in `data/roaming/jobs.json`.
-*   **Storage**: Allocates run directories in `data/store/runs`.
+*   **Storage**: Allocates run directories in the active workspace (`data/workspaces/<id>/runs`).
 *   **Policy**: Resolves defaults + overrides from `data/roaming/policy.json`.
 
-> **Anchor**: `core_center/bus_endpoints.py:register_core_center_endpoints`, `core_center/discovery.py:discover_components`, `core_center/registry.py:save_registry`, `core_center/job_manager.py:JOB_HISTORY_PATH`, `core_center/storage_manager.py:allocate_run_dir`, `core_center/policy_manager.py:resolve_policy`, `app_ui/main.py:CORE_CENTER_AVAILABLE`
+> **Anchor**: `core_center/bus_endpoints.py:register_core_center_endpoints`, `core_center/discovery.py:discover_components`, `core_center/registry.py:save_registry`, `core_center/job_manager.py:JOB_HISTORY_PATH`, `core_center/storage_manager.py:allocate_run_dir`, `core_center/workspace_manager.py:get_active_workspace`, `core_center/policy_manager.py:resolve_policy`, `app_ui/main.py:CORE_CENTER_AVAILABLE`
 
 ---
 
@@ -154,8 +164,10 @@ An in-process message bus for decoupling components.
 | `data/roaming/lab_prefs.json` | Grid/Axes toggles | `app_ui/labs/prefs_store.py:PREFS_PATH` |
 | `data/roaming/registry.json` | Discovery registry (modules, UI packs, labs) | `core_center/registry.py:save_registry` |
 | `data/roaming/jobs.json` | Job History | `core_center/job_manager.py:JOB_HISTORY_PATH` |
-| `data/store/runs/<lab>/<run>/` | Run Data | `core_center/storage_manager.py:allocate_run_dir` |
-| `data/store/runs_local/` | Fallback Run Data | `app_ui/labs/host.py:_create_local_run_dir` |
+| `data/roaming/workspace.json` | Active workspace selector | `core_center/workspace_manager.py:_active_path` |
+| `data/workspaces/<id>/runs/<lab>/<run>/` | Run Data | `core_center/storage_manager.py:allocate_run_dir` |
+| `data/workspaces/<id>/runs_local/` | Fallback Run Data | `app_ui/labs/host.py:_create_local_run_dir` |
+| `workspace_repo/templates/<id>/` | Workspace templates | `core_center/workspace_manager.py:TEMPLATES_ROOT` |
 
 ---
 
@@ -216,4 +228,4 @@ python -m app_ui.main
 
 Verification footer:
 - Handbook content derived from checkpoint: `docs/app_summary.md`
-- Commit: `77b4895`
+- Commit: `089cb27`

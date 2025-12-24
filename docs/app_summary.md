@@ -1,35 +1,76 @@
 ﻿# PhysicsLab App Summary (Code-Verified Checkpoint)
 
 ## App at a glance (verified features)
-- PyQt6 desktop app using a QStackedWidget main window with multiple screens and labs (Anchor: `app_ui/main.py:MainWindow.__init__`).
-- Quick Start selects the first READY lab part and opens it directly; if none are READY, routes to Content Management with an install message (Anchor: `app_ui/main.py:MainWindow._start_physics`, `app_ui/main.py:MainWindow._find_quick_start_part`).
-- Physics Content always opens the full Content Browser (Anchor: `app_ui/main.py:MainWindow._open_content_browser`, `app_ui/main.py:ContentBrowserScreen`).
-- Registered labs: gravity, projectile, electric_field, lens_ray, vector_add (Anchor: `app_ui/labs/registry.py`).
-- LabHost wraps lab widgets with guide panel, export menu (policy-gated), Grid/Axes toggles, and run context injection (Anchor: `app_ui/labs/host.py:LabHost`).
-- Core Center is optional; UI imports are guarded and the app continues without it (Anchor: `app_ui/main.py:CORE_CENTER_AVAILABLE`).
+- PyQt6 desktop app driven by a QStackedWidget main window with profile-gated navigation (Anchor: `app_ui/main.py:MainWindow.__init__`, `app_ui/main.py:MainMenuScreen._rebuild_buttons`).
+- Quick Start selects the first READY lab part and opens it directly via `open_part_by_id`; if none are READY, routes to Content Management with an install message (Anchor: `app_ui/main.py:MainWindow._start_physics`, `app_ui/main.py:MainWindow._find_quick_start_part`, `app_ui/main.py:MainWindow.open_part_by_id`).
+- Content Browser opens parts by priority: `component_id` → component runtime, then lab_id → LabHost, else markdown viewer (Anchor: `app_ui/main.py:ContentBrowserScreen._open_selected`, `app_ui/main.py:MainWindow.open_part_by_id`).
+- Registered labs: gravity, projectile, electric_field, lens_ray, vector_add (Anchor: `app_ui/labs/registry.py:list_labs`).
+- LabHost wraps lab widgets with guide panel, export menu (policy-gated), Grid/Axes toggles, telemetry (Explorer + policy), and run context injection (Anchor: `app_ui/labs/host.py:LabHost`).
+- Workspaces are first-class: active workspace is created/selected on boot and drives run locations under `data/workspaces/<id>/runs` (Anchor: `core_center/workspace_manager.py:get_active_workspace`, `core_center/storage_manager.py:_runs_root`, `app_ui/main.py:MainWindow._ensure_workspace_context`).
+- System Health is segmented into Overview / Runs / Maintenance / Modules / Jobs and drives Core Center via the runtime bus (Anchor: `app_ui/main.py:SystemHealthScreen`).
+- Component runtime supports builtin components + pack-defined components, and UI exposes Component Management + Component Sandbox (Explorer) (Anchor: `component_runtime/registry.py`, `component_runtime/packs.py`, `app_ui/main.py:ComponentManagementScreen`, `app_ui/main.py:ComponentSandboxScreen`).
+- Core Center (Management Core) is optional; UI imports are guarded and runtime bus endpoints are registered if available (Anchor: `app_ui/main.py:CORE_CENTER_AVAILABLE`, `app_ui/main.py:CORE_CENTER_BUS_ENDPOINTS`).
 - Runtime bus is local, in-process pub/sub + request/reply with sticky topics and optional debug logging (Anchor: `runtime_bus/bus.py:RuntimeBus`, `runtime_bus/bus.py:BUS_DEBUG`).
 
 ## High-level architecture (modules + boundaries)
-- `app_ui/`: UI, navigation, and labs (entry: `python -m app_ui.main`) (Anchor: `app_ui/main.py:main`).
+- `app_ui/`: UI orchestration, screens, labs, and component host integration (entry: `python -m app_ui.main`) (Anchor: `app_ui/main.py:main`).
 - `content_system/`: content hierarchy loader + part installer (Anchor: `content_system/loader.py:list_tree`, `content_system/loader.py:download_part`).
 - `runtime_bus/`: in-process bus types and topics (Anchor: `runtime_bus/bus.py`, `runtime_bus/messages.py`, `runtime_bus/topics.py`).
-- `core_center/`: optional discovery/registry/jobs/storage/policy endpoints (Anchor: `core_center/bus_endpoints.py:register_core_center_endpoints`).
+- `core_center/`: optional Management Core for discovery/registry/inventory/jobs/storage/policy/workspaces (Anchor: `core_center/bus_endpoints.py:register_core_center_endpoints`).
+- `component_runtime/`: component registry, host, packs, builtins (Anchor: `component_runtime/registry.py`, `component_runtime/host.py`).
 - `content_repo/physics_v1/`: canonical content pack; `content_store/physics_v1/` is the installed mirror (Anchor: `content_system/loader.py:REPO_BASE`, `content_system/loader.py:STORE_BASE`).
+- `component_repo/component_v1/packs/` + `component_store/component_v1/packs/`: component pack source + installed mirror (Anchor: `component_runtime/packs.py:REPO_ROOT`, `component_runtime/packs.py:STORE_ROOT`).
 - `ui_system/` + `ui_repo/` + `ui_store/`: UI pack manager and QSS packs (Anchor: `ui_system/manager.py:list_packs`).
+- `workspace_repo/templates/`: workspace template seeds (Anchor: `core_center/workspace_manager.py:TEMPLATES_ROOT`).
 - `kernel/`: Rust DLL for gravity kernel, bridged in Python (Anchor: `app_ui/kernel_bridge.py`).
+
+### Diagram: subsystem map (code-verified)
+```mermaid
+flowchart LR
+  app_ui["app_ui (UI + Labs)"] --> runtime_bus["runtime_bus (pub/sub + request)"]
+  app_ui --> content_system["content_system (load/install parts)"]
+  app_ui --> component_runtime["component_runtime (components)"]
+  app_ui --> ui_system["ui_system (QSS packs)"]
+  runtime_bus --> core_center["core_center (jobs/inventory/runs/workspaces)"]
+  core_center --> content_store["content_store (installed content)"]
+  core_center --> component_store["component_store (installed packs)"]
+  core_center --> data_ws["data/workspaces/<id> (runs/prefs)"]
+  content_system --> content_repo["content_repo/physics_v1 (source)"]
+  component_runtime --> component_repo["component_repo/component_v1/packs (source)"]
+  ui_system --> ui_repo["ui_repo/ui_v1/packs (source)"]
+  app_ui --> kernel["kernel (gravity DLL)"]
+```
 
 ## Startup + navigation flow
 - Entry: `app_ui/main.py:main` creates QApplication, applies UI pack, constructs MainWindow, and starts the event loop (Anchor: `app_ui/main.py:main`, `app_ui/main.py:apply_ui_config_styles`).
-- MainWindow wires screens into a QStackedWidget and routes callbacks (Anchor: `app_ui/main.py:MainWindow.__init__`).
-- Quick Start uses `ContentSystemAdapter.list_tree()` to find the first READY lab part and opens it directly (Anchor: `app_ui/main.py:MainWindow._find_quick_start_part`, `app_ui/main.py:MainWindow.open_part_by_id`).
+- Global runtime bus is created by `get_global_bus()` and Core Center endpoints are registered when available (Anchor: `runtime_bus/bus.py:get_global_bus`, `app_ui/main.py:APP_BUS`, `app_ui/main.py:CORE_CENTER_BUS_ENDPOINTS`).
+- MainWindow wires screens into a QStackedWidget and resolves an active workspace on boot (Anchor: `app_ui/main.py:MainWindow.__init__`, `app_ui/main.py:MainWindow._ensure_workspace_context`).
+- Quick Start uses `ContentSystemAdapter.list_tree()` to find the first READY lab part and opens it directly via `open_part_by_id` (Anchor: `app_ui/main.py:MainWindow._find_quick_start_part`, `app_ui/main.py:MainWindow.open_part_by_id`).
 - Physics Content always opens ContentBrowserScreen (Anchor: `app_ui/main.py:MainWindow._open_content_browser`).
+
+### Diagram: boot + routing (code-verified)
+```mermaid
+flowchart TD
+  main["main()"] --> apply_qss["apply_ui_config_styles()"]
+  apply_qss --> bus["APP_BUS = get_global_bus()"]
+  bus --> core["register_core_center_endpoints() (optional)"]
+  core --> mw["MainWindow.__init__()"]
+  mw --> ws["ensure active workspace"]
+  mw --> menu["MainMenuScreen"]
+  menu --> quick["Quick Start -> open_part_by_id"]
+  menu --> content["Physics Content -> ContentBrowserScreen"]
+```
 
 ## Screens and what each one does
 - MainMenuScreen: Home buttons with profile gating (Anchor: `app_ui/main.py:MainMenuScreen._rebuild_buttons`).
-- ContentBrowserScreen: tree view, install part, open lab or markdown preview (Anchor: `app_ui/main.py:ContentBrowserScreen.refresh_tree`, `app_ui/main.py:ContentBrowserScreen._install_selected`, `app_ui/main.py:ContentBrowserScreen._open_selected`).
-- SystemHealthScreen: storage report (bus-first, direct fallback), cleanup, module install/uninstall (Explorer), job history (Explorer) (Anchor: `app_ui/main.py:SystemHealthScreen._refresh_report`, `app_ui/main.py:SystemHealthScreen._start_cleanup_job`, `app_ui/main.py:SystemHealthScreen._show_comm_report`, `app_ui/main.py:SystemHealthScreen._start_module_job`).
+- ContentBrowserScreen: tree view, install part, open component/lab/markdown based on part metadata (Anchor: `app_ui/main.py:ContentBrowserScreen.refresh_tree`, `app_ui/main.py:ContentBrowserScreen._open_selected`).
+- SystemHealthScreen (segmented): Overview report, Runs manager (list/delete/prune), Maintenance cleanup, Modules install/uninstall (Explorer), Jobs history (Explorer) (Anchor: `app_ui/main.py:SystemHealthScreen`, `app_ui/main.py:SystemHealthScreen._refresh_runs_list`).
+- WorkspaceManagementScreen (Explorer): list/create/switch/delete workspaces with templates (Anchor: `app_ui/main.py:WorkspaceManagementScreen`).
 - ModuleManagementScreen: registry table and module install/uninstall via bus (Anchor: `app_ui/main.py:ModuleManagementScreen._refresh_registry`, `app_ui/main.py:ModuleManagementScreen._start_job`).
 - ContentManagementScreen: filterable tree, status pill, module actions, double-click opens part in browser (Anchor: `app_ui/main.py:ContentManagementScreen._apply_filter`, `app_ui/main.py:ContentManagementScreen._on_item_double_clicked`, `app_ui/main.py:StatusPill`).
+- ComponentManagementScreen (Explorer): component pack install/uninstall (Anchor: `app_ui/main.py:ComponentManagementScreen._run_job`).
+- ComponentSandboxScreen (Explorer): opens registered components + labhost components + pack components (Anchor: `app_ui/main.py:ComponentSandboxScreen.refresh_components`).
+- ComponentHostScreen: component viewer with close/back controls (Anchor: `app_ui/main.py:ComponentHostScreen.open_component`).
 - SettingsDialog: UI pack selection, reduced motion, experience profile (Anchor: `app_ui/main.py:SettingsDialog._save_settings`).
 - ModuleManagerScreen exists but is not wired into MainWindow navigation (Anchor: `app_ui/main.py:ModuleManagerScreen`, `app_ui/main.py:MainWindow.__init__`).
 
@@ -38,25 +79,27 @@
 - Status model: READY / NOT_INSTALLED / UNAVAILABLE (Anchor: `content_system/loader.py:STATUS_READY`, `content_system/loader.py:STATUS_NOT_INSTALLED`, `content_system/loader.py:STATUS_UNAVAILABLE`).
 - READY requires store manifest + all referenced assets in content_store (Anchor: `content_system/loader.py:_compute_part_status`, `content_system/loader.py:_collect_asset_paths`).
 - Lab metadata comes from `x_extensions.lab.lab_id` and is surfaced as `part["lab"]` (Anchor: `content_system/loader.py:_extract_lab_metadata`, `content_system/loader.py:get_part`).
+- Component metadata uses a top-level `component_id` on part manifests and is surfaced as `part["component_id"]` (Anchor: `content_system/loader.py:_extract_component_id`, `content_system/loader.py:get_part`).
 - `download_part()` copies part directory and referenced assets from repo to store (Anchor: `content_system/loader.py:download_part`).
 - ContentSystemAdapter in UI wraps content_system calls and converts exceptions into status records (Anchor: `app_ui/main.py:ContentSystemAdapter`).
 
 ## Labs system (plugins + LabHost + context)
 - LabPlugin contract and optional export/telemetry hooks (Anchor: `app_ui/labs/base.py:LabPlugin`).
 - Registered labs: gravity, projectile, electric_field, lens_ray, vector_add (Anchor: `app_ui/labs/registry.py`).
-- LabHost provisions policy/run context, guides, export actions, telemetry, and user prefs (Anchor: `app_ui/labs/host.py:LabHost`).
+- LabHost provisions policy/run context, guides, export actions, telemetry, workspace info, and user prefs (Anchor: `app_ui/labs/host.py:LabHost`).
 - LabContext + per-lab Grid/Axes prefs stored in `data/roaming/lab_prefs.json` (Anchor: `app_ui/labs/context.py:LabContext`, `app_ui/labs/prefs_store.py:PREFS_PATH`).
 - LabHost injects context via `set_context`, `set_lab_context`, or attribute fallback (Anchor: `app_ui/labs/host.py:_apply_lab_context`).
 - Guides use `x_extensions.guides` keyed by profile, with store-first asset resolution (Anchor: `app_ui/main.py:MainWindow._load_lab_guide_text`, `app_ui/main.py:read_asset_text`).
 - Gravity lab uses kernel backend with Python fallback (Anchor: `app_ui/labs/gravity_lab.py:KernelGravityBackend`, `app_ui/labs/gravity_lab.py:PythonGravityBackend`).
 - Projectile lab is pure-Python QPainter simulation (Anchor: `app_ui/labs/projectile_lab.py:ProjectileLabWidget`, `app_ui/labs/projectile_lab.py:ProjectileCanvas`).
-- Electric Field / Lens Ray / Vector Add use RenderCanvas with shared viewport and primitives (Anchor: `app_ui/labs/electric_field_lab.py`, `app_ui/labs/lens_ray_lab.py`, `app_ui/labs/vector_add_lab.py`).
+- Electric Field / Lens Ray / Vector Add use RenderCanvas with layered painters and shared helpers (Anchor: `app_ui/labs/renderkit/canvas.py:RenderCanvas`, `app_ui/labs/electric_field_lab.py`, `app_ui/labs/lens_ray_lab.py`, `app_ui/labs/vector_add_lab.py`).
+- Vector Add uses the subcomponent GridAxesRenderable for grid/axes drawing (Anchor: `component_runtime/subcomponents/render_grid_axes.py:GridAxesRenderable`, `app_ui/labs/vector_add_lab.py`).
 
 ## Rendering helpers (shared library)
 - Vec2 math helpers (Anchor: `app_ui/labs/shared/math2d.py:Vec2`).
 - World<->screen transforms (Anchor: `app_ui/labs/shared/viewport.py:ViewTransform`).
 - QPainter primitives for grid/axes/vectors (Anchor: `app_ui/labs/shared/primitives.py:draw_grid`, `app_ui/labs/shared/primitives.py:draw_axes`, `app_ui/labs/shared/primitives.py:draw_vector`).
-- RenderCanvas provides a layer-driven paint surface with its own transform (Anchor: `app_ui/labs/renderkit/canvas.py:RenderCanvas`).
+- RenderCanvas provides a layer-driven paint surface and its own transform cache (Anchor: `app_ui/labs/renderkit/canvas.py:RenderCanvas`).
 
 ## Runtime bus (topics + flows)
 - In-process bus with publish/subscribe/request, sticky topics, and debug output via `PHYSICSLAB_BUS_DEBUG=1` (Anchor: `runtime_bus/bus.py:RuntimeBus.publish`, `runtime_bus/bus.py:RuntimeBus.subscribe`, `runtime_bus/bus.py:BUS_DEBUG`).
@@ -64,6 +107,18 @@
 - Topic constants (Anchor: `runtime_bus/topics.py`).
 - Global bus instance via `get_global_bus()` (Anchor: `runtime_bus/bus.py:get_global_bus`, `app_ui/main.py:APP_BUS`).
 - UI registers a runtime bus diagnostics handler for `runtime.bus.report.request` (Anchor: `app_ui/main.py:_handle_bus_comm_report`, `runtime_bus/topics.py:RUNTIME_BUS_REPORT_REQUEST`).
+- UI relies on request/reply to Core Center for reports, inventory, jobs, runs, and workspaces (Anchor: `app_ui/main.py:SystemHealthScreen._refresh_report`, `app_ui/main.py:SystemHealthScreen._refresh_runs_list`, `app_ui/main.py:ModuleManagementScreen._start_job`, `app_ui/main.py:ContentManagementScreen._start_module_job`, `app_ui/main.py:ComponentManagementScreen._run_job`, `app_ui/main.py:WorkspaceManagementScreen._load_workspaces`).
+
+### Diagram: job lifecycle (code-verified)
+```mermaid
+flowchart TD
+  req["UI request()"] --> handler["core_center bus handler"]
+  handler --> job["job_manager.create_job()"]
+  job --> run["_run_job thread"]
+  run --> progress["job.progress publish"]
+  run --> done["job.completed publish (sticky)"]
+  done --> ui["UI bus subscriber + polling fallback"]
+```
 
 ## Core Center (optional; bus endpoints + jobs)
 - Optional import in UI; endpoints registered when available (Anchor: `app_ui/main.py:CORE_CENTER_BUS_ENDPOINTS`, `core_center/bus_endpoints.py:register_core_center_endpoints`).
@@ -72,9 +127,14 @@
 - Jobs run in background threads and record history in `data/roaming/jobs.json` (Anchor: `core_center/job_manager.py:create_job`, `core_center/job_manager.py:JOB_HISTORY_PATH`).
 - Storage report includes runs footprint (Anchor: `core_center/storage_report.py:generate_report`, `core_center/storage_manager.py:summarize_runs`).
 - Policy defaults + overrides (Anchor: `core_center/policy_manager.py:DEFAULT_POLICY`, `core_center/policy_manager.py:resolve_policy`).
-- Run directories allocated in `data/store/runs/<lab>/<run>` with retention (Anchor: `core_center/storage_manager.py:allocate_run_dir`, `core_center/storage_manager.py:enforce_run_retention`).
-- Endpoints: report, cleanup, policy, registry, run_dir allocation, module install/uninstall, jobs list/get (Anchor: `core_center/bus_endpoints.py:register_core_center_endpoints`).
+- Run directories allocated in the active workspace: `data/workspaces/<id>/runs/<lab>/<run>` with retention (Anchor: `core_center/storage_manager.py:allocate_run_dir`, `core_center/storage_manager.py:_runs_root`).
+- Runs inventory aggregates `runs` + `runs_local` within the active workspace (Anchor: `core_center/storage_manager.py:list_runs_inventory`).
+- Inventory endpoint returns installed modules, component packs, and UI packs (Anchor: `core_center/inventory.py:get_inventory_snapshot`).
+- Workspace endpoints support list/create/set/delete + templates list (Anchor: `core_center/bus_endpoints.py:_handle_workspace_list`, `core_center/bus_endpoints.py:_handle_workspace_create`).
+- Endpoints: report, cleanup, policy, registry, run_dir allocation, runs list/delete/prune, module install/uninstall, component pack install/uninstall, jobs list/get, inventory (Anchor: `core_center/bus_endpoints.py:register_core_center_endpoints`).
 - Sticky topics for report/cleanup are emitted via `_StickyBusProxy` (Anchor: `core_center/bus_endpoints.py:_StickyBusProxy`).
+- Job completion uses sticky `job.completed`, with timeouts enforcing terminal state (Anchor: `core_center/job_manager.py:_run_job`, `core_center/job_manager.py:_watch_job_timeout`).
+- UI includes polling fallbacks for job terminal state (Module/Content/Component Management) using `core.jobs.get` (Anchor: `app_ui/main.py:ModuleManagementScreen._poll_job_status`, `app_ui/main.py:ContentManagementScreen._poll_job_status`, `app_ui/main.py:ComponentManagementScreen._poll_job_status`).
 
 ## UI packs and theming
 - Startup applies UI pack via `apply_ui_config_styles` and `ui_system.manager` (Anchor: `app_ui/main.py:apply_ui_config_styles`, `ui_system/manager.py:resolve_pack`).
@@ -88,10 +148,26 @@
 - Registry: `data/roaming/registry.json` (Anchor: `core_center/registry.py:save_registry`).
 - Job history: `data/roaming/jobs.json` (Anchor: `core_center/job_manager.py:JOB_HISTORY_PATH`).
 - Lab prefs: `data/roaming/lab_prefs.json` (Anchor: `app_ui/labs/prefs_store.py:PREFS_PATH`).
-- Core run dirs: `data/store/runs/<lab>/<run>/run.json` (Anchor: `core_center/storage_manager.py:allocate_run_dir`).
-- Local fallback runs: `data/store/runs_local/<lab>/<run>/run.json` (Anchor: `app_ui/labs/host.py:_create_local_run_dir`).
+- Active workspace selector: `data/roaming/workspace.json` (Anchor: `core_center/workspace_manager.py:_active_path`).
+- Workspace roots: `data/workspaces/<id>/{runs,runs_local,cache,store,prefs}` (Anchor: `core_center/workspace_manager.py:_ensure_workspace_dirs`).
+- Workspace prefs seeds (if template applied): `data/workspaces/<id>/prefs/{workspace_config.json,lab_prefs.json,policy_overrides.json,pins.json}` (Anchor: `core_center/workspace_manager.py:TEMPLATE_SEED_FILES`).
+- Core run dirs: `data/workspaces/<id>/runs/<lab>/<run>/run.json` (Anchor: `core_center/storage_manager.py:allocate_run_dir`).
+- Local fallback runs: `data/workspaces/<id>/runs_local/<lab>/<run>/run.json` (Anchor: `app_ui/labs/host.py:_create_local_run_dir`).
 - Content repo/store roots: `content_repo/physics_v1`, `content_store/physics_v1` (Anchor: `content_system/loader.py:REPO_BASE`, `content_system/loader.py:STORE_BASE`).
 - UI pack roots: `ui_repo/ui_v1`, `ui_store/ui_v1` (Anchor: `ui_system/manager.py:list_packs`).
+- Component pack roots: `component_repo/component_v1/packs`, `component_store/component_v1/packs` (Anchor: `component_runtime/packs.py:REPO_ROOT`, `component_runtime/packs.py:STORE_ROOT`).
+- Workspace templates: `workspace_repo/templates/<template_id>/` (Anchor: `core_center/workspace_manager.py:TEMPLATES_ROOT`).
+
+### Diagram: workspace + runs layout (code-verified)
+```mermaid
+flowchart LR
+  active["data/roaming/workspace.json"] --> ws["data/workspaces/<id>/"]
+  ws --> runs["runs/<lab>/<run>/run.json"]
+  ws --> runs_local["runs_local/<lab>/<run>/run.json"]
+  ws --> prefs["prefs/ (seeded templates)"]
+  ws --> cache["cache/"]
+  ws --> store["store/ (future use)"]
+```
 
 ## Extension recipes (anchored)
 - Add a lab:
@@ -104,6 +180,13 @@
 - Add a UI pack:
   1) Create `ui_repo/ui_v1/packs/<id>/ui_pack_manifest.json` + QSS files (Anchor: `ui_system/manager.py:_load_manifest`).
   2) Set `data/roaming/ui_config.json` or use Settings dialog (Anchor: `app_ui/main.py:SettingsDialog._save_settings`).
+- Add a component pack (asset/config only):
+  1) Create `component_repo/component_v1/packs/<id>/component_pack_manifest.json` + assets (Anchor: `component_runtime/packs.py:_list_packs`).
+  2) Use built-in impls (`builtin:markdown_panel`, `builtin:lab_preset`) (Anchor: `component_runtime/registry.py:register_pack_components`).
+  3) Install via Core Center job endpoint (Anchor: `core_center/bus_endpoints.py:_handle_component_pack_install`).
+- Add a workspace template:
+  1) Create `workspace_repo/templates/<template_id>/template.json` and optional seed files (`workspace_config.json`, `lab_prefs.json`, `policy_overrides.json`, `pins.json`) (Anchor: `core_center/workspace_manager.py:TEMPLATE_SEED_FILES`).
+  2) Templates are listed via `core.workspace.templates.list.request` (Anchor: `core_center/bus_endpoints.py:_handle_workspace_templates`).
 - Add a Core Center endpoint:
   1) Add topic constant (Anchor: `runtime_bus/topics.py`).
   2) Register handler in `core_center/bus_endpoints.py`.
@@ -115,8 +198,12 @@
 - Content loader does not validate JSON against schemas (Anchor: `content_system/loader.py:_load_json`).
 - `schemas/part_manifest.schema.json` contains duplicate `allOf` keys (Anchor: `schemas/part_manifest.schema.json`).
 - `core_center/storage_report.py` has unreachable code after a `return` in `report_text` (Anchor: `core_center/storage_report.py:report_text`).
+- Workspace templates are seeded into `data/workspaces/<id>/prefs/`, but runtime policy + lab prefs still read from `data/roaming` (Anchor: `core_center/workspace_manager.py:_apply_template`, `core_center/policy_manager.py:_policy_path`, `app_ui/labs/prefs_store.py:PREFS_PATH`).
+- Lab prefs are global (not workspace-scoped) (Anchor: `app_ui/labs/prefs_store.py:PREFS_PATH`).
+- RenderCanvas uses its own transform cache; shared ViewTransform is used by labs but not enforced globally (Anchor: `app_ui/labs/renderkit/canvas.py:RenderCanvas`, `app_ui/labs/shared/viewport.py:ViewTransform`).
 - `content_store/physics_v1/assets/lab_viz/` is not present in the repo tree (direct repo reference: `content_store/physics_v1/assets/lab_viz`).
-- `_viz_canvas.py` exists but is not referenced by current lab code (Anchor: `app_ui/labs/_viz_canvas.py`, `rg -n "_viz_canvas" app_ui/labs` -> none).
+- `_viz_canvas.py` exists but is not referenced by current lab code (Anchor: `app_ui/labs/_viz_canvas.py`, `rg -n \"_viz_canvas\" app_ui/labs` -> none).
+- Component packs support only builtin implementations; no arbitrary code loading (Anchor: `component_runtime/registry.py:register_pack_components`).
 
 ## Milestones and versioning
 - Versioning convention used in commit messages:
@@ -125,17 +212,17 @@
   Anchor: `git log --oneline -n 60` (see Verification Appendix).
 
 ## Delta vs previous checkpoint
-- Added: LabContext and per-lab prefs (Grid/Axes) with persistence (Anchor: `app_ui/labs/context.py`, `app_ui/labs/prefs_store.py`, `app_ui/labs/host.py:_on_prefs_changed`).
-- Added: shared rendering helpers (Vec2, ViewTransform, painter primitives) (Anchor: `app_ui/labs/shared/*`).
-- Modified: LabHost context injection order (tries `set_context` then `set_lab_context`) (Anchor: `app_ui/labs/host.py:_apply_lab_context`).
-- Modified: Lab rendering description updated to shared primitives + RenderCanvas layers (Anchor: `app_ui/labs/electric_field_lab.py`, `app_ui/labs/lens_ray_lab.py`, `app_ui/labs/vector_add_lab.py`).
-- Modified: SystemHealth description now uses job history button (jobs list) rather than runtime bus communication report (Anchor: `app_ui/main.py:SystemHealthScreen._show_comm_report`).
-- Removed: claim that SVG sprites are required by current labs; current lab code does not call RenderKit sprite helpers (Anchor: `app_ui/labs/*_lab.py`, `app_ui/labs/renderkit/primitives.py`).
+- Added: Workspace Management screen, workspace templates, and workspace-backed run roots (Anchor: `app_ui/main.py:WorkspaceManagementScreen`, `core_center/workspace_manager.py:get_active_workspace`, `core_center/storage_manager.py:_runs_root`).
+- Added: Runs manager in System Health (list/delete/prune + bulk actions) (Anchor: `app_ui/main.py:SystemHealthScreen._refresh_runs_list`, `core_center/storage_manager.py:list_runs_inventory`).
+- Added: Component runtime + component packs with Component Management and Sandbox (Anchor: `component_runtime/registry.py`, `component_runtime/packs.py`, `app_ui/main.py:ComponentManagementScreen`, `app_ui/main.py:ComponentSandboxScreen`).
+- Modified: Core Center job manager now enforces timeouts and publishes sticky job completion (Anchor: `core_center/job_manager.py:_watch_job_timeout`, `core_center/job_manager.py:_run_job`).
+- Modified: Content parts can open components via `component_id` (Anchor: `content_system/loader.py:_extract_component_id`, `app_ui/main.py:ContentBrowserScreen._open_selected`).
 
 ## Legacy / Needs manual re-verify
 - ModuleManagerScreen behavior is not reachable through current navigation; if you intend to use it, wire it into MainWindow and re-verify its UI flow (Anchor: `app_ui/main.py:ModuleManagerScreen`).
 - Sprite-based lab visuals referenced in `content_repo/physics_v1/assets/lab_viz` are not used by current lab code; manual verification required if these assets are reintroduced (Anchor: `content_repo/physics_v1/assets/lab_viz`, `app_ui/labs/renderkit/primitives.py`).
 - Runtime bus diagnostics endpoint is registered, but no UI exposes it; manual verification required if you add a UI hook (Anchor: `app_ui/main.py:_handle_bus_comm_report`).
+- Workspace template seed files are copied into workspace prefs, but runtime consumption is not implemented; manual verification required if you wire templates into policy/prefs later (Anchor: `core_center/workspace_manager.py:_apply_template`).
 
 ## What to read next (file pointers)
 - Entry + routing: `app_ui/main.py`
@@ -144,9 +231,10 @@
 - Content loader: `content_system/loader.py`
 - Bus core: `runtime_bus/bus.py`, `runtime_bus/topics.py`
 - Core Center endpoints/jobs: `core_center/bus_endpoints.py`, `core_center/job_manager.py`
-- Core storage/policy: `core_center/storage_manager.py`, `core_center/storage_report.py`, `core_center/policy_manager.py`
+- Core storage/policy/workspaces: `core_center/storage_manager.py`, `core_center/storage_report.py`, `core_center/policy_manager.py`, `core_center/workspace_manager.py`
 - Content manifests: `content_repo/physics_v1/module_manifest.json`, `content_repo/physics_v1/sections/**/package_manifest.json`
 - UI packs: `ui_system/manager.py`, `ui_repo/ui_v1/packs/*/ui_pack_manifest.json`
+- Component packs: `component_runtime/packs.py`, `component_repo/component_v1/packs/*/component_pack_manifest.json`
 
 # Detailed Addendum (Checkpoint-ready)
 
@@ -202,6 +290,9 @@ ModuleManagerScreen includes a gravity-demo run preview that uses the kernel bri
 - Module Management -> `MainWindow._open_module_management()`.
 - Content Management -> `MainWindow._open_content_management()`.
 - System Health / Storage -> `MainWindow._open_diagnostics()`.
+- Workspace Management (Explorer) -> `MainWindow._open_workspace_management()`.
+- Component Management (Explorer) -> `MainWindow._open_component_management()`.
+- Component Sandbox (Explorer) -> `MainWindow._open_component_sandbox()`.
 - Settings -> `MainWindow._open_settings()`.
 
 ### Quick Start selection rules
@@ -210,9 +301,10 @@ ModuleManagerScreen includes a gravity-demo run preview that uses the kernel bri
 ### Back behavior
 - Screen Back buttons return to MainMenuScreen.
 - Lab Back returns to ContentBrowserScreen.
+- Esc triggers a back action when not inside a lab, modal dialog, or text input (Anchor: `app_ui/main.py:MainWindow._handle_escape_back`).
 
 ### Manual UI verification required
-- Confirm back navigation flows for each screen (Main Menu, Content Browser, System Health, Content Management).
+- Confirm back navigation flows for each screen (Main Menu, Content Browser, System Health, Content Management, Workspace Management).
 
 ## D) Asset pipeline and RenderKit resolution (explained)
 
@@ -274,6 +366,9 @@ Home buttons -> targets:
 - Module Management -> `MainWindow._open_module_management()`.
 - Content Management -> `MainWindow._open_content_management()`.
 - System Health / Storage -> `MainWindow._open_diagnostics()`.
+- Workspace Management -> `MainWindow._open_workspace_management()` (Explorer only).
+- Component Management -> `MainWindow._open_component_management()` (Explorer only).
+- Component Sandbox -> `MainWindow._open_component_sandbox()` (Explorer only).
 - Settings -> `MainWindow._open_settings()`.
 
 Quick Start behavior:
@@ -282,6 +377,7 @@ Quick Start behavior:
 Back behavior:
 - Screen Back buttons return to MainMenuScreen.
 - Lab Back returns to ContentBrowserScreen.
+- Esc triggers a back action when not in a lab, modal dialog, or text input (`MainWindow._handle_escape_back`).
 
 ## D) Asset pipeline and RenderKit resolution (FACTS ONLY)
 
@@ -299,47 +395,30 @@ Resolution:
 Caching:
 - `AssetCache` caches SVG renderers and pixmaps keyed by path/size/tint/DPI bucket.
 
+# Docs update changelog
+- Updated checkpoint to cover workspaces, templates, runs manager, and segmented System Health (Anchor: `core_center/workspace_manager.py`, `app_ui/main.py:SystemHealthScreen`).
+- Added component runtime + component packs coverage (Anchor: `component_runtime/registry.py`, `component_runtime/packs.py`).
+- Updated README and handbook for workspace-backed runs and component runtime (Anchors: `README.md`, `docs/handbook/app_handbook.md`).
+- Added architecture/boot/job/workspace diagrams (see above in this document).
+
 # Verification Appendix
 
-Timestamp: 2025-12-23T06:34:43.6075828+03:00
-Commit: 77b4895
+Timestamp: 2025-12-24T17:43:30.042215+00:00
+Commit: 089cb27
 
 Commands run:
-- `git rev-parse --short HEAD` -> `77b4895`
-- `git log --oneline -n 60` -> see command output below
-- `python -m py_compile app_ui/**/*.py runtime_bus/**/*.py content_system/**/*.py ui_system/**/*.py core_center/**/*.py` -> FAILED (`[Errno 22] Invalid argument: 'app_ui/**/*.py'`)
-- `python -m py_compile (Get-ChildItem -Recurse -Filter *.py app_ui, runtime_bus, content_system, ui_system, core_center | ForEach-Object { $_.FullName })` -> OK
-- `python -c "import app_ui.main; print('import ok')"` -> `import ok`
+- `git rev-parse --short HEAD` -> `089cb27`
+- `python -c "import pathlib,py_compile; [py_compile.compile(str(p),doraise=True) for p in pathlib.Path('.').rglob('*.py')]; print('py_compile OK')"` -> `py_compile OK`
+- `python -m app_ui.main` -> timed out after ~6s (GUI kept running)
 
-Command output: git log --oneline -n 60
-- 77b4895 feat(v4.4F): add LabContext + per-lab user prefs (grid/axes) via LabHost
-- 20faa90 refactor(v4.4E): standardize labs on shared viewport mapping
-- f7a463b refactor(v4.4E): unify viewport transforms via shared viewport
-- f2f397e chore(v4.4D): enforce LF via gitattributes
-- c18a5f5 fix(v4.4C): vector add lab ax undefined crash
-- f427aa5 refactor(v4.4B): migrate remaining labs to shared lab library
-- 105612a feat(v4.4B): add shared lab library folder (math2d/viewport/primitives)
-- 9fbc91b refactor(v4.4A): migrate vector add lab to shared_lib primitives
-- 38747a8 docs(v4.3h): verify and correct app_summary checkpoint
-- de3aaa0 feat(v4.3g): quick start launches lab directly instead of content browser
-- ded9cd4 feat(v4.3e): implement Module + Content Management screens
-- 6d7c443 feat(v4.3c): add lab RenderKit + governed asset resolver and upgrade new labs
-- 2518e2c feat(v4.3b): add Qt rendering canvases to new labs
-- 7629f11 fix(v4.3): guard None in new labs load_part/config parsing
-- 29f8213 feat(v4.3): recreate 3 labs and wire into content repo/store
-- 8775ab6 chore: align gemini content rule scope (content/docs/schemas only) (#3)
-- 4b953cd chore: align gemini content rule scope (content/docs/schemas only) (#2)
-- d330857 chore: checkpoint before V3 release
-- bbed3c9 V4.2: add Gemini content authoring rules
-- 0a7ecf8 V4.1A: Improve Content Browser default splitter sizing
-- 9a65900 feat: V3.4D add policy-gated lab export actions and Explorer telemetry hooks
-- dabb454 feat: V3.4C standardize lab part metadata with schema support
-- 514b99e feat: V3.4B add persistent job history and jobs report via bus
-- 5d0f944 feat: V3.4A enforce run retention and add run storage accounting
-- 22b1242 fix: V3.3F prevent duplicate module job subscriptions and reset UI state for repeated install/uninstall
-- e00cd1a fix: V3.3E marshal bus events to Qt thread and correct registry store entries after uninstall
-- ec9fd63 docs: V3.3D document V3 bus/governor features and add runtime state schemas
-- 4a9cd9b feat: V3.3C add System Health Explorer controls for local module install/uninstall with progress panel
+Manual UI verification required:
+- Launch app: `python -m app_ui.main`
+- Navigate Home -> Content Browser -> open a READY part
+- Open each lab (gravity, projectile, electric_field, lens_ray, vector_add) and confirm rendering
+- Verify LabHost guide panel + profile gating behavior (if present)
+- Verify grid/axes prefs toggles and persistence
+- System Health: Overview/Runs/Maintenance/Modules/Jobs tabs, runs delete/prune
+- Workspace Management: list/create/switch/delete workspaces, template list loads
 - 6ac02ba feat: V3.3B add core_center.demo_install CLI to trigger local module install/uninstall via runtime_bus
 - ecb2072 feat: V3.3A add local content module install/uninstall jobs (repo->store) with registry refresh
 - b05388a feat: V3.2J expand Core Center registry to track content modules, UI packs, and labs

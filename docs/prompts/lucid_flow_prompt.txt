@@ -9,6 +9,9 @@ UI lane (screens + UI containers):
 - Module Management
 - Content Management
 - System Health / Storage
+- Workspace Management (Explorer)
+- Component Management (Explorer)
+- Component Sandbox (Explorer)
 - Settings
 - LabHost
 - Lab Plugins: gravity, projectile, electric_field, lens_ray, vector_add
@@ -18,18 +21,23 @@ Services lane (runtime services):
 - Content System (content_system)
 - Runtime Bus (runtime_bus)
 - Core Center (core_center) [optional]
+- Component Runtime (component_runtime)
 - Kernel Bridge (ctypes) [optional, gravity only]
 
 Storage lane (data + packs + binary):
 - content_repo/physics_v1 (modules)
 - content_store/physics_v1 (installed modules/assets)
+- component_repo/component_v1/packs (component packs)
+- component_store/component_v1/packs (installed component packs)
 - ui_repo/ui_v1 (UI packs)
 - ui_store/ui_v1 (installed UI packs)
-- data/roaming (ui_config.json, experience_profile.json, policy.json, registry.json, jobs.json)
-- data/store/runs (per-run run.json)
-- data/store/runs_local (fallback runs)
+- data/roaming (ui_config.json, experience_profile.json, policy.json, registry.json, jobs.json, workspace.json)
+- data/workspaces/<id>/runs (per-run run.json)
+- data/workspaces/<id>/runs_local (fallback runs)
+- data/workspaces/<id>/prefs (seeded templates)
 - data/cache
 - data/dumps
+- workspace_repo/templates (template seeds)
 - kernel/target/release/physicslab_kernel.dll
 
 Key flows (label arrows; use solid for request/reply, dashed for events):
@@ -48,23 +56,31 @@ Key flows (label arrows; use solid for request/reply, dashed for events):
      - No -> install prompt
 4) Lab host runtime services:
    LabHost -> Runtime Bus (core.policy.get.request, core.storage.allocate_run_dir.request)
-   Runtime Bus -> Core Center (handlers) -> data/roaming + data/store/runs
+   Runtime Bus -> Core Center (handlers) -> data/roaming + data/workspaces/<id>/runs
    LabHost -> Decision: Core Center available?
-     - No -> data/store/runs_local (local run dir)
+     - No -> data/workspaces/<id>/runs_local (local run dir)
    LabHost -> Kernel Bridge -> kernel DLL (gravity only)
    Kernel Bridge -> Decision: DLL found?
      - No -> Python fallback (inside gravity lab)
 5) System Health / Storage (Educator/Explorer):
    System Health -> Runtime Bus (core.storage.report.request, core.cleanup.request)
-   Runtime Bus -> Core Center -> data/cache + data/dumps + data/store
+   Runtime Bus -> Core Center -> data/cache + data/dumps + data/workspaces/<id>
    Core Center -> Runtime Bus (core.storage.report.ready, core.cleanup.completed) [dashed]
    Explorer: System Health -> Runtime Bus (core.jobs.list.request) -> Core Center -> data/roaming/jobs.json
-6) Module install/uninstall (Explorer, local):
+   Runs tab: System Health -> Runtime Bus (core.runs.list/delete/prune) -> Core Center -> data/workspaces/<id>/runs
+6) Workspace management (Explorer):
+   Workspace Management -> Runtime Bus (core.workspace.list/get/set/create/delete/templates)
+   Runtime Bus -> Core Center -> data/workspaces + workspace_repo/templates
+7) Module install/uninstall (Explorer, local):
    System Health -> Runtime Bus (core.content.module.install.request / uninstall)
    Runtime Bus -> Core Center (job)
    Core Center -> content_repo -> content_store (copy/remove)
    Core Center -> data/roaming/registry.json
-7) Telemetry (Explorer + policy):
+8) Component packs (Explorer):
+   Component Management -> Runtime Bus (core.component_pack.install/uninstall)
+   Runtime Bus -> Core Center (job)
+   Core Center -> component_repo -> component_store (copy/remove)
+9) Telemetry (Explorer + policy):
    LabHost -> Runtime Bus (lab.telemetry) [dashed]
 
 Decision points (diamonds):

@@ -1,30 +1,33 @@
-# PhysicsLab V1 Scaffold
+# PhysicsLab (Workspace Sandbox)
 
-V1 focuses on delivering a single Physics subject pack via the Primary Mode schemas with a minimal offline pipeline.
+PhysicsLab is a PyQt6 desktop sandbox for learning physics, backed by a local Management Core (optional) and a runtime bus. It uses content packs, labs, and components with an active workspace model.
 
 ## Folder Overview
-- `schemas/` frozen JSON Schemas for V1 (do not edit).
-- `content_repo/` frozen reference Physics content pack.
-- `content_store/` staging area where new packs will be unpacked.
-- `content_system/` Python loader that ingests manifests and prepares runtime payloads.
-- `runtime_bus/` lightweight broker moving payloads between loader, kernel, UI, and diagnostics.
-- `diagnostics/` friendly event sink for schema or asset issues.
-- `app_ui/` shell UI for rendering text parts and the gravity demo preset.
-- `kernel/` Rust gravity-demo kernel that exports the Primary Mode DLL.
-- `docs/` optional planning notes for V1 decisions.
+- `schemas/` JSON Schemas for manifests and runtime state.
+- `content_repo/` canonical Physics content pack source.
+- `content_store/` installed content mirror (module installs land here).
+- `content_system/` loader that ingests manifests and prepares runtime payloads.
+- `runtime_bus/` in-process pub/sub + request/reply broker.
+- `core_center/` Management Core (jobs, inventory, runs, workspaces, policy).
+- `component_runtime/` component registry/host and component packs.
+- `component_repo/` + `component_store/` component pack source + installed mirror.
+- `workspace_repo/` workspace templates (seed files).
+- `app_ui/` PyQt6 UI, labs, and component host screens.
+- `ui_system/` + `ui_repo/` + `ui_store/` UI pack manager + QSS packs.
+- `kernel/` Rust gravity kernel DLL.
+- `docs/` checkpoint summaries, plans, and prompts.
 - `test_rust/` temporary Rust experiment, not the PhysicsLab kernel.
 
-## Next Steps
-1. Build the content loader pipeline (content_store -> content_system).
-2. Feed curated payloads into the UI (runtime_bus -> app_ui).
-3. Implement the actual kernel behaviors and wire diagnostics end-to-end.
-
-## V3 Runtime Notes
-- **Runtime Bus** – local pub/sub + request/reply broker (`runtime_bus/`); enable trace logging with `PHYSICSLAB_BUS_DEBUG=1`.
-- **System Health** – prefers Core Center endpoints when available (storage report, cleanup, module install), but still runs without Core Center.
-- **Policies** – overrides live in `data/roaming/policy.json`; resolved policy available via `core.policy.get.request`.
-- **Registry** – unified `data/roaming/registry.json`; fetch via `core.registry.get.request`.
-- **Run artifacts** – labs allocate `data/store/runs/<lab_id>/<run_id>/run.json` through `core.storage.allocate_run_dir.request`.
-- **Local module install/uninstall** – repo → store copy through `core.content.module.install.request` / `.uninstall.request`. Demo CLI:
+## Quick Start (dev)
+- Run the app: `python -m app_ui.main`
+- Optional Core Center demos:
+  - `python -m core_center.demo_report`
   - `python -m core_center.demo_install --action install --module physics_v1`
-  - `python -m core_center.demo_install --action uninstall --module physics_v1`
+
+## Runtime Notes (current)
+- **Runtime Bus**: local pub/sub + request/reply (`runtime_bus/`); enable trace logging with `PHYSICSLAB_BUS_DEBUG=1`.
+- **System Health**: segmented UI (Overview/Runs/Maintenance/Modules/Jobs) using Core Center endpoints when available.
+- **Workspaces**: active workspace stored in `data/roaming/workspace.json`; runs live under `data/workspaces/<id>/runs/<lab>/<run>/run.json`.
+- **Policies**: overrides live in `data/roaming/policy.json`; resolved policy via `core.policy.get.request`.
+- **Registry/Inventory**: `data/roaming/registry.json` and `core.inventory.get.request`.
+- **Component Packs**: installable via Core Center job endpoints to `component_store/component_v1/packs/`.
