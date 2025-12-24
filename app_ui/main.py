@@ -19,6 +19,129 @@ from .widgets.app_header import AppHeader
 from .widgets.workspace_selector import WorkspaceSelector
 from diagnostics.fs_ops import safe_copytree, safe_rmtree
 
+DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
+DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _agent_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: Dict[str, Any]) -> None:
+    # region agent log
+    try:
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as _fh:
+            _fh.write(
+                json.dumps(
+                    {
+                        "sessionId": "debug-session",
+                        "runId": run_id,
+                        "hypothesisId": hypothesis_id,
+                        "location": location,
+                        "message": message,
+                        "data": data,
+                        "timestamp": int(time.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # endregion
+
+
+def _workspace_prefs_root_from_paths(paths: Dict[str, Any]) -> Path:
+    prefs = paths.get("prefs")
+    if prefs:
+        return Path(prefs)
+    root = paths.get("root")
+    base = Path(root) if root else Path("data/workspaces/default")
+    return Path(base) / "prefs"
+
+
+def _workspace_prefs_root_from_dir(workspace_dir: str | Path) -> Path:
+    root = Path(workspace_dir)
+    return root / "prefs"
+
+
+def _workspace_config_path(prefs_root: Path) -> Path:
+    return prefs_root / "workspace_config.json"
+
+
+def _load_workspace_config_from_root(prefs_root: Path) -> Dict[str, Any]:
+    path = _workspace_config_path(prefs_root)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_workspace_config_to_root(prefs_root: Path, config: Dict[str, Any]) -> None:
+    path = _workspace_config_path(prefs_root)
+    try:
+        prefs_root.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _request_inventory_snapshot(bus) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    if not bus:
+        return None, "runtime bus unavailable"
+    try:
+        response = bus.request(
+            BUS_INVENTORY_REQUEST,
+            {},
+            source="app_ui",
+            timeout_ms=1500,
+        )
+    except Exception as exc:
+        return None, str(exc)
+    if not response.get("ok"):
+        return None, response.get("error") or "inventory_failed"
+    return response.get("inventory") or {}, None
+
+
+class WorkspaceComponentPolicy:
+    def __init__(self) -> None:
+        self.enabled_pack_ids: set[str] = set()
+        self.available_pack_ids: set[str] = set()
+        self.disabled_component_ids: set[str] = set()
+
+    def update(
+        self,
+        *,
+        enabled_pack_ids: set[str],
+        available_pack_ids: set[str],
+        disabled_component_ids: set[str],
+    ) -> None:
+        self.enabled_pack_ids = set(enabled_pack_ids)
+        self.available_pack_ids = set(available_pack_ids)
+        self.disabled_component_ids = set(disabled_component_ids)
+
+    def is_pack_enabled(self, pack_id: Optional[str]) -> bool:
+        if not pack_id:
+            return True
+        if not self.enabled_pack_ids:
+            return pack_id in self.available_pack_ids if self.available_pack_ids else True
+        return pack_id in self.enabled_pack_ids
+
+    def is_component_enabled(self, component_id: Optional[str]) -> bool:
+        if not component_id:
+            return True
+        return component_id not in self.disabled_component_ids
+
+
+_WORKSPACE_COMPONENT_POLICY: Optional[WorkspaceComponentPolicy] = None
+
+
+def _set_global_component_policy(policy: WorkspaceComponentPolicy) -> None:
+    global _WORKSPACE_COMPONENT_POLICY
+    _WORKSPACE_COMPONENT_POLICY = policy
+
+
+def _get_global_component_policy() -> Optional[WorkspaceComponentPolicy]:
+    return _WORKSPACE_COMPONENT_POLICY
+
 
 def _ensure_safe_font(app: QtWidgets.QApplication, min_point_size: int = 10) -> None:
     try:
@@ -239,6 +362,7 @@ def apply_ui_config_styles(app: QtWidgets.QApplication) -> bool:
 STATUS_READY = "READY"
 STATUS_NOT_INSTALLED = "NOT_INSTALLED"
 STATUS_UNAVAILABLE = "UNAVAILABLE"
+WORKSPACE_DISABLED_REASON = "Disabled by workspace. Enable pack in Workspace Management."
 
 
 class ContentSystemAdapter:
@@ -748,6 +872,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         open_component,
         *,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+        component_policy_provider: Optional[Callable[[], "WorkspaceComponentPolicy"]] = None,
     ):
         super().__init__()
         self.adapter = adapter
@@ -758,6 +883,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         self.current_part_id: Optional[str] = None
         self.current_part_info: Optional[Dict] = None
         self.current_part_detail: Optional[Dict] = None
+        self.component_policy_provider = component_policy_provider
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -829,6 +955,20 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         self.install_thread: Optional[QtCore.QThread] = None
         self.refresh_tree()
 
+    def _component_policy(self) -> Optional[WorkspaceComponentPolicy]:
+        if self.component_policy_provider:
+            try:
+                return self.component_policy_provider()
+            except Exception:
+                return None
+        return _get_global_component_policy()
+
+    def _is_component_enabled(self, component_id: Optional[str]) -> bool:
+        policy = self._component_policy()
+        if policy is None:
+            return True
+        return policy.is_component_enabled(component_id)
+
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
         if self._splitter_initialized:
@@ -856,6 +996,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         if not module:
             QtWidgets.QMessageBox.warning(self, "Content", data.get("reason") or "Module data unavailable.")
             return
+        disabled_parts: List[str] = []
         module_label = self._display_name(module.get("title"), module.get("module_id"), "Module")
         module_item = QtWidgets.QTreeWidgetItem([module_label, data.get("status", "")])
         module_item.setToolTip(0, module_label)
@@ -875,7 +1016,16 @@ class ContentBrowserScreen(QtWidgets.QWidget):
                 sec_item.addChild(pkg_item)
                 for part in package.get("parts", []):
                     part_label = self._display_name(part.get("title"), part.get("part_id"), "Part")
-                    part_item = QtWidgets.QTreeWidgetItem([part_label, part.get("status")])
+                    status = part.get("status")
+                    reason = part.get("reason")
+                    component_id = part.get("component_id")
+                    workspace_disabled = False
+                    if component_id and not self._is_component_enabled(component_id):
+                        status = STATUS_UNAVAILABLE
+                        reason = WORKSPACE_DISABLED_REASON
+                        workspace_disabled = True
+                        disabled_parts.append(part.get("part_id") or component_id)
+                    part_item = QtWidgets.QTreeWidgetItem([part_label, status])
                     part_item.setToolTip(0, part_label)
                     part_item.setData(
                         0,
@@ -886,13 +1036,23 @@ class ContentBrowserScreen(QtWidgets.QWidget):
                             "section_id": section.get("section_id"),
                             "package_id": package.get("package_id"),
                             "part_id": part.get("part_id"),
-                            "status": part.get("status"),
-                            "reason": part.get("reason"),
+                            "status": status,
+                            "reason": reason,
                             "lab_id": (part.get("lab") or {}).get("lab_id"),
+                            "component_id": component_id,
+                            "workspace_disabled": workspace_disabled,
                         },
                     )
                     pkg_item.addChild(part_item)
         self.tree.expandAll()
+        if disabled_parts:
+            _agent_debug_log(
+                "workspace",
+                "H_WS_PART",
+                "app_ui/main.py:ContentBrowserScreen.refresh_tree",
+                "parts_marked_disabled",
+                {"count": len(disabled_parts), "sample": disabled_parts[:3]},
+            )
         if self.current_part_id:
             if not self._reselect_part(self.current_part_id):
                 self._clear_details()
@@ -924,10 +1084,20 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         part_id = data.get("part_id")
         self.current_part_id = part_id
         self.detail_title.setText(f"Part {part_id}")
-        self.detail_status.setText(f"Status: {data.get('status')}")
-        self.detail_reason.setText(f"Reason: {data.get('reason') or '—'}")
-        self.install_button.setEnabled(data.get("status") != STATUS_READY)
-        self.open_button.setEnabled(data.get("status") == STATUS_READY)
+        status = data.get("status")
+        reason = data.get("reason") or "—"
+        workspace_disabled = bool(data.get("workspace_disabled"))
+        if workspace_disabled:
+            status = STATUS_UNAVAILABLE
+            reason = WORKSPACE_DISABLED_REASON
+        self.detail_status.setText(f"Status: {status}")
+        self.detail_reason.setText(f"Reason: {reason}")
+        if workspace_disabled:
+            self.install_button.setEnabled(False)
+            self.open_button.setEnabled(False)
+        else:
+            self.install_button.setEnabled(status != STATUS_READY)
+            self.open_button.setEnabled(status == STATUS_READY)
 
         detail = self.adapter.get_part(part_id)
         self.current_part_info = detail
@@ -1032,6 +1202,9 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         if component_id:
             if detail.get("status") != STATUS_READY:
                 QtWidgets.QMessageBox.information(self, "Open", "Install this part first.")
+                return
+            if not self._is_component_enabled(component_id):
+                QtWidgets.QMessageBox.information(self, "Open", WORKSPACE_DISABLED_REASON)
                 return
             self.open_component(component_id, self.current_part_id, manifest, detail)
             return
@@ -2607,6 +2780,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self._job_poll_started_ms: Optional[float] = None
         self._job_poll_timeout_ms: int = 30000
         self._job_poll_timeout_ms: int = 30000
+        self.component_policy_provider = component_policy_provider
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -3150,6 +3324,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         bus=None,
         *,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+        on_packs_changed: Optional[Callable[[], None]] = None,
     ):
         super().__init__()
         self.on_back = on_back
@@ -3163,6 +3338,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self._job_poll_timer: Optional[QtCore.QTimer] = None
         self._job_poll_deadline: float = 0.0
         self._installed_pack_ids: set[str] = set()
+        self.on_packs_changed = on_packs_changed
         self._bus_available = bool(self.bus)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -3269,6 +3445,9 @@ class ComponentManagementScreen(QtWidgets.QWidget):
             item = QtWidgets.QListWidgetItem(label)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, pack_id)
             self.store_list.addItem(item)
+        if inv_ok and not self.pending_job_id:
+            self.install_btn.setEnabled(True)
+            self.uninstall_btn.setEnabled(True)
 
     def _install_selected(self) -> None:
         pack_id = _selected_pack_id(self.repo_list)
@@ -3349,8 +3528,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         if component_registry is None or component_packs is None:
             return
         try:
-            pack_manifests = component_packs.load_installed_packs()
-            component_registry.register_pack_components(pack_manifests)
+            component_packs.load_installed_packs()
         except Exception:
             pass
 
@@ -3539,6 +3717,11 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self._set_job_state(job_id=None, pack_id=None, action=None, running=False)
         self._refresh_registry()
         self.refresh()
+        if self.on_packs_changed:
+            try:
+                self.on_packs_changed()
+            except Exception:
+                pass
 
     def _set_banner(self, text: str) -> None:
         if not text:
@@ -3638,6 +3821,23 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         templates_layout.addWidget(self.template_status)
         layout.addWidget(templates_box)
 
+        packs_box = QtWidgets.QGroupBox("Component Packs")
+        packs_layout = QtWidgets.QVBoxLayout(packs_box)
+        self.pack_tree = QtWidgets.QTreeWidget()
+        self.pack_tree.setColumnCount(2)
+        self.pack_tree.setHeaderLabels(["Pack", "Version"])
+        pack_header = self.pack_tree.header()
+        pack_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        pack_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.pack_tree.itemChanged.connect(self._on_pack_item_changed)
+        packs_layout.addWidget(self.pack_tree, stretch=1)
+        self.pack_status = QtWidgets.QLabel("")
+        self.pack_status.setStyleSheet("color: #555;")
+        packs_layout.addWidget(self.pack_status)
+        layout.addWidget(packs_box)
+        self._pack_syncing = False
+        self._pack_context: Dict[str, Any] = {}
+
         self.refresh()
 
     def refresh(self) -> None:
@@ -3662,6 +3862,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             self.table.addTopLevelItem(item)
         self.active_label.setText(f"Active workspace: {active_id or 'unknown'}")
         self._update_buttons()
+        self._refresh_pack_controls()
 
     def _load_templates(self) -> list[Dict[str, Any]]:
         if not self.bus:
@@ -3731,6 +3932,181 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self.set_active_btn.setEnabled(bool(self.bus and has_ws and not active))
         self.delete_btn.setEnabled(bool(self.bus and has_ws and not active))
         self.create_btn.setEnabled(bool(self.bus))
+        self._refresh_pack_controls()
+
+    def _refresh_pack_controls(self) -> None:
+        if not hasattr(self, "pack_tree"):
+            return
+        self._pack_syncing = True
+        self.pack_tree.clear()
+        self.pack_tree.setEnabled(False)
+        self.pack_status.setText("Select a workspace to edit component packs.")
+        self._pack_context = {}
+        ws = self._selected_workspace() or self._active_workspace()
+        if not ws:
+            self._pack_syncing = False
+            return
+        prefs_root = self._prefs_root(ws)
+        if prefs_root is None:
+            self.pack_status.setText("Workspace prefs unavailable.")
+            self._pack_syncing = False
+            return
+        inventory, error = _request_inventory_snapshot(self.bus)
+        if inventory is None:
+            self.pack_status.setText(error or "Inventory unavailable.")
+            self._pack_syncing = False
+            return
+        packs = inventory.get("component_packs") or []
+        available_ids = {
+            str(pack.get("id") or "").strip()
+            for pack in packs
+            if pack.get("id")
+        }
+        if not packs:
+            self.pack_status.setText("No installed component packs.")
+            self._pack_syncing = False
+            return
+        config = self._load_workspace_config(ws)
+        enabled_set = self._resolve_workspace_enabled_packs_from_config(config, available_ids)
+        for pack in packs:
+            pack_id = str(pack.get("id") or "").strip()
+            if not pack_id:
+                continue
+            label = pack.get("name") or pack_id
+            version = pack.get("version") or ""
+            item = QtWidgets.QTreeWidgetItem([f"{label} ({pack_id})", version])
+            item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+            state = (
+                QtCore.Qt.CheckState.Checked
+                if pack_id in enabled_set
+                else QtCore.Qt.CheckState.Unchecked
+            )
+            item.setCheckState(0, state)
+            item.setData(
+                0,
+                QtCore.Qt.ItemDataRole.UserRole,
+                {"workspace_id": ws.get("id"), "pack_id": pack_id},
+            )
+            self.pack_tree.addTopLevelItem(item)
+        self.pack_tree.setEnabled(True)
+        self.pack_status.setText(
+            f"Workspace '{ws.get('id') or '?'}': {len(enabled_set)}/{len(available_ids)} packs enabled."
+        )
+        self._pack_context = {
+            "workspace": ws,
+            "available_ids": available_ids,
+            "prefs_root": prefs_root,
+        }
+        self._pack_syncing = False
+
+    def _resolve_workspace_enabled_packs_from_config(
+        self, config: Dict[str, Any], available_ids: set[str]
+    ) -> set[str]:
+        value = config.get("enabled_component_packs")
+        if isinstance(value, list):
+            return {str(entry) for entry in value if str(entry) in available_ids}
+        return set(available_ids)
+
+    def _load_workspace_config(self, workspace: Dict[str, Any]) -> Dict[str, Any]:
+        prefs_root = self._prefs_root(workspace)
+        if prefs_root is None:
+            return {}
+        return _load_workspace_config_from_root(prefs_root)
+
+    def _save_workspace_config(self, workspace: Dict[str, Any], config: Dict[str, Any]) -> None:
+        prefs_root = self._prefs_root(workspace)
+        if prefs_root is None:
+            return
+        _save_workspace_config_to_root(prefs_root, config)
+
+    def _update_workspace_pack_setting(
+        self,
+        workspace: Dict[str, Any],
+        prefs_root: Path,
+        pack_id: str,
+        enabled: bool,
+        available_ids: set[str],
+    ) -> None:
+        config = _load_workspace_config_from_root(prefs_root)
+        enabled_set = self._resolve_workspace_enabled_packs_from_config(config, available_ids)
+        changed = False
+        if enabled:
+            if pack_id not in enabled_set:
+                enabled_set.add(pack_id)
+                changed = True
+        else:
+            if pack_id in enabled_set:
+                enabled_set.discard(pack_id)
+                changed = True
+        if not changed:
+            return
+        if len(enabled_set) == len(available_ids):
+            config.pop("enabled_component_packs", None)
+        else:
+            config["enabled_component_packs"] = sorted(enabled_set)
+        _save_workspace_config_to_root(prefs_root, config)
+        _agent_debug_log(
+            "workspace",
+            "H_WS_TOGGLE",
+            "app_ui/main.py:WorkspaceManagementScreen._update_workspace_pack_setting",
+            "pack_toggle",
+            {
+                "workspace_id": workspace.get("id"),
+                "pack_id": pack_id,
+                "enabled": enabled,
+                "enabled_count": len(enabled_set),
+                "total": len(available_ids),
+            },
+        )
+        if workspace.get("active"):
+            active_info = self._fetch_active_workspace_info()
+            if active_info:
+                self.on_workspace_changed(active_info)
+        self._refresh_pack_controls()
+
+    def _fetch_active_workspace_info(self) -> Optional[Dict[str, Any]]:
+        if not self.bus:
+            return None
+        try:
+            response = self.bus.request(
+                BUS_WORKSPACE_GET_ACTIVE_REQUEST,
+                {},
+                source="app_ui",
+                timeout_ms=1500,
+            )
+        except Exception:
+            return None
+        if response.get("ok"):
+            workspace = response.get("workspace")
+            if isinstance(workspace, dict):
+                return workspace
+        return None
+
+    def _on_pack_item_changed(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
+        if self._pack_syncing:
+            return
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        pack_id = data.get("pack_id")
+        context = self._pack_context or {}
+        workspace = context.get("workspace")
+        prefs_root = context.get("prefs_root")
+        available_ids = context.get("available_ids") or set()
+        workspace_id = data.get("workspace_id")
+        if (
+            not pack_id
+            or not workspace
+            or prefs_root is None
+            or (workspace_id and workspace_id != workspace.get("id"))
+        ):
+            return
+        enabled = item.checkState(0) == QtCore.Qt.CheckState.Checked
+        self._update_workspace_pack_setting(
+            workspace,
+            prefs_root,
+            pack_id,
+            enabled,
+            set(available_ids),
+        )
 
     def _create_workspace(self) -> None:
         if not self.bus:
@@ -4083,6 +4459,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         *,
         bus=None,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+        component_policy_provider: Optional[Callable[[], "WorkspaceComponentPolicy"]] = None,
     ):
         super().__init__()
         self.adapter = adapter
@@ -4203,6 +4580,20 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self._tree_data: Optional[Dict[str, Any]] = None
         self.refresh_tree()
 
+    def _component_policy(self) -> Optional[WorkspaceComponentPolicy]:
+        if self.component_policy_provider:
+            try:
+                return self.component_policy_provider()
+            except Exception:
+                return None
+        return _get_global_component_policy()
+
+    def _is_component_enabled(self, component_id: Optional[str]) -> bool:
+        policy = self._component_policy()
+        if policy is None:
+            return True
+        return policy.is_component_enabled(component_id)
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self._unsubscribe_all()
         super().closeEvent(event)
@@ -4251,6 +4642,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
             return
 
         filter_mode = self.filter_combo.currentText()
+        disabled_parts: List[str] = []
 
         def part_allowed(status: str) -> bool:
             if filter_mode == "Installed only":
@@ -4285,6 +4677,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
                     status = part.get("status")
                     if not part_allowed(status):
                         continue
+                    reason = part.get("reason")
+                    component_id = part.get("component_id")
+                    workspace_disabled = False
+                    if component_id and not self._is_component_enabled(component_id):
+                        status = STATUS_UNAVAILABLE
+                        reason = WORKSPACE_DISABLED_REASON
+                        workspace_disabled = True
+                        disabled_parts.append(part.get("part_id") or component_id)
                     part_item = QtWidgets.QTreeWidgetItem(
                         [self._display_name(part.get("title"), part.get("part_id"), "Part"), status]
                     )
@@ -4296,7 +4696,9 @@ class ContentManagementScreen(QtWidgets.QWidget):
                             "part_id": part.get("part_id"),
                             "module_id": module.get("module_id"),
                             "status": status,
-                            "reason": part.get("reason"),
+                            "reason": reason,
+                            "component_id": component_id,
+                            "workspace_disabled": workspace_disabled,
                             "module_status": module_status,
                         },
                     )
@@ -4314,6 +4716,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
             self.tree.expandAll()
         else:
             self._set_status("No installed modules yet. Install from Module Management.")
+        if disabled_parts:
+            _agent_debug_log(
+                "workspace",
+                "H_WS_PART",
+                "app_ui/main.py:ContentManagementScreen._build_tree",
+                "parts_marked_disabled",
+                {"count": len(disabled_parts), "sample": disabled_parts[:3]},
+            )
         self._clear_details()
 
     def _apply_filter(self) -> None:
@@ -4331,16 +4741,22 @@ class ContentManagementScreen(QtWidgets.QWidget):
             part_id = data.get("part_id")
             status = data.get("status") or ""
             reason = data.get("reason") or "Not installed."
+            workspace_disabled = bool(data.get("workspace_disabled"))
+            if workspace_disabled:
+                status = STATUS_UNAVAILABLE
+                reason = WORKSPACE_DISABLED_REASON
             self.detail_title.setText(f"Part {part_id}")
             self.detail_status_pill.set_status(status)
             self.detail_meta.setText(f"Module: {data.get('module_id') or 'physics'}")
-            if status == STATUS_READY:
+            if workspace_disabled:
+                self.detail_action.setText("Action: Enable pack in Workspace Management.")
+            elif status == STATUS_READY:
                 self.detail_action.setText("Action: Open in Content Browser or Uninstall Module.")
             else:
                 self.detail_action.setText("Action: Install Module.")
             self.detail_hint.setText(f"Reason: {reason}")
             self.install_part_btn.setVisible(True)
-            self.install_part_btn.setEnabled(status != STATUS_READY)
+            self.install_part_btn.setEnabled(not workspace_disabled and status != STATUS_READY)
             self.install_module_btn.setVisible(True)
             self.uninstall_module_btn.setVisible(True)
             self.pending_module_id = data.get("module_id")
@@ -4385,10 +4801,16 @@ class ContentManagementScreen(QtWidgets.QWidget):
             return
         part_id = data.get("part_id")
         if part_id and self.on_open_part:
+            if data.get("workspace_disabled"):
+                QtWidgets.QMessageBox.information(self, "Workspace", WORKSPACE_DISABLED_REASON)
+                return
             self.on_open_part(part_id)
 
     def _install_part(self) -> None:
         if not self.current_selection or self.current_selection.get("type") != "part":
+            return
+        if self.current_selection.get("workspace_disabled"):
+            QtWidgets.QMessageBox.information(self, "Workspace", WORKSPACE_DISABLED_REASON)
             return
         if self.install_thread:
             return
@@ -4804,6 +5226,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
                 self.status_label.setText("Workspace changed. Reopen a component to refresh context.")
             except Exception:
                 pass
+        self.refresh_components()
 
     def refresh_components(self) -> None:
         self.component_list.clear()
@@ -4815,11 +5238,11 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             component_registry.register_lab_components(lab_registry)
         except Exception:
             pass
+        policy = _get_global_component_policy()
         pack_manifests = []
         if component_packs is not None:
             try:
                 pack_manifests = component_packs.load_installed_packs()
-                component_registry.register_pack_components(pack_manifests)
             except Exception:
                 pack_manifests = []
         registry = component_registry.get_registry()
@@ -4838,6 +5261,8 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             if not isinstance(manifest, dict):
                 continue
             pack_id = manifest.get("pack_id") or "pack"
+            if policy and not policy.is_pack_enabled(pack_id):
+                continue
             components = manifest.get("components")
             if not isinstance(components, list):
                 continue
@@ -5004,11 +5429,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lab_widget: Optional[QtWidgets.QWidget] = None
         self.lab_host_widget: Optional[QtWidgets.QWidget] = None
         self.workspace_info: Dict[str, Any] = self._ensure_workspace_context()
+        self.workspace_component_policy = WorkspaceComponentPolicy()
+        _set_global_component_policy(self.workspace_component_policy)
+        self.workspace_config: Dict[str, Any] = {}
         self._workspace_selectors: list[WorkspaceSelector] = []
         self._workspace_event_sub: Optional[str] = None
         self._workspace_event_bridge = _BusDispatchBridge(self)
         self._esc_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape), self)
         self._esc_shortcut.activated.connect(self._handle_escape_back)
+
+        self._load_active_workspace_config()
+        self._reload_workspace_components()
 
         selector_factory = self._make_workspace_selector
 
@@ -5036,6 +5467,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_lab,
             self._open_component_from_part,
             workspace_selector_factory=selector_factory,
+            component_policy_provider=self._get_component_policy,
         )
         self.system_health = SystemHealthScreen(
             self._show_main_menu,
@@ -5049,9 +5481,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_content_browser_from_management,
             bus=APP_BUS,
             workspace_selector_factory=selector_factory,
+            component_policy_provider=self._get_component_policy,
         )
         self.component_management = ComponentManagementScreen(
-            self._show_main_menu, bus=APP_BUS, workspace_selector_factory=selector_factory
+            self._show_main_menu,
+            bus=APP_BUS,
+            workspace_selector_factory=selector_factory,
+            on_packs_changed=self._reload_workspace_components,
         )
         self.workspace_management = WorkspaceManagementScreen(
             self._show_main_menu,
@@ -5067,18 +5503,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.component_host = ComponentHostScreen(
             self._show_content_browser, workspace_selector_factory=selector_factory
         )
-
-        if component_registry is not None:
-            try:
-                component_registry.register_lab_components(lab_registry)
-            except Exception:
-                pass
-            if component_packs is not None:
-                try:
-                    pack_manifests = component_packs.load_installed_packs()
-                    component_registry.register_pack_components(pack_manifests)
-                except Exception:
-                    pass
 
         self.stacked.addWidget(self.main_menu)
         self.stacked.addWidget(self.content_browser)
@@ -5176,6 +5600,100 @@ class MainWindow(QtWidgets.QMainWindow):
         if incoming_id and current_id == incoming_id:
             self._refresh_workspace_selectors()
         self._on_workspace_changed(workspace, notify_bus=False)
+
+    def _get_component_policy(self) -> WorkspaceComponentPolicy:
+        return self.workspace_component_policy
+
+    def _active_workspace_prefs_root(self) -> Path:
+        paths = self.workspace_info.get("paths") if isinstance(self.workspace_info, dict) else None
+        if isinstance(paths, dict) and paths:
+            return _workspace_prefs_root_from_paths(paths)
+        workspace_path = ""
+        if isinstance(self.workspace_info, dict):
+            workspace_path = self.workspace_info.get("path") or ""
+        if workspace_path:
+            return _workspace_prefs_root_from_dir(workspace_path)
+        workspace_id = (self.workspace_info or {}).get("id") or "default"
+        return Path("data") / "workspaces" / str(workspace_id) / "prefs"
+
+    def _load_active_workspace_config(self) -> None:
+        prefs_root = self._active_workspace_prefs_root()
+        self.workspace_config = _load_workspace_config_from_root(prefs_root)
+
+    def _resolve_enabled_pack_ids(self, available_pack_ids: set[str]) -> set[str]:
+        config_value = (self.workspace_config or {}).get("enabled_component_packs")
+        if isinstance(config_value, list):
+            normalized = {str(pack_id) for pack_id in config_value if str(pack_id) in available_pack_ids}
+            return normalized
+        return set(available_pack_ids)
+
+    def _reload_workspace_components(self) -> None:
+        try:
+            manifests = component_packs.load_installed_packs()
+        except Exception:
+            manifests = []
+        pack_components: Dict[str, List[str]] = {}
+        for entry in manifests:
+            manifest = entry.get("manifest") if isinstance(entry, dict) else None
+            if not isinstance(manifest, dict):
+                continue
+            pack_id = str(manifest.get("pack_id") or "").strip()
+            if not pack_id:
+                continue
+            component_ids: List[str] = []
+            for component in manifest.get("components") or []:
+                if not isinstance(component, dict):
+                    continue
+                component_id = component.get("component_id")
+                if component_id:
+                    component_ids.append(str(component_id))
+            pack_components[pack_id] = component_ids
+        available_pack_ids = set(pack_components.keys())
+        inventory_snapshot, inventory_error = _request_inventory_snapshot(APP_BUS)
+        inventory_available = inventory_snapshot is not None and not inventory_error
+        if inventory_snapshot:
+            inv_ids = {
+                str(item.get("id") or "").strip()
+                for item in inventory_snapshot.get("component_packs") or []
+                if item.get("id")
+            }
+            if inv_ids:
+                available_pack_ids &= inv_ids
+        enabled_pack_ids = self._resolve_enabled_pack_ids(available_pack_ids)
+        filtered_manifests = [
+            entry
+            for entry in manifests
+            if str((entry.get("manifest") or {}).get("pack_id") or "").strip() in enabled_pack_ids
+        ]
+        try:
+            component_registry.register_lab_components(lab_registry)
+        except Exception:
+            pass
+        component_registry.register_pack_components(filtered_manifests)
+        disabled_components = {
+            component_id
+            for pack_id, components in pack_components.items()
+            if pack_id not in enabled_pack_ids
+            for component_id in components
+        }
+        self.workspace_component_policy.update(
+            enabled_pack_ids=enabled_pack_ids,
+            available_pack_ids=available_pack_ids,
+            disabled_component_ids=disabled_components,
+        )
+        _agent_debug_log(
+            "workspace",
+            "H_WS_PACKS",
+            "app_ui/main.py:MainWindow._reload_workspace_components",
+            "policy_applied",
+            {
+                "workspace_id": (self.workspace_info or {}).get("id"),
+                "available_count": len(available_pack_ids),
+                "enabled_count": len(enabled_pack_ids),
+                "disabled_components": len(disabled_components),
+                "inventory_available": inventory_available,
+            },
+        )
 
     def _list_workspaces(self) -> List[Dict[str, object]]:
         if APP_BUS and BUS_WORKSPACE_LIST_REQUEST:
@@ -5302,6 +5820,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_workspace_changed(self, workspace: Dict[str, Any], *, notify_bus: bool = True) -> None:
         if isinstance(workspace, dict):
             self.workspace_info = workspace
+        self._load_active_workspace_config()
+        self._reload_workspace_components()
         self._refresh_workspace_selectors()
         if self.system_health:
             try:
@@ -5312,6 +5832,21 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.component_sandbox:
             try:
                 self.component_sandbox.on_workspace_changed()
+            except Exception:
+                pass
+        if self.content_browser:
+            try:
+                self.content_browser.refresh_tree()
+            except Exception:
+                pass
+        if self.content_management:
+            try:
+                self.content_management.refresh_tree()
+            except Exception:
+                pass
+        if self.component_management:
+            try:
+                self.component_management.refresh()
             except Exception:
                 pass
         if notify_bus:
@@ -5452,6 +5987,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Components", "Component runtime unavailable.")
             return
         context = self._build_component_context(part_id=part_id, detail=detail)
+        if not self.workspace_component_policy.is_component_enabled(component_id):
+            QtWidgets.QMessageBox.information(self, "Component", WORKSPACE_DISABLED_REASON)
+            return
         self.component_host.open_component(component_id, context)
         self.stacked.setCurrentWidget(self.component_host)
 
