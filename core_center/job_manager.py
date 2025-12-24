@@ -668,6 +668,10 @@ def _handle_component_pack_install(payload: Dict[str, Any], ctx: JobContext) -> 
         ctx.progress(5, "preparing")
         if not source_dir.exists():
             raise FileNotFoundError(f"pack not found: {pack_id}")
+        if target_dir.exists():
+            ctx.progress(100, "already installed")
+            ok = True
+            return {"pack_id": pack_id, "install_path": str(target_dir), "text": f"{pack_id} already installed"}
         if staging_dir.exists():
             safe_rmtree(staging_dir)
         safe_copytree(source_dir, staging_dir)
@@ -706,7 +710,9 @@ def _handle_component_pack_uninstall(payload: Dict[str, Any], ctx: JobContext) -
     try:
         ctx.progress(10, "removing pack")
         if not target_dir.exists():
-            raise FileNotFoundError(f"pack not installed: {pack_id}")
+            ctx.progress(100, "already removed")
+            ok = True
+            return {"pack_id": pack_id, "text": f"{pack_id} already removed"}
         safe_rmtree(target_dir)
         ctx.progress(90, "removed from store")
         ok = True

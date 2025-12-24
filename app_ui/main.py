@@ -24,14 +24,18 @@ def _ensure_safe_font(app: QtWidgets.QApplication, min_point_size: int = 10) -> 
     try:
         font = app.font()
         point_size = font.pointSize()
+        pixel_size = font.pixelSize()
         if point_size is None or point_size <= 0:
-            pixel_size = font.pixelSize()
             if isinstance(pixel_size, int) and pixel_size > 0:
                 return
             safe_size = max(1, int(min_point_size))
             if safe_size > 0:
                 font.setPointSize(safe_size)
                 app.setFont(font)
+        elif point_size < min_point_size:
+            safe_size = max(1, int(min_point_size))
+            font.setPointSize(safe_size)
+            app.setFont(font)
     except Exception:
         pass
 
@@ -3159,6 +3163,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self._job_poll_timer: Optional[QtCore.QTimer] = None
         self._job_poll_deadline: float = 0.0
         self._installed_pack_ids: set[str] = set()
+        self._bus_available = bool(self.bus)
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -3171,6 +3176,11 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         refresh_btn.clicked.connect(self.refresh)
         header.add_action_widget(refresh_btn)
         layout.addWidget(header)
+
+        self.banner = QtWidgets.QLabel("")
+        self.banner.setVisible(False)
+        self.banner.setStyleSheet("color: #b71c1c; font-weight: bold;")
+        layout.addWidget(self.banner)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         layout.addWidget(splitter, stretch=1)
@@ -3225,11 +3235,22 @@ class ComponentManagementScreen(QtWidgets.QWidget):
     def refresh(self) -> None:
         self.repo_list.clear()
         self.store_list.clear()
-        if component_packs is None:
-            self._show_progress("Component packs", "component_runtime not available", running=False, ok=False)
+        if not self.bus:
+            self._bus_available = False
+            self._set_banner("Management Core unavailable (runtime bus not connected).")
+            self.install_btn.setEnabled(False)
+            self.uninstall_btn.setEnabled(False)
             return
+        self._bus_available = True
+        self._set_banner("")
         repo_packs = component_packs.list_repo_packs()
-        store_packs = self._load_installed_packs()
+        store_packs, inv_ok = self._load_installed_packs()
+        if not inv_ok:
+            self._set_banner("Management Core inventory unavailable; pack actions disabled.")
+            self.install_btn.setEnabled(False)
+            self.uninstall_btn.setEnabled(False)
+        else:
+            self._set_banner("")
         self._installed_pack_ids = {p.get("pack_id") or p.get("id") for p in store_packs if p.get("pack_id") or p.get("id")}
         for pack in repo_packs:
             label = _format_pack_label(pack)
@@ -3346,7 +3367,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self.progress_details.setText(details)
         self.progress_panel.setVisible(True)
 
-    def _load_installed_packs(self) -> list[Dict[str, Any]]:
+    def _load_installed_packs(self) -> tuple[list[Dict[str, Any]], bool]:
         if self.bus:
             try:
                 response = self.bus.request(
@@ -3366,27 +3387,28 @@ class ComponentManagementScreen(QtWidgets.QWidget):
                         }
                         for pack in packs
                         if pack.get("id") or pack.get("pack_id")
-                    ]
+                    ], True
             except Exception:
-                pass
+                return [], False
+            return [], False
         if component_packs is None:
-            return []
-        return component_packs.list_installed_packs()
+            return [], False
+        return component_packs.list_installed_packs(), True
 
     def _init_bus_subscriptions(self) -> None:
         if not self.bus or self._bus_subscriptions:
             return
-        self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event)
-        self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event)
+        self._subscribe_bus(BUS_JOB_PROGRESS, self._on_job_progress_event, replay_last=False)
+        self._subscribe_bus(BUS_JOB_COMPLETED, self._on_job_completed_event, replay_last=True)
 
-    def _subscribe_bus(self, topic: Optional[str], handler: Callable[[Any], None]) -> None:
+    def _subscribe_bus(self, topic: Optional[str], handler: Callable[[Any], None], replay_last: bool = False) -> None:
         if not (self.bus and topic):
             return
 
         def _wrapped(envelope):
             self._bus_dispatch_bridge.envelope_dispatched.emit(handler, envelope)
 
-        sub_id = self.bus.subscribe(topic, _wrapped, replay_last=False)
+        sub_id = self.bus.subscribe(topic, _wrapped, replay_last=replay_last)
         self._bus_subscriptions.append(sub_id)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
@@ -3451,9 +3473,25 @@ class ComponentManagementScreen(QtWidgets.QWidget):
                 source="app_ui",
                 timeout_ms=800,
             )
-        except Exception:
+        except Exception as exc:
+            self._stop_job_poll_timer()
+            self._show_progress(
+                "Pack Job",
+                f"Job status failed: {exc}",
+                running=False,
+                ok=False,
+            )
+            self._set_job_state(job_id=None, pack_id=None, action=None, running=False)
             return
         if not response.get("ok"):
+            self._stop_job_poll_timer()
+            self._show_progress(
+                "Pack Job",
+                f"Job status failed: {response.get('error') or 'unknown'}",
+                running=False,
+                ok=False,
+            )
+            self._set_job_state(job_id=None, pack_id=None, action=None, running=False)
             return
         job = response.get("job") or {}
         status = str(job.get("status") or "").upper()
@@ -3502,8 +3540,23 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self._refresh_registry()
         self.refresh()
 
+    def _set_banner(self, text: str) -> None:
+        if not text:
+            self.banner.setVisible(False)
+            self.banner.setText("")
+        else:
+            self.banner.setText(text)
+            self.banner.setVisible(True)
+
 
 class WorkspaceManagementScreen(QtWidgets.QWidget):
+    TEMPLATE_PREF_FILES = (
+        "workspace_config.json",
+        "lab_prefs.json",
+        "policy_overrides.json",
+        "pins.json",
+    )
+
     def __init__(
         self,
         on_back,
@@ -3564,12 +3617,34 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self.status.setStyleSheet("color: #555;")
         layout.addWidget(self.status)
 
+        templates_box = QtWidgets.QGroupBox("Templates")
+        templates_layout = QtWidgets.QVBoxLayout(templates_box)
+        templates_row = QtWidgets.QHBoxLayout()
+        templates_row.addWidget(QtWidgets.QLabel("Template"))
+        self.template_combo = QtWidgets.QComboBox()
+        templates_row.addWidget(self.template_combo, stretch=1)
+        self.template_preview_btn = QtWidgets.QPushButton("Preview")
+        self.template_preview_btn.clicked.connect(self._preview_template)
+        self.template_diff_btn = QtWidgets.QPushButton("Diff")
+        self.template_diff_btn.clicked.connect(self._diff_template)
+        self.template_apply_btn = QtWidgets.QPushButton("Apply")
+        self.template_apply_btn.clicked.connect(self._apply_template)
+        templates_row.addWidget(self.template_preview_btn)
+        templates_row.addWidget(self.template_diff_btn)
+        templates_row.addWidget(self.template_apply_btn)
+        templates_layout.addLayout(templates_row)
+        self.template_status = QtWidgets.QLabel("")
+        self.template_status.setStyleSheet("color: #555;")
+        templates_layout.addWidget(self.template_status)
+        layout.addWidget(templates_box)
+
         self.refresh()
 
     def refresh(self) -> None:
         self.table.clear()
         self._templates = self._load_templates()
         self._workspaces = self._load_workspaces()
+        self._refresh_template_combo()
         active_id = None
         for ws in self._workspaces:
             active = bool(ws.get("active"))
@@ -3603,6 +3678,25 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         if not response.get("ok"):
             return []
         return response.get("templates") or []
+
+    def _refresh_template_combo(self) -> None:
+        active_id = None
+        for ws in self._workspaces:
+            if ws.get("active"):
+                active_id = ws.get("template_id")
+                break
+        self.template_combo.clear()
+        self.template_combo.addItem("Select template...", "")
+        for tpl in self._templates:
+            template_id = tpl.get("template_id") or tpl.get("id")
+            if not template_id:
+                continue
+            label = tpl.get("name") or template_id
+            self.template_combo.addItem(label, template_id)
+        if active_id:
+            idx = self.template_combo.findData(active_id)
+            if idx >= 0:
+                self.template_combo.setCurrentIndex(idx)
 
     def _load_workspaces(self) -> list[Dict[str, Any]]:
         if not self.bus:
@@ -3748,6 +3842,213 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
     def _slugify(self, value: str) -> str:
         clean = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value.strip())
         return clean or "workspace"
+
+    def _active_workspace(self) -> Optional[Dict[str, Any]]:
+        for ws in self._workspaces:
+            if ws.get("active"):
+                return ws
+        return None
+
+    def _template_info(self, template_id: str) -> Optional[Dict[str, Any]]:
+        for tpl in self._templates:
+            candidate = tpl.get("template_id") or tpl.get("id")
+            if candidate == template_id:
+                return tpl
+        return None
+
+    def _prefs_root(self, workspace: Dict[str, Any]) -> Optional[Path]:
+        path = workspace.get("path")
+        if not isinstance(path, str) or not path:
+            return None
+        return Path(path) / "prefs"
+
+    def _template_root(self, template_id: str) -> Optional[Path]:
+        info = self._template_info(template_id)
+        if not info:
+            return None
+        path = info.get("path")
+        if not isinstance(path, str) or not path:
+            return None
+        return Path(path)
+
+    def _load_json(self, path: Path) -> Dict[str, Any]:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _format_value(self, value: Any) -> str:
+        if isinstance(value, dict):
+            return f"{{{', '.join(list(value.keys())[:4])}}}"
+        if isinstance(value, list):
+            return f"[list:{len(value)}]"
+        return repr(value)
+
+    def _diff_dicts(
+        self,
+        current: Dict[str, Any],
+        incoming: Dict[str, Any],
+        prefix: str,
+        added: List[str],
+        removed: List[str],
+        changed: List[str],
+    ) -> None:
+        current_keys = set(current.keys())
+        incoming_keys = set(incoming.keys())
+        for key in sorted(incoming_keys - current_keys):
+            path = f"{prefix}{key}"
+            added.append(f"+ {path} = {self._format_value(incoming.get(key))}")
+        for key in sorted(current_keys - incoming_keys):
+            path = f"{prefix}{key}"
+            removed.append(f"- {path} = {self._format_value(current.get(key))}")
+        for key in sorted(current_keys & incoming_keys):
+            path = f"{prefix}{key}"
+            cur_val = current.get(key)
+            new_val = incoming.get(key)
+            if isinstance(cur_val, dict) and isinstance(new_val, dict):
+                self._diff_dicts(cur_val, new_val, f"{path}.", added, removed, changed)
+                continue
+            if cur_val != new_val:
+                changed.append(
+                    f"* {path}: {self._format_value(cur_val)} -> {self._format_value(new_val)}"
+                )
+
+    def _summarize_template(self, template_root: Path) -> str:
+        lines = []
+        for name in self.TEMPLATE_PREF_FILES:
+            path = template_root / name
+            if not path.exists():
+                continue
+            data = self._load_json(path)
+            keys = list(data.keys())
+            key_list = ", ".join(keys[:6])
+            suffix = "..." if len(keys) > 6 else ""
+            lines.append(f"- {name}: keys [{key_list}{suffix}]")
+        if not lines:
+            return "No preference files found in this template."
+        return "\n".join(lines)
+
+    def _preview_template(self) -> None:
+        template_id = self.template_combo.currentData()
+        if not template_id:
+            self.template_status.setText("Select a template to preview.")
+            return
+        root = self._template_root(str(template_id))
+        if not root or not root.exists():
+            self.template_status.setText("Template path not found.")
+            return
+        info = self._template_info(str(template_id)) or {}
+        header = f"Template: {info.get('name') or template_id} ({template_id})"
+        summary = self._summarize_template(root)
+        self._show_text_dialog("Template Preview", f"{header}\n\n{summary}")
+
+    def _diff_template(self) -> None:
+        template_id = self.template_combo.currentData()
+        if not template_id:
+            self.template_status.setText("Select a template to diff.")
+            return
+        workspace = self._active_workspace()
+        if not workspace:
+            self.template_status.setText("No active workspace selected.")
+            return
+        prefs_root = self._prefs_root(workspace)
+        template_root = self._template_root(str(template_id))
+        if not prefs_root or not template_root:
+            self.template_status.setText("Template or workspace prefs path missing.")
+            return
+        blocks: List[str] = []
+        for name in self.TEMPLATE_PREF_FILES:
+            template_path = template_root / name
+            if not template_path.exists():
+                continue
+            current_path = prefs_root / name
+            current = self._load_json(current_path) if current_path.exists() else {}
+            incoming = self._load_json(template_path)
+            added: List[str] = []
+            removed: List[str] = []
+            changed: List[str] = []
+            self._diff_dicts(current, incoming, "", added, removed, changed)
+            if not (added or removed or changed):
+                blocks.append(f"{name}: no differences")
+                continue
+            blocks.append(f"{name}:")
+            blocks.extend(added or [])
+            blocks.extend(removed or [])
+            blocks.extend(changed or [])
+        if not blocks:
+            blocks.append("No template files found.")
+        self._show_text_dialog("Template Diff", "\n".join(blocks))
+
+    def _merge_dicts(self, base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(base)
+        for key, value in incoming.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = self._merge_dicts(merged.get(key) or {}, value)
+            else:
+                merged[key] = value
+        return merged
+
+    def _apply_template(self) -> None:
+        template_id = self.template_combo.currentData()
+        if not template_id:
+            self.template_status.setText("Select a template to apply.")
+            return
+        workspace = self._active_workspace()
+        if not workspace:
+            self.template_status.setText("No active workspace selected.")
+            return
+        prefs_root = self._prefs_root(workspace)
+        template_root = self._template_root(str(template_id))
+        if not prefs_root or not template_root:
+            self.template_status.setText("Template or workspace prefs path missing.")
+            return
+        prefs_root.mkdir(parents=True, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        backup_root = prefs_root / "_backup" / timestamp
+        backup_root.mkdir(parents=True, exist_ok=True)
+        changed_files = []
+        for name in self.TEMPLATE_PREF_FILES:
+            template_path = template_root / name
+            if not template_path.exists():
+                continue
+            current_path = prefs_root / name
+            current = self._load_json(current_path) if current_path.exists() else {}
+            incoming = self._load_json(template_path)
+            merged = self._merge_dicts(current, incoming)
+            if merged == current:
+                continue
+            if current_path.exists():
+                try:
+                    backup_root.joinpath(name).write_text(
+                        current_path.read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
+            try:
+                current_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+                changed_files.append(name)
+            except Exception:
+                continue
+        if not changed_files:
+            self.template_status.setText("Template applied; no changes were required.")
+        else:
+            self.template_status.setText(f"Applied template to: {', '.join(changed_files)}")
+        self.refresh()
+
+    def _show_text_dialog(self, title: str, text: str) -> None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(640, 420)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        view = QtWidgets.QTextEdit()
+        view.setReadOnly(True)
+        view.setPlainText(text)
+        layout.addWidget(view, stretch=1)
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.exec()
 
 
 class StatusPill(QtWidgets.QLabel):
@@ -4686,6 +4987,9 @@ class LabHostScreen(QtWidgets.QWidget):
         layout.addWidget(header)
         layout.addWidget(lab_host, stretch=1)
 
+    def wants_global_esc_back(self) -> bool:
+        return False
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, initial_profile: str):
@@ -4814,14 +5118,27 @@ class MainWindow(QtWidgets.QMainWindow):
         app = QtWidgets.QApplication.instance()
         if app is None:
             return
-        if app.activeModalWidget() is not None:
-            return
+        modal = app.activeModalWidget() is not None
         focus = app.focusWidget()
+        focus_class = type(focus).__name__ if focus else None
+        editable_combo = isinstance(focus, QtWidgets.QComboBox) and focus.isEditable()
+        current = self.stacked.currentWidget()
+        current_class = type(current).__name__ if current else None
+        wants_global = None
+        try:
+            if current and hasattr(current, "wants_global_esc_back"):
+                wants_global = bool(current.wants_global_esc_back())
+        except Exception:
+            wants_global = "error"
+        is_lab = current is self.lab_host_widget
+        if modal:
+            return
         if isinstance(focus, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
             return
         if isinstance(focus, QtWidgets.QComboBox) and focus.isEditable():
             return
-        current = self.stacked.currentWidget()
+        if wants_global is False:
+            return
         if current is self.lab_host_widget:
             return
         if current is self.main_menu:
