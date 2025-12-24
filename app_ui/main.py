@@ -267,6 +267,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         on_open_module_mgmt,
         on_open_content_mgmt,
         on_open_diagnostics,
+        on_open_workspace_mgmt,
         on_open_component_mgmt,
         on_open_component_sandbox,
         on_quit,
@@ -279,6 +280,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         self.on_open_module_mgmt = on_open_module_mgmt
         self.on_open_content_mgmt = on_open_content_mgmt
         self.on_open_diagnostics = on_open_diagnostics
+        self.on_open_workspace_mgmt = on_open_workspace_mgmt
         self.on_open_component_mgmt = on_open_component_mgmt
         self.on_open_component_sandbox = on_open_component_sandbox
         self.on_quit = on_quit
@@ -340,6 +342,9 @@ class MainMenuScreen(QtWidgets.QWidget):
 
         if self.profile in ("Educator", "Explorer"):
             self._add_button("System Health / Storage", self.on_open_diagnostics)
+
+        if self.profile == "Explorer" and self.on_open_workspace_mgmt:
+            self._add_button("Workspace Management", self.on_open_workspace_mgmt)
 
         if self.profile == "Explorer" and self.on_open_component_mgmt:
             self._add_button("Component Management", self.on_open_component_mgmt)
@@ -1092,6 +1097,31 @@ BUS_WORKSPACE_GET_ACTIVE_REQUEST = (
     BUS_TOPICS.CORE_WORKSPACE_GET_ACTIVE_REQUEST
     if BUS_TOPICS
     else "core.workspace.get_active.request"
+)
+BUS_WORKSPACE_LIST_REQUEST = (
+    BUS_TOPICS.CORE_WORKSPACE_LIST_REQUEST
+    if BUS_TOPICS
+    else "core.workspace.list.request"
+)
+BUS_WORKSPACE_SET_ACTIVE_REQUEST = (
+    BUS_TOPICS.CORE_WORKSPACE_SET_ACTIVE_REQUEST
+    if BUS_TOPICS
+    else "core.workspace.set_active.request"
+)
+BUS_WORKSPACE_CREATE_REQUEST = (
+    BUS_TOPICS.CORE_WORKSPACE_CREATE_REQUEST
+    if BUS_TOPICS
+    else "core.workspace.create.request"
+)
+BUS_WORKSPACE_DELETE_REQUEST = (
+    BUS_TOPICS.CORE_WORKSPACE_DELETE_REQUEST
+    if BUS_TOPICS
+    else "core.workspace.delete.request"
+)
+BUS_WORKSPACE_TEMPLATES_LIST_REQUEST = (
+    BUS_TOPICS.CORE_WORKSPACE_TEMPLATES_LIST_REQUEST
+    if BUS_TOPICS
+    else "core.workspace.templates.list.request"
 )
 BUS_MODULE_PROGRESS = (
     BUS_TOPICS.CONTENT_INSTALL_PROGRESS if BUS_TOPICS else "content.install.progress"
@@ -3431,6 +3461,248 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self.refresh()
 
 
+class WorkspaceManagementScreen(QtWidgets.QWidget):
+    def __init__(self, on_back, on_workspace_changed: Callable[[Dict[str, Any]], None], bus=None):
+        super().__init__()
+        self.on_back = on_back
+        self.on_workspace_changed = on_workspace_changed
+        self.bus = bus
+        self._templates: list[Dict[str, Any]] = []
+        self._workspaces: list[Dict[str, Any]] = []
+
+        layout = QtWidgets.QVBoxLayout(self)
+        header = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Workspace Management")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh)
+        back_btn = QtWidgets.QPushButton("Back")
+        back_btn.clicked.connect(self.on_back)
+        header.addWidget(title)
+        header.addStretch()
+        header.addWidget(refresh_btn)
+        header.addWidget(back_btn)
+        layout.addLayout(header)
+
+        self.active_label = QtWidgets.QLabel("Active workspace: ?")
+        self.active_label.setStyleSheet("color: #444;")
+        layout.addWidget(self.active_label)
+
+        self.table = QtWidgets.QTreeWidget()
+        self.table.setColumnCount(5)
+        self.table.setHeaderLabels(["Name", "ID", "Active", "Template", "Path"])
+        header_view = self.table.header()
+        header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header_view.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.table.itemSelectionChanged.connect(self._update_buttons)
+        layout.addWidget(self.table, stretch=1)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        self.create_btn = QtWidgets.QPushButton("Create...")
+        self.create_btn.clicked.connect(self._create_workspace)
+        self.set_active_btn = QtWidgets.QPushButton("Set Active")
+        self.set_active_btn.clicked.connect(self._set_active)
+        self.delete_btn = QtWidgets.QPushButton("Delete")
+        self.delete_btn.clicked.connect(self._delete_workspace)
+        btn_row.addWidget(self.create_btn)
+        btn_row.addWidget(self.set_active_btn)
+        btn_row.addWidget(self.delete_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self.status = QtWidgets.QLabel("")
+        self.status.setStyleSheet("color: #555;")
+        layout.addWidget(self.status)
+
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.table.clear()
+        self._templates = self._load_templates()
+        self._workspaces = self._load_workspaces()
+        active_id = None
+        for ws in self._workspaces:
+            active = bool(ws.get("active"))
+            active_id = ws.get("id") if active else active_id
+            item = QtWidgets.QTreeWidgetItem(
+                [
+                    ws.get("name") or ws.get("id") or "",
+                    ws.get("id") or "",
+                    "Yes" if active else "",
+                    ws.get("template_id") or "",
+                    ws.get("path") or "",
+                ]
+            )
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole, ws)
+            self.table.addTopLevelItem(item)
+        self.active_label.setText(f"Active workspace: {active_id or 'unknown'}")
+        self._update_buttons()
+
+    def _load_templates(self) -> list[Dict[str, Any]]:
+        if not self.bus:
+            return []
+        try:
+            response = self.bus.request(
+                BUS_WORKSPACE_TEMPLATES_LIST_REQUEST,
+                {},
+                source="app_ui",
+                timeout_ms=1500,
+            )
+        except Exception:
+            return []
+        if not response.get("ok"):
+            return []
+        return response.get("templates") or []
+
+    def _load_workspaces(self) -> list[Dict[str, Any]]:
+        if not self.bus:
+            self.status.setText("Runtime bus unavailable.")
+            return []
+        try:
+            response = self.bus.request(
+                BUS_WORKSPACE_LIST_REQUEST,
+                {},
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:
+            self.status.setText(f"Workspace list failed: {exc}")
+            return []
+        if not response.get("ok"):
+            self.status.setText(f"Workspace list failed: {response.get('error') or 'unknown'}")
+            return []
+        return response.get("workspaces") or []
+
+    def _selected_workspace(self) -> Optional[Dict[str, Any]]:
+        item = self.table.currentItem()
+        if not item:
+            return None
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        return data if isinstance(data, dict) else None
+
+    def _update_buttons(self) -> None:
+        ws = self._selected_workspace()
+        has_ws = ws is not None
+        active = bool(ws.get("active")) if ws else False
+        self.set_active_btn.setEnabled(bool(self.bus and has_ws and not active))
+        self.delete_btn.setEnabled(bool(self.bus and has_ws and not active))
+        self.create_btn.setEnabled(bool(self.bus))
+
+    def _create_workspace(self) -> None:
+        if not self.bus:
+            self.status.setText("Runtime bus unavailable.")
+            return
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Create Workspace")
+        form = QtWidgets.QFormLayout(dialog)
+        name_edit = QtWidgets.QLineEdit()
+        id_edit = QtWidgets.QLineEdit()
+        template_combo = QtWidgets.QComboBox()
+        template_combo.addItem("None", "")
+        for tpl in self._templates:
+            template_id = tpl.get("template_id") or tpl.get("id")
+            label = tpl.get("name") or template_id
+            template_combo.addItem(label, template_id)
+        form.addRow("Name", name_edit)
+        form.addRow("ID (slug)", id_edit)
+        form.addRow("Template", template_combo)
+        btn_row = QtWidgets.QHBoxLayout()
+        ok_btn = QtWidgets.QPushButton("Create")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        form.addRow(btn_row)
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+        name = name_edit.text().strip()
+        workspace_id = id_edit.text().strip() or self._slugify(name or "workspace")
+        template_id = template_combo.currentData()
+        payload = {"workspace_id": workspace_id}
+        if name:
+            payload["name"] = name
+        if template_id:
+            payload["template_id"] = template_id
+        try:
+            response = self.bus.request(
+                BUS_WORKSPACE_CREATE_REQUEST,
+                payload,
+                source="app_ui",
+                timeout_ms=2000,
+            )
+        except Exception as exc:
+            self.status.setText(f"Create failed: {exc}")
+            return
+        if not response.get("ok"):
+            self.status.setText(f"Create failed: {response.get('error') or 'unknown'}")
+            return
+        self.status.setText(f"Created workspace {workspace_id}.")
+        self.refresh()
+
+    def _set_active(self) -> None:
+        ws = self._selected_workspace()
+        if not (self.bus and ws):
+            return
+        workspace_id = ws.get("id")
+        try:
+            response = self.bus.request(
+                BUS_WORKSPACE_SET_ACTIVE_REQUEST,
+                {"workspace_id": workspace_id},
+                source="app_ui",
+                timeout_ms=1500,
+            )
+        except Exception as exc:
+            self.status.setText(f"Set active failed: {exc}")
+            return
+        if not response.get("ok"):
+            self.status.setText(f"Set active failed: {response.get('error') or 'unknown'}")
+            return
+        workspace = response.get("workspace")
+        if isinstance(workspace, dict):
+            self.on_workspace_changed(workspace)
+        self.status.setText(f"Active workspace: {workspace_id}")
+        self.refresh()
+
+    def _delete_workspace(self) -> None:
+        ws = self._selected_workspace()
+        if not (self.bus and ws):
+            return
+        if ws.get("active"):
+            self.status.setText("Cannot delete the active workspace.")
+            return
+        workspace_id = ws.get("id")
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Delete workspace",
+            f"Delete workspace '{workspace_id}'? This removes its runs and prefs.",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        try:
+            response = self.bus.request(
+                BUS_WORKSPACE_DELETE_REQUEST,
+                {"workspace_id": workspace_id},
+                source="app_ui",
+                timeout_ms=3000,
+            )
+        except Exception as exc:
+            self.status.setText(f"Delete failed: {exc}")
+            return
+        if not response.get("ok"):
+            self.status.setText(f"Delete failed: {response.get('error') or 'unknown'}")
+            return
+        self.status.setText(f"Deleted workspace {workspace_id}.")
+        self.refresh()
+
+    def _slugify(self, value: str) -> str:
+        clean = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value.strip())
+        return clean or "workspace"
+
+
 class StatusPill(QtWidgets.QLabel):
     def __init__(self, text: str = "") -> None:
         super().__init__(text)
@@ -4347,6 +4619,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_module_management,
             self._open_content_management,
             self._open_diagnostics,
+            self._open_workspace_management,
             self._open_component_management,
             self._open_component_sandbox,
             self._quit_app,
@@ -4368,6 +4641,11 @@ class MainWindow(QtWidgets.QMainWindow):
             bus=APP_BUS,
         )
         self.component_management = ComponentManagementScreen(self._show_main_menu, bus=APP_BUS)
+        self.workspace_management = WorkspaceManagementScreen(
+            self._show_main_menu,
+            self._on_workspace_changed,
+            bus=APP_BUS,
+        )
         self.component_sandbox = ComponentSandboxScreen(
             self._show_main_menu,
             self._build_component_context,
@@ -4392,9 +4670,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.module_management)
         self.stacked.addWidget(self.content_management)
         self.stacked.addWidget(self.component_management)
+        self.stacked.addWidget(self.workspace_management)
         self.stacked.addWidget(self.component_sandbox)
         self.stacked.addWidget(self.component_host)
         self._show_main_menu()
+
+    def _open_workspace_management(self):
+        self._dispose_lab_widget()
+        if self.workspace_management:
+            self.workspace_management.refresh()
+            self.stacked.setCurrentWidget(self.workspace_management)
 
     def _handle_escape_back(self) -> None:
         app = QtWidgets.QApplication.instance()
@@ -4478,6 +4763,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_main_menu(self):
         self._dispose_lab_widget()
         self.stacked.setCurrentWidget(self.main_menu)
+
+    def _on_workspace_changed(self, workspace: Dict[str, Any]) -> None:
+        if isinstance(workspace, dict):
+            self.workspace_info = workspace
+        if self.system_health:
+            try:
+                self.system_health._update_runs_workspace_label()
+                self.system_health._refresh_runs_list()
+            except Exception:
+                pass
 
     def _start_physics(self):
         quick_part = self._find_quick_start_part()

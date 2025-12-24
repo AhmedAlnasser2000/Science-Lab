@@ -51,6 +51,12 @@ WORKSPACE_LIST_REQUEST_TOPIC = getattr(
 WORKSPACE_CREATE_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_WORKSPACE_CREATE_REQUEST", "core.workspace.create.request"
 )
+WORKSPACE_DELETE_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_WORKSPACE_DELETE_REQUEST", "core.workspace.delete.request"
+)
+WORKSPACE_TEMPLATES_LIST_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_WORKSPACE_TEMPLATES_LIST_REQUEST", "core.workspace.templates.list.request"
+)
 INVENTORY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_INVENTORY_GET_REQUEST", "core.inventory.get.request"
 )
@@ -221,8 +227,30 @@ def register_core_center_endpoints(bus: Any) -> None:
         if not workspace_id:
             return {"ok": False, "error": "workspace_id_required"}
         try:
-            info = workspace_manager.create_workspace(str(workspace_id))
+            info = workspace_manager.create_workspace(
+                str(workspace_id),
+                name=payload.get("name"),
+                template_id=payload.get("template_id"),
+            )
             return {"ok": True, "workspace": info}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _handle_workspace_delete(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        workspace_id = payload.get("workspace_id") or payload.get("id")
+        force = bool(payload.get("force", False))
+        if not workspace_id:
+            return {"ok": False, "error": "workspace_id_required"}
+        result = workspace_manager.delete_workspace(str(workspace_id), force=force)
+        if not result.get("ok"):
+            return {"ok": False, "error": result.get("error") or "delete_failed"}
+        return {"ok": True}
+
+    def _handle_workspace_templates(envelope) -> Dict[str, object]:  # noqa: ARG001
+        try:
+            templates = workspace_manager.list_templates()
+            return {"ok": True, "templates": templates}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -325,6 +353,10 @@ def register_core_center_endpoints(bus: Any) -> None:
         bus.register_handler(WORKSPACE_LIST_REQUEST_TOPIC, _handle_workspace_list)
     if WORKSPACE_CREATE_REQUEST_TOPIC:
         bus.register_handler(WORKSPACE_CREATE_REQUEST_TOPIC, _handle_workspace_create)
+    if WORKSPACE_DELETE_REQUEST_TOPIC:
+        bus.register_handler(WORKSPACE_DELETE_REQUEST_TOPIC, _handle_workspace_delete)
+    if WORKSPACE_TEMPLATES_LIST_REQUEST_TOPIC:
+        bus.register_handler(WORKSPACE_TEMPLATES_LIST_REQUEST_TOPIC, _handle_workspace_templates)
     if INVENTORY_REQUEST_TOPIC:
         bus.register_handler(INVENTORY_REQUEST_TOPIC, _handle_inventory)
     if MODULE_INSTALL_REQUEST_TOPIC:

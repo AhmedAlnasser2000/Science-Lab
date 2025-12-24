@@ -1,0 +1,7 @@
+{
+  "labs": {
+    "vector_add": { "show_grid": true, "show_axes": true },
+    "lens_ray": { "show_grid": false, "show_axes": true },
+    "electric_field": { "show_grid": true, "show_axes": false }
+  }
+}
