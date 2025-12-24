@@ -1088,6 +1088,11 @@ BUS_COMPONENT_PACK_UNINSTALL_REQUEST = (
     if BUS_TOPICS
     else "core.component_pack.uninstall.request"
 )
+BUS_WORKSPACE_GET_ACTIVE_REQUEST = (
+    BUS_TOPICS.CORE_WORKSPACE_GET_ACTIVE_REQUEST
+    if BUS_TOPICS
+    else "core.workspace.get_active.request"
+)
 BUS_MODULE_PROGRESS = (
     BUS_TOPICS.CONTENT_INSTALL_PROGRESS if BUS_TOPICS else "content.install.progress"
 )
@@ -1233,6 +1238,18 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.runs_delete_all_btn = QtWidgets.QPushButton("Delete All (Lab)")
         self.runs_delete_all_btn.clicked.connect(self._delete_all_runs_for_lab)
         runs_toolbar.addWidget(self.runs_delete_all_btn)
+        self.runs_select_all_btn = QtWidgets.QPushButton("Select all (Lab)")
+        self.runs_select_all_btn.clicked.connect(self._select_all_runs_for_lab)
+        runs_toolbar.addWidget(self.runs_select_all_btn)
+        self.runs_clear_btn = QtWidgets.QPushButton("Clear (Lab)")
+        self.runs_clear_btn.clicked.connect(self._clear_runs_for_lab)
+        runs_toolbar.addWidget(self.runs_clear_btn)
+        self.runs_delete_all_workspace_btn = QtWidgets.QPushButton("Delete All (Workspace)")
+        self.runs_delete_all_workspace_btn.clicked.connect(self._delete_all_runs_for_workspace)
+        runs_toolbar.addWidget(self.runs_delete_all_workspace_btn)
+        self.runs_workspace_label = QtWidgets.QLabel("Workspace: ?")
+        self.runs_workspace_label.setStyleSheet("color: #444;")
+        runs_toolbar.addWidget(self.runs_workspace_label)
         runs_toolbar.addStretch()
         page_runs_layout.addLayout(runs_toolbar)
 
@@ -1400,6 +1417,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.runs_delete_selected_btn.setEnabled(bool(enabled and runs_available))
         if hasattr(self, "runs_delete_all_btn"):
             self.runs_delete_all_btn.setEnabled(bool(enabled and runs_available))
+        if hasattr(self, "runs_select_all_btn"):
+            self.runs_select_all_btn.setEnabled(bool(enabled and runs_available))
+        if hasattr(self, "runs_clear_btn"):
+            self.runs_clear_btn.setEnabled(bool(enabled and runs_available))
+        if hasattr(self, "runs_delete_all_workspace_btn"):
+            self.runs_delete_all_workspace_btn.setEnabled(bool(enabled and runs_available))
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
         )
@@ -1498,6 +1521,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         labs = response.get("labs") or {}
         self._render_runs_list(labs)
         self.runs_status.setText("Runs list updated.")
+        self._update_runs_workspace_label()
 
     def _render_runs_list(self, labs: Dict[str, Any]) -> None:
         self._runs_syncing = True
@@ -1545,6 +1569,28 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._runs_syncing = False
         self._update_runs_delete_buttons()
 
+    def _update_runs_workspace_label(self) -> None:
+        if not hasattr(self, "runs_workspace_label"):
+            return
+        workspace_id = "default"
+        if self.bus and BUS_WORKSPACE_GET_ACTIVE_REQUEST:
+            try:
+                response = self.bus.request(
+                    BUS_WORKSPACE_GET_ACTIVE_REQUEST,
+                    {},
+                    source="app_ui",
+                    timeout_ms=1000,
+                )
+            except Exception:
+                response = {"ok": False}
+            if response.get("ok"):
+                workspace = response.get("workspace")
+                if isinstance(workspace, dict):
+                    workspace_id = workspace.get("id") or workspace_id
+                elif isinstance(response.get("id"), str):
+                    workspace_id = response.get("id")
+        self.runs_workspace_label.setText(f"Workspace: {workspace_id}")
+
     def _on_runs_item_changed(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         if getattr(self, "_runs_syncing", False) or column != 0:
             return
@@ -1579,6 +1625,18 @@ class SystemHealthScreen(QtWidgets.QWidget):
                         items.append(info)
         return items
 
+    def _all_run_items(self) -> list[Dict[str, Any]]:
+        items: list[Dict[str, Any]] = []
+        root = self.runs_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            lab_item = root.child(i)
+            for j in range(lab_item.childCount()):
+                run_item = lab_item.child(j)
+                info = run_item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+                if info.get("type") == "run":
+                    items.append(info)
+        return items
+
     def _current_lab_group(self) -> Optional[QtWidgets.QTreeWidgetItem]:
         item = self.runs_tree.currentItem()
         if not item:
@@ -1599,6 +1657,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.runs_delete_selected_btn.setEnabled(bool(self.bus and has_selected))
         if hasattr(self, "runs_delete_all_btn"):
             self.runs_delete_all_btn.setEnabled(bool(self.bus and has_lab))
+        if hasattr(self, "runs_select_all_btn"):
+            self.runs_select_all_btn.setEnabled(bool(self.bus and has_lab))
+        if hasattr(self, "runs_clear_btn"):
+            self.runs_clear_btn.setEnabled(bool(self.bus and has_lab))
+        if hasattr(self, "runs_delete_all_workspace_btn"):
+            self.runs_delete_all_workspace_btn.setEnabled(bool(self.bus and bool(self._all_run_items())))
 
     def _delete_selected_runs(self) -> None:
         if not self.bus:
@@ -1616,6 +1680,32 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         self._delete_runs_batch(items)
+
+    def _select_all_runs_for_lab(self) -> None:
+        lab_item = self._current_lab_group()
+        if lab_item is None:
+            self.runs_status.setText("Select a lab group first.")
+            return
+        self._runs_syncing = True
+        lab_item.setCheckState(0, QtCore.Qt.CheckState.Checked)
+        for i in range(lab_item.childCount()):
+            child = lab_item.child(i)
+            child.setCheckState(0, QtCore.Qt.CheckState.Checked)
+        self._runs_syncing = False
+        self._update_runs_delete_buttons()
+
+    def _clear_runs_for_lab(self) -> None:
+        lab_item = self._current_lab_group()
+        if lab_item is None:
+            self.runs_status.setText("Select a lab group first.")
+            return
+        self._runs_syncing = True
+        lab_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+        for i in range(lab_item.childCount()):
+            child = lab_item.child(i)
+            child.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+        self._runs_syncing = False
+        self._update_runs_delete_buttons()
 
     def _delete_all_runs_for_lab(self) -> None:
         if not self.bus:
@@ -1639,6 +1729,23 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self,
             "Delete all runs",
             f"Delete all {len(items)} runs for {lab_id} (~{total_bytes/1024/1024:.2f} MB)?",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self._delete_runs_batch(items)
+
+    def _delete_all_runs_for_workspace(self) -> None:
+        if not self.bus:
+            return
+        items = self._all_run_items()
+        if not items:
+            self.runs_status.setText("No runs in this workspace.")
+            return
+        total_bytes = sum(item.get("size_bytes") or 0 for item in items)
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Delete all runs",
+            f"Delete all runs in this workspace ({len(items)} runs, ~{total_bytes/1024/1024:.2f} MB)?",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
