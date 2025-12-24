@@ -1,3 +1,25 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-01] Small utilities (font safety, path helpers, etc.)
+# [NAV-10] Navigation controller / routing helpers
+# [NAV-20] AppHeader + workspace selector wiring
+# [NAV-30] Screens: MainMenuScreen
+# [NAV-31] Screens: ContentBrowserScreen
+# [NAV-32] Screens: SystemHealthScreen
+# [NAV-33] Screens: WorkspaceManagementScreen
+# [NAV-34] Screens: ModuleManagementScreen
+# [NAV-35] Screens: ComponentManagementScreen
+# [NAV-36] Screens: ContentManagementScreen
+# [NAV-37] Screens: ComponentSandboxScreen
+# [NAV-38] Screens: ComponentHostScreen
+# [NAV-39] Screens: LabHostScreen
+# [NAV-90] MainWindow
+# [NAV-99] main() entrypoint
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
+# region NAV-00 Imports / constants
 import json
 import os
 import sys
@@ -21,8 +43,11 @@ from diagnostics.fs_ops import safe_copytree, safe_rmtree
 
 DEBUG_LOG_PATH = Path(r"c:\Users\ahmed\Downloads\PhysicsLab\.cursor\debug.log")
 DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+# endregion
 
 
+# === [NAV-01] Small utilities ================================================
+# region NAV-01 Small utilities
 def _agent_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: Dict[str, Any]) -> None:
     # region agent log
     try:
@@ -101,6 +126,8 @@ def _request_inventory_snapshot(bus) -> tuple[Optional[Dict[str, Any]], Optional
     return response.get("inventory") or {}, None
 
 
+# === [NAV-20] AppHeader + workspace selector wiring ==========================
+# region NAV-20 WorkspaceComponentPolicy
 class WorkspaceComponentPolicy:
     def __init__(self) -> None:
         self.enabled_pack_ids: set[str] = set()
@@ -129,6 +156,7 @@ class WorkspaceComponentPolicy:
         if not component_id:
             return True
         return component_id not in self.disabled_component_ids
+# endregion
 
 
 _WORKSPACE_COMPONENT_POLICY: Optional[WorkspaceComponentPolicy] = None
@@ -271,7 +299,8 @@ PROFILE_GUIDE_KEYS = {
     "Explorer": "explorer",
 }
 
-
+# === [NAV-01] Small utilities ================================================
+# region NAV-01 Workers
 class InstallWorker(QtCore.QObject):
     finished = QtCore.pyqtSignal(dict)
     error = QtCore.pyqtSignal(str)
@@ -305,8 +334,9 @@ class TaskWorker(QtCore.QObject):
             self.finished.emit(result)
         except Exception as exc:  # pragma: no cover - defensive
             self.error.emit(str(exc))
-
-
+# endregion
+# === [NAV-01] Small utilities ================================================
+# region NAV-01 Asset helpers / UI config
 def read_asset_text(asset_path: Optional[str], paths: Optional[Dict[str, Any]]) -> Optional[str]:
     if not asset_path:
         return None
@@ -363,8 +393,11 @@ STATUS_READY = "READY"
 STATUS_NOT_INSTALLED = "NOT_INSTALLED"
 STATUS_UNAVAILABLE = "UNAVAILABLE"
 WORKSPACE_DISABLED_REASON = "Disabled by workspace. Enable pack in Workspace Management."
+# endregion
 
 
+# === [NAV-01] Small utilities ================================================
+# region NAV-01 ContentSystemAdapter
 class ContentSystemAdapter:
     """Thin wrapper safeguarding UI from backend errors."""
 
@@ -391,8 +424,11 @@ class ContentSystemAdapter:
             return content_system.download_part(part_id)
         except Exception as exc:
             return {"status": STATUS_UNAVAILABLE, "reason": str(exc)}
+# endregion
 
 
+# === [NAV-30] Screens: MainMenuScreen =======================================
+# region NAV-30 MainMenuScreen
 class MainMenuScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -499,8 +535,11 @@ class MainMenuScreen(QtWidgets.QWidget):
 
         self._add_button("Settings", self.on_open_settings)
         self._add_button("Quit", self.on_quit)
+# endregion
 
 
+# === [NAV-10] Navigation controller / routing helpers ========================
+# region NAV-10 ModuleManagerScreen (legacy)
 class ModuleManagerScreen(QtWidgets.QWidget):
     def __init__(self, adapter: ContentSystemAdapter):
         super().__init__()
@@ -756,6 +795,11 @@ class ModuleManagerScreen(QtWidgets.QWidget):
         self.preview.setPlainText("\n".join(preview_lines))
 
 
+# endregion
+
+
+# === [NAV-20] AppHeader + workspace selector wiring ==========================
+# region NAV-20 SettingsDialog
 class SettingsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -848,6 +892,11 @@ class SettingsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Settings", f"Failed to save settings: {exc}")
 
 
+# endregion
+
+
+# === [NAV-20] AppHeader + workspace selector wiring ==========================
+# region NAV-20 PlaceholderDialog
 class PlaceholderDialog(QtWidgets.QDialog):
     def __init__(self, title: str, message: str, parent=None):
         super().__init__(parent)
@@ -862,7 +911,13 @@ class PlaceholderDialog(QtWidgets.QDialog):
         layout.addWidget(close_btn, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
 
+# endregion
+
+
+# === [NAV-31] Screens: ContentBrowserScreen =================================
+# region NAV-31 ContentBrowserScreen
 class ContentBrowserScreen(QtWidgets.QWidget):
+    # --- [NAV-31A] ctor / dependencies
     def __init__(
         self,
         adapter: "ContentSystemAdapter",
@@ -1343,6 +1398,11 @@ CORE_JOB_CLEANUP_CACHE = "core.cleanup.cache"
 CORE_JOB_CLEANUP_DUMPS = "core.cleanup.dumps"
 
 
+# endregion
+
+
+# === [NAV-10] Navigation controller / routing helpers ========================
+# region NAV-10 Bus dispatch bridge
 class _BusDispatchBridge(QtCore.QObject):
     envelope_dispatched = QtCore.pyqtSignal(object, object)
 
@@ -1361,7 +1421,13 @@ class _BusDispatchBridge(QtCore.QObject):
             pass
 
 
+# endregion
+
+
+# === [NAV-32] Screens: SystemHealthScreen ===================================
+# region NAV-32 SystemHealthScreen
 class SystemHealthScreen(QtWidgets.QWidget):
+    # --- [NAV-32A] ctor / dependencies
     cleanup_event = QtCore.pyqtSignal(dict)
     module_progress_event = QtCore.pyqtSignal(dict)
     module_completed_event = QtCore.pyqtSignal(dict)
@@ -2757,7 +2823,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "System Health", f"Unable to open folder: {exc}")
 
 
+# endregion
+
+
+# === [NAV-34] Screens: ModuleManagementScreen ===============================
+# region NAV-34 ModuleManagementScreen
 class ModuleManagementScreen(QtWidgets.QWidget):
+    # --- [NAV-34A] ctor / dependencies
     def __init__(
         self,
         on_back,
@@ -3318,6 +3390,11 @@ def _run_pack_job(action: str, pack_id: str) -> Dict[str, Any]:
         return result
 
 
+# endregion
+
+
+# === [NAV-35] Screens: ComponentManagementScreen ============================
+# region NAV-35 ComponentManagementScreen
 class ComponentManagementScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -3733,6 +3810,11 @@ class ComponentManagementScreen(QtWidgets.QWidget):
             self.banner.setVisible(True)
 
 
+# endregion
+
+
+# === [NAV-33] Screens: WorkspaceManagementScreen ============================
+# region NAV-33 WorkspaceManagementScreen
 class WorkspaceManagementScreen(QtWidgets.QWidget):
     TEMPLATE_PREF_FILES = (
         "workspace_config.json",
@@ -3741,6 +3823,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         "pins.json",
     )
 
+    # --- [NAV-33A] ctor / dependencies
     def __init__(
         self,
         on_back,
@@ -4428,6 +4511,11 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         dialog.exec()
 
 
+# endregion
+
+
+# === [NAV-01] Small utilities ================================================
+# region NAV-01 StatusPill
 class StatusPill(QtWidgets.QLabel):
     def __init__(self, text: str = "") -> None:
         super().__init__(text)
@@ -4451,7 +4539,13 @@ class StatusPill(QtWidgets.QLabel):
         self.setVisible(True)
 
 
+# endregion
+
+
+# === [NAV-36] Screens: ContentManagementScreen ==============================
+# region NAV-36 ContentManagementScreen
 class ContentManagementScreen(QtWidgets.QWidget):
+    # --- [NAV-36A] ctor / dependencies
     def __init__(
         self,
         adapter: "ContentSystemAdapter",
@@ -5120,6 +5214,11 @@ class ContentManagementScreen(QtWidgets.QWidget):
         return str(title or fallback or default)
 
 
+# endregion
+
+
+# === [NAV-37] Screens: ComponentSandboxScreen ===============================
+# region NAV-37 ComponentSandboxScreen
 class ComponentSandboxScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -5336,6 +5435,11 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         self.status_label.setText(f"Opened pack component: {component_id}")
 
 
+# endregion
+
+
+# === [NAV-38] Screens: ComponentHostScreen ==================================
+# region NAV-38 ComponentHostScreen
 class ComponentHostScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -5392,6 +5496,11 @@ class ComponentHostScreen(QtWidgets.QWidget):
         self.status_label.setText("Component closed.")
 
 
+# endregion
+
+
+# === [NAV-39] Screens: LabHostScreen ========================================
+# region NAV-39 LabHostScreen
 class LabHostScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -5418,7 +5527,13 @@ class LabHostScreen(QtWidgets.QWidget):
         return False
 
 
+# endregion
+
+
+# === [NAV-90] MainWindow =====================================================
+# region NAV-90 MainWindow
 class MainWindow(QtWidgets.QMainWindow):
+    # --- [NAV-90A] ctor / wiring
     def __init__(self, initial_profile: str):
         super().__init__()
         self.setWindowTitle("PhysicsLab V1")
@@ -6107,7 +6222,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(screen)
         self.stacked.setCurrentWidget(screen)
 
-    def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> str:
+def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> str:
         fallback = "Guide coming soon for this lab."
         if not isinstance(manifest, dict):
             return fallback
@@ -6130,8 +6245,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if text is not None:
             return text
         return "Guide asset missing or unreadable. Reinstall the part if this persists."
+# endregion
 
 
+# === [NAV-99] main() entrypoint =============================================
+# region NAV-99 main()
 def main():
     profile = ui_config.load_experience_profile()
     print(f"Experience profile: {profile}")
@@ -6144,3 +6262,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# endregion
