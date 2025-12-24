@@ -1059,6 +1059,9 @@ BUS_RUNS_DELETE_REQUEST = (
 BUS_RUNS_PRUNE_REQUEST = (
     BUS_TOPICS.CORE_RUNS_PRUNE_REQUEST if BUS_TOPICS else "core.runs.prune.request"
 )
+BUS_RUNS_DELETE_MANY_REQUEST = (
+    BUS_TOPICS.CORE_RUNS_DELETE_MANY_REQUEST if BUS_TOPICS else "core.runs.delete_many.request"
+)
 BUS_MODULE_INSTALL_REQUEST = (
     BUS_TOPICS.CORE_CONTENT_MODULE_INSTALL_REQUEST
     if BUS_TOPICS
@@ -1218,6 +1221,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.runs_prune_btn = QtWidgets.QPushButton("Prune…")
         self.runs_prune_btn.clicked.connect(self._open_prune_runs_dialog)
         runs_toolbar.addWidget(self.runs_prune_btn)
+        self.runs_delete_selected_btn = QtWidgets.QPushButton("Delete Selected")
+        self.runs_delete_selected_btn.clicked.connect(self._delete_selected_runs)
+        runs_toolbar.addWidget(self.runs_delete_selected_btn)
+        self.runs_delete_all_btn = QtWidgets.QPushButton("Delete All (Lab)")
+        self.runs_delete_all_btn.clicked.connect(self._delete_all_runs_for_lab)
+        runs_toolbar.addWidget(self.runs_delete_all_btn)
         runs_toolbar.addStretch()
         page_runs_layout.addLayout(runs_toolbar)
 
@@ -1234,6 +1243,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         header_view.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header_view.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header_view.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.runs_tree.itemChanged.connect(self._on_runs_item_changed)
         page_runs_layout.addWidget(self.runs_tree, stretch=1)
         self._stack.addWidget(page_runs)
 
@@ -1380,6 +1390,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.runs_refresh_btn.setEnabled(bool(enabled and runs_available))
         if hasattr(self, "runs_prune_btn"):
             self.runs_prune_btn.setEnabled(bool(enabled and runs_available))
+        if hasattr(self, "runs_delete_selected_btn"):
+            self.runs_delete_selected_btn.setEnabled(bool(enabled and runs_available))
+        if hasattr(self, "runs_delete_all_btn"):
+            self.runs_delete_all_btn.setEnabled(bool(enabled and runs_available))
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
         )
@@ -1480,9 +1494,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.runs_status.setText("Runs list updated.")
 
     def _render_runs_list(self, labs: Dict[str, Any]) -> None:
+        self._runs_syncing = True
         self.runs_tree.clear()
         for lab_id, runs in sorted(labs.items()):
             lab_item = QtWidgets.QTreeWidgetItem([lab_id, "", "", "", ""])
+            lab_item.setFlags(lab_item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+            lab_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+            lab_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "lab", "lab_id": lab_id})
             self.runs_tree.addTopLevelItem(lab_item)
             for run in runs or []:
                 run_id = run.get("run_id") or "run"
@@ -1491,14 +1509,18 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 size_text = f"{size_bytes/1024/1024:.2f} MB" if size_bytes else "0 MB"
                 root_kind = run.get("root_kind") or "runs"
                 run_item = QtWidgets.QTreeWidgetItem([run_id, created, size_text, root_kind, ""])
+                run_item.setFlags(run_item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+                run_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
                 run_item.setData(
                     0,
                     QtCore.Qt.ItemDataRole.UserRole,
                     {
+                        "type": "run",
                         "lab_id": lab_id,
                         "run_id": run_id,
                         "root_kind": root_kind,
                         "path": run.get("path"),
+                        "size_bytes": size_bytes,
                     },
                 )
                 lab_item.addChild(run_item)
@@ -1514,6 +1536,126 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 action_layout.addWidget(delete_btn)
                 self.runs_tree.setItemWidget(run_item, 4, action_widget)
         self.runs_tree.expandAll()
+        self._runs_syncing = False
+        self._update_runs_delete_buttons()
+
+    def _on_runs_item_changed(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
+        if getattr(self, "_runs_syncing", False) or column != 0:
+            return
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        if data.get("type") == "lab":
+            state = item.checkState(0)
+            for idx in range(item.childCount()):
+                child = item.child(idx)
+                child.setCheckState(0, state)
+        elif data.get("type") == "run":
+            parent = item.parent()
+            if parent is not None:
+                states = [parent.child(i).checkState(0) for i in range(parent.childCount())]
+                if all(s == QtCore.Qt.CheckState.Checked for s in states):
+                    parent.setCheckState(0, QtCore.Qt.CheckState.Checked)
+                elif all(s == QtCore.Qt.CheckState.Unchecked for s in states):
+                    parent.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+                else:
+                    parent.setCheckState(0, QtCore.Qt.CheckState.PartiallyChecked)
+        self._update_runs_delete_buttons()
+
+    def _selected_run_items(self) -> list[Dict[str, Any]]:
+        items: list[Dict[str, Any]] = []
+        root = self.runs_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            lab_item = root.child(i)
+            for j in range(lab_item.childCount()):
+                run_item = lab_item.child(j)
+                if run_item.checkState(0) == QtCore.Qt.CheckState.Checked:
+                    info = run_item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+                    if info.get("type") == "run":
+                        items.append(info)
+        return items
+
+    def _current_lab_group(self) -> Optional[QtWidgets.QTreeWidgetItem]:
+        item = self.runs_tree.currentItem()
+        if not item:
+            return None
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+        if data.get("type") == "lab":
+            return item
+        if data.get("type") == "run":
+            return item.parent()
+        return None
+
+    def _update_runs_delete_buttons(self) -> None:
+        selected = self._selected_run_items()
+        has_selected = bool(selected)
+        lab_group = self._current_lab_group()
+        has_lab = lab_group is not None and lab_group.childCount() > 0
+        if hasattr(self, "runs_delete_selected_btn"):
+            self.runs_delete_selected_btn.setEnabled(bool(self.bus and has_selected))
+        if hasattr(self, "runs_delete_all_btn"):
+            self.runs_delete_all_btn.setEnabled(bool(self.bus and has_lab))
+
+    def _delete_selected_runs(self) -> None:
+        if not self.bus:
+            return
+        items = self._selected_run_items()
+        if not items:
+            self.runs_status.setText("No runs selected.")
+            return
+        total_bytes = sum(item.get("size_bytes") or 0 for item in items)
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Delete selected runs",
+            f"Delete {len(items)} runs (~{total_bytes/1024/1024:.2f} MB)?",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self._delete_runs_batch(items)
+
+    def _delete_all_runs_for_lab(self) -> None:
+        if not self.bus:
+            return
+        lab_item = self._current_lab_group()
+        if lab_item is None:
+            self.runs_status.setText("Select a lab group first.")
+            return
+        items = []
+        for i in range(lab_item.childCount()):
+            run_item = lab_item.child(i)
+            info = run_item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
+            if info.get("type") == "run":
+                items.append(info)
+        if not items:
+            self.runs_status.setText("No runs in this lab.")
+            return
+        total_bytes = sum(item.get("size_bytes") or 0 for item in items)
+        lab_id = (lab_item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}).get("lab_id") or "lab"
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Delete all runs",
+            f"Delete all {len(items)} runs for {lab_id} (~{total_bytes/1024/1024:.2f} MB)?",
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self._delete_runs_batch(items)
+
+    def _delete_runs_batch(self, items: list[Dict[str, Any]]) -> None:
+        try:
+            response = self.bus.request(
+                BUS_RUNS_DELETE_MANY_REQUEST,
+                {"items": items},
+                source="app_ui",
+                timeout_ms=5000,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self.runs_status.setText(f"Delete failed: {exc}")
+            return
+        ok_count = response.get("ok_count", 0)
+        fail_count = response.get("fail_count", 0)
+        freed = response.get("freed_bytes", 0)
+        self.runs_status.setText(
+            f"Deleted {ok_count} runs, failed {fail_count}, freed {freed} bytes."
+        )
+        self._refresh_runs_list()
 
     def _delete_run(self, info: Optional[Dict[str, Any]]) -> None:
         if not self.bus or not info:

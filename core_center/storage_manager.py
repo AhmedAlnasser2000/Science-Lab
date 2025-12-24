@@ -172,6 +172,50 @@ def delete_run(lab_id: str, run_id: str, root_kind: str) -> Dict[str, object]:
     return {"ok": True}
 
 
+def delete_runs_many(items: List[Dict[str, object]]) -> Dict[str, object]:
+    ok_count = 0
+    fail_count = 0
+    freed_bytes = 0
+    errors: List[str] = []
+    for item in items or []:
+        lab_id = str(item.get("lab_id") or "")
+        run_id = str(item.get("run_id") or "")
+        root_kind = str(item.get("root_kind") or "runs")
+        if not lab_id or not run_id:
+            fail_count += 1
+            errors.append("invalid_item")
+            continue
+        root = _runs_root() if root_kind == "runs" else _runs_local_root()
+        safe_lab = _sanitize_id(lab_id)
+        target = (root / safe_lab / run_id).resolve()
+        try:
+            target.relative_to(root.resolve())
+        except ValueError:
+            fail_count += 1
+            errors.append(f"{lab_id}/{run_id}: invalid_path")
+            continue
+        if not target.exists() or not target.is_dir():
+            fail_count += 1
+            errors.append(f"{lab_id}/{run_id}: not_found")
+            continue
+        try:
+            freed_bytes += compute_disk_usage(target)
+        except Exception:
+            pass
+        try:
+            safe_rmtree(target)
+            ok_count += 1
+        except Exception as exc:
+            fail_count += 1
+            errors.append(f"{lab_id}/{run_id}: {exc}")
+    return {
+        "ok_count": ok_count,
+        "fail_count": fail_count,
+        "freed_bytes": freed_bytes,
+        "errors": errors,
+    }
+
+
 def prune_runs(
     *,
     keep_last_per_lab: int | None,

@@ -36,6 +36,9 @@ RUNS_DELETE_REQUEST_TOPIC = getattr(
 RUNS_PRUNE_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_RUNS_PRUNE_REQUEST", "core.runs.prune.request"
 )
+RUNS_DELETE_MANY_REQUEST_TOPIC = getattr(
+    BUS_TOPICS, "CORE_RUNS_DELETE_MANY_REQUEST", "core.runs.delete_many.request"
+)
 INVENTORY_REQUEST_TOPIC = getattr(
     BUS_TOPICS, "CORE_INVENTORY_GET_REQUEST", "core.inventory.get.request"
 )
@@ -169,6 +172,12 @@ def register_core_center_endpoints(bus: Any) -> None:
         )
         return {"ok": True, "summary": result}
 
+    def _handle_runs_delete_many(envelope) -> Dict[str, object]:
+        payload = envelope.payload or {}
+        items = payload.get("items") or []
+        result = storage_manager.delete_runs_many(items)
+        return {"ok": True, **result}
+
     def _handle_inventory(envelope) -> Dict[str, object]:  # noqa: ARG001
         try:
             snapshot = inventory_module.get_inventory_snapshot()
@@ -258,6 +267,8 @@ def register_core_center_endpoints(bus: Any) -> None:
         bus.register_handler(RUNS_DELETE_REQUEST_TOPIC, _handle_runs_delete)
     if RUNS_PRUNE_REQUEST_TOPIC:
         bus.register_handler(RUNS_PRUNE_REQUEST_TOPIC, _handle_runs_prune)
+    if RUNS_DELETE_MANY_REQUEST_TOPIC:
+        bus.register_handler(RUNS_DELETE_MANY_REQUEST_TOPIC, _handle_runs_delete_many)
     if INVENTORY_REQUEST_TOPIC:
         bus.register_handler(INVENTORY_REQUEST_TOPIC, _handle_inventory)
     if MODULE_INSTALL_REQUEST_TOPIC:
