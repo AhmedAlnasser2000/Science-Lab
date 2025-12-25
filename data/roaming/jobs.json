@@ -1,5 +1,206 @@
 [
   {
+    "job_id": "74b57b6c-52fa-4b8f-8290-264186ad82d1",
+    "job_type": "core.report.generate",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 95,
+    "result": {
+      "text": "Storage Roots:\n  store: 0 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 258343 bytes\n  total: 258343 bytes\n\nRuns storage: 534 bytes\n  Runs per lab:\n    - electric_field: 0 runs, 0 bytes\n    - gravity: 2 runs, 264 bytes\n    - lens_ray: 0 runs, 0 bytes\n    - projectile: 1 runs, 135 bytes\n    - vector_add: 1 runs, 135 bytes\n\nComponents:\n  physics [module] repo present 21966 bytes @ content_repo\\physics_v1\n  default [ui_pack] repo present 1274 bytes @ ui_repo\\ui_v1\\packs\\default\n  quantum_smooth [ui_pack] repo present 1664 bytes @ ui_repo\\ui_v1\\packs\\quantum_smooth\n  gravity [lab] app present 8791 bytes @ app_ui\\labs\n  projectile [lab] app present 10439 bytes @ app_ui\\labs\n  electric_field [lab] app present 13627 bytes @ app_ui\\labs\n  lens_ray [lab] app present 16049 bytes @ app_ui\\labs\n  vector_add [lab] app present 11692 bytes @ app_ui\\labs\n  physics [module] store present 21956 bytes @ content_store\\physics_v1",
+      "json": {
+        "roots": {
+          "store": 0,
+          "cache": 0,
+          "dumps": 0,
+          "roaming": 258343,
+          "total": 258343
+        },
+        "components": [
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 21966,
+            "install_path": "content_repo\\physics_v1"
+          },
+          {
+            "id": "default",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1274,
+            "install_path": "ui_repo\\ui_v1\\packs\\default"
+          },
+          {
+            "id": "quantum_smooth",
+            "type": "ui_pack",
+            "source": "repo",
+            "state": "present",
+            "disk_usage_bytes": 1664,
+            "install_path": "ui_repo\\ui_v1\\packs\\quantum_smooth"
+          },
+          {
+            "id": "gravity",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 8791,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "projectile",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 10439,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "electric_field",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 13627,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "lens_ray",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 16049,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "vector_add",
+            "type": "lab",
+            "source": "app",
+            "state": "present",
+            "disk_usage_bytes": 11692,
+            "install_path": "app_ui\\labs"
+          },
+          {
+            "id": "physics",
+            "type": "module",
+            "source": "store",
+            "state": "present",
+            "disk_usage_bytes": 21956,
+            "install_path": "content_store\\physics_v1"
+          }
+        ],
+        "runs": {
+          "total_bytes": 534,
+          "labs": {
+            "electric_field": {
+              "run_count": 0,
+              "bytes": 0
+            },
+            "gravity": {
+              "run_count": 2,
+              "bytes": 264
+            },
+            "lens_ray": {
+              "run_count": 0,
+              "bytes": 0
+            },
+            "projectile": {
+              "run_count": 1,
+              "bytes": 135
+            },
+            "vector_add": {
+              "run_count": 1,
+              "bytes": 135
+            }
+          }
+        },
+        "registry_summary": {
+          "total": 9,
+          "by_type": {
+            "module": 2,
+            "ui_pack": 2,
+            "lab": 5
+          },
+          "by_source": {
+            "repo": 3,
+            "app": 5,
+            "store": 1
+          }
+        }
+      }
+    },
+    "error": null,
+    "payload": {},
+    "started_at": "2025-12-25T16:58:59.842107+00:00",
+    "stage": "ready",
+    "finished_at": "2025-12-25T16:58:59.885313+00:00",
+    "ok": true,
+    "result_summary": "Storage Roots:\n  store: 0 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 258343 bytes\n  total: 258343 bytes\n\nRuns st"
+  },
+  {
+    "job_id": "6edd0533-7118-417f-bfe7-e0413ff10a34",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1",
+      "message": "already installed"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-25T16:58:34.258758+00:00",
+    "stage": "already installed",
+    "finished_at": "2025-12-25T16:58:34.261525+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "2bba0f31-4fc4-4513-bb4a-d173f30ccfe2",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1",
+      "message": "already installed"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-25T16:57:36.675158+00:00",
+    "stage": "already installed",
+    "finished_at": "2025-12-25T16:57:36.677732+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
+    "job_id": "a569a33d-cc77-4c59-a11d-51240597a7df",
+    "job_type": "core.module.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 100,
+    "result": {
+      "module_id": "physics",
+      "install_path": "content_store\\physics_v1",
+      "message": "already installed"
+    },
+    "error": null,
+    "payload": {
+      "module_id": "physics"
+    },
+    "started_at": "2025-12-25T16:57:31.585943+00:00",
+    "stage": "already installed",
+    "finished_at": "2025-12-25T16:57:31.588792+00:00",
+    "ok": true,
+    "result_summary": null
+  },
+  {
     "job_id": "0e57ba49-4e52-4e3a-89f9-c7d4ee3f59f4",
     "job_type": "core.report.generate",
     "source": "core_center",
@@ -7727,73 +7928,6 @@
     "started_at": "2025-12-23T07:50:52.127182+00:00",
     "finished_at": "2025-12-23T07:50:52.127450+00:00",
     "ok": false,
-    "result_summary": null
-  },
-  {
-    "job_id": "a637d9c4-5089-410a-b411-f984e78817f4",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 95,
-    "result": {
-      "module_id": "physics_v1"
-    },
-    "error": null,
-    "started_at": "2025-12-23T07:50:51.751711+00:00",
-    "stage": "registry updated",
-    "finished_at": "2025-12-23T07:50:51.777418+00:00",
-    "ok": true,
-    "result_summary": null
-  },
-  {
-    "job_id": "6e9d1f1b-8710-4f60-86d2-c54e297e212f",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 95,
-    "result": {
-      "module_id": "physics_v1",
-      "install_path": "content_store\\physics_v1"
-    },
-    "error": null,
-    "started_at": "2025-12-23T07:50:50.999201+00:00",
-    "stage": "registry updated",
-    "finished_at": "2025-12-23T07:50:51.074319+00:00",
-    "ok": true,
-    "result_summary": null
-  },
-  {
-    "job_id": "2b8b3f76-1b61-4b12-938b-81532dfce5b9",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 95,
-    "result": {
-      "module_id": "physics_v1",
-      "install_path": "content_store\\physics_v1"
-    },
-    "error": null,
-    "started_at": "2025-12-23T07:50:50.816116+00:00",
-    "stage": "registry updated",
-    "finished_at": "2025-12-23T07:50:50.893545+00:00",
-    "ok": true,
-    "result_summary": null
-  },
-  {
-    "job_id": "3a7dd68a-669b-4eeb-bab1-9158a231e942",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 95,
-    "result": {
-      "module_id": "physics_v1",
-      "install_path": "content_store\\physics_v1"
-    },
-    "error": null,
-    "started_at": "2025-12-23T07:50:50.631469+00:00",
-    "stage": "registry updated",
-    "finished_at": "2025-12-23T07:50:50.710048+00:00",
-    "ok": true,
     "result_summary": null
   }
 ]

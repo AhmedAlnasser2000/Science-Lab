@@ -36,7 +36,7 @@ def _load_manifest(path: Path, manifest_type: str) -> Tuple[Optional[Dict[str, A
         return None, err
     result = validate_manifest(path, manifest_type, data)
     if not result.ok:
-        return None, f"Invalid manifest: {result.error_summary or 'schema validation failed'}"
+        return data, f"Invalid manifest: {result.error_summary or 'schema validation failed'}"
     return data, None
 
 
@@ -114,6 +114,8 @@ def _compute_part_status(repo_manifest_path: Path, repo_manifest: Dict[str, Any]
         if store_err and store_err.startswith("Invalid manifest:"):
             return STATUS_UNAVAILABLE, store_err
         return STATUS_UNAVAILABLE, f"installed manifest unreadable: {store_err}"
+    if store_err and store_err.startswith("Invalid manifest:"):
+        return STATUS_UNAVAILABLE, store_err
 
     for asset in assets:
         store_asset = STORE_BASE / asset
@@ -189,11 +191,20 @@ def list_tree() -> Dict[str, Any]:
         else:
             reason = f"module manifest unavailable: {module_err}"
         return {
-            "module": None,
+            "module": {
+                "module_id": None,
+                "title": None,
+                "sections": [],
+            },
             "status": STATUS_UNAVAILABLE,
             "reason": reason,
         }
 
+    module_status = STATUS_READY
+    module_reason = ""
+    if module_err and module_err.startswith("Invalid manifest:"):
+        module_status = STATUS_UNAVAILABLE
+        module_reason = module_err
     module_entry: Dict[str, Any] = {
         "module_id": module_manifest.get("module_id"),
         "title": module_manifest.get("title"),
@@ -238,6 +249,9 @@ def list_tree() -> Dict[str, Any]:
             "title": section_manifest.get("title"),
             "packages": [],
         }
+        if section_err and section_err.startswith("Invalid manifest:"):
+            section_entry["status"] = STATUS_UNAVAILABLE
+            section_entry["reason"] = section_err
 
         for package_stub in section_manifest.get("packages", []):
             package_rel = package_stub.get("manifest_path")
@@ -277,6 +291,9 @@ def list_tree() -> Dict[str, Any]:
                 "title": package_manifest.get("title"),
                 "parts": [],
             }
+            if package_err and package_err.startswith("Invalid manifest:"):
+                package_entry["status"] = STATUS_UNAVAILABLE
+                package_entry["reason"] = package_err
 
             for part_stub in package_manifest.get("parts", []):
                 part_rel = part_stub.get("manifest_path")
@@ -309,10 +326,14 @@ def list_tree() -> Dict[str, Any]:
                     )
                     continue
 
-                status, reason = _compute_part_status(part_manifest_path, repo_manifest)
+                if repo_err and repo_err.startswith("Invalid manifest:"):
+                    status = STATUS_UNAVAILABLE
+                    reason = repo_err
+                else:
+                    status, reason = _compute_part_status(part_manifest_path, repo_manifest)
                 part_entry = {
-                    "part_id": repo_manifest.get("part_id"),
-                    "title": repo_manifest.get("title"),
+                    "part_id": repo_manifest.get("part_id") or part_stub.get("part_id"),
+                    "title": repo_manifest.get("title") or part_stub.get("title"),
                     "status": status,
                     "reason": reason,
                 }
@@ -328,7 +349,7 @@ def list_tree() -> Dict[str, Any]:
 
         module_entry["sections"].append(section_entry)
 
-    return {"module": module_entry, "status": STATUS_READY, "reason": ""}
+    return {"module": module_entry, "status": module_status, "reason": module_reason}
 
 
 def get_part_status(part_id: str) -> Tuple[str, str]:
@@ -342,6 +363,8 @@ def get_part_status(part_id: str) -> Tuple[str, str]:
         if repo_err and repo_err.startswith("Invalid manifest:"):
             return STATUS_UNAVAILABLE, repo_err
         return STATUS_UNAVAILABLE, f"repo part manifest unavailable: {repo_err}"
+    if repo_err and repo_err.startswith("Invalid manifest:"):
+        return STATUS_UNAVAILABLE, repo_err
 
     return _compute_part_status(repo_manifest_path, repo_manifest)
 
@@ -357,6 +380,8 @@ def get_part(part_id: str) -> Dict[str, Any]:
         if repo_err and repo_err.startswith("Invalid manifest:"):
             return {"status": STATUS_UNAVAILABLE, "reason": repo_err}
         return {"status": STATUS_UNAVAILABLE, "reason": f"repo part manifest unavailable: {repo_err}"}
+    if repo_err and repo_err.startswith("Invalid manifest:"):
+        return {"status": STATUS_UNAVAILABLE, "reason": repo_err, "manifest": repo_manifest}
 
     status, reason = _compute_part_status(repo_manifest_path, repo_manifest)
 
@@ -402,6 +427,8 @@ def download_part(part_id: str) -> Dict[str, Any]:
         if repo_err and repo_err.startswith("Invalid manifest:"):
             return {"status": STATUS_UNAVAILABLE, "reason": repo_err}
         return {"status": STATUS_UNAVAILABLE, "reason": f"repo part manifest unavailable: {repo_err}"}
+    if repo_err and repo_err.startswith("Invalid manifest:"):
+        return {"status": STATUS_UNAVAILABLE, "reason": repo_err}
 
     rel_manifest = _safe_relative(repo_manifest_path, REPO_BASE)
     if rel_manifest is None:

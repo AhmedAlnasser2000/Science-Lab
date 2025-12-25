@@ -28,6 +28,8 @@ class WorkspaceComponentPolicy:
     def is_component_enabled(self, component_id: Optional[str]) -> bool:
         if not component_id:
             return True
+        if str(component_id).startswith("labhost:"):
+            return True
         return component_id not in self.disabled_component_ids
 
 

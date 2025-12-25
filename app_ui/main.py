@@ -1628,20 +1628,41 @@ class ContentManagementScreen(QtWidgets.QWidget):
         module_item.setData(
             0,
             QtCore.Qt.ItemDataRole.UserRole,
-            {"type": "module", "module_id": module.get("module_id"), "status": module_status},
+            {
+                "type": "module",
+                "module_id": module.get("module_id"),
+                "status": module_status,
+                "reason": data.get("reason"),
+            },
         )
         added_any = False
         for section in module.get("sections", []):
             sec_item = QtWidgets.QTreeWidgetItem(
                 [self._display_name(section.get("title"), section.get("section_id"), "Section"), section.get("status", "")]
             )
-            sec_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "section"})
+            sec_item.setData(
+                0,
+                QtCore.Qt.ItemDataRole.UserRole,
+                {
+                    "type": "section",
+                    "status": section.get("status"),
+                    "reason": section.get("reason"),
+                },
+            )
             sec_has_child = False
             for package in section.get("packages", []):
                 pkg_item = QtWidgets.QTreeWidgetItem(
                     [self._display_name(package.get("title"), package.get("package_id"), "Package"), package.get("status", "")]
                 )
-                pkg_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "package"})
+                pkg_item.setData(
+                    0,
+                    QtCore.Qt.ItemDataRole.UserRole,
+                    {
+                        "type": "package",
+                        "status": package.get("status"),
+                        "reason": package.get("reason"),
+                    },
+                )
                 pkg_has_child = False
                 for part in package.get("parts", []):
                     status = part.get("status")
@@ -1742,13 +1763,39 @@ class ContentManagementScreen(QtWidgets.QWidget):
                 self.detail_action.setText("Action: Uninstall Module.")
             else:
                 self.detail_action.setText("Action: Install Module.")
-            self.detail_hint.setText("Manage the entire module.")
+            reason = data.get("reason")
+            if reason:
+                self.detail_hint.setText(f"Reason: {reason}")
+            else:
+                self.detail_hint.setText("Manage the entire module.")
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(True)
             self.uninstall_module_btn.setVisible(True)
             self.pending_module_id = module_id
             self._selected_module_status = module_status
             self._set_module_action_enabled()
+        elif node_type == "section":
+            section_id = item.text(0)
+            self.detail_title.setText(f"Section {section_id}")
+            self.detail_status_pill.set_status(item.text(1))
+            self.detail_meta.setText("")
+            self.detail_action.setText("Select a package to manage parts.")
+            reason = data.get("reason")
+            self.detail_hint.setText(f"Reason: {reason}" if reason else "")
+            self.install_part_btn.setVisible(False)
+            self.install_module_btn.setVisible(False)
+            self.uninstall_module_btn.setVisible(False)
+        elif node_type == "package":
+            package_id = item.text(0)
+            self.detail_title.setText(f"Package {package_id}")
+            self.detail_status_pill.set_status(item.text(1))
+            self.detail_meta.setText("")
+            self.detail_action.setText("Select a part to manage content.")
+            reason = data.get("reason")
+            self.detail_hint.setText(f"Reason: {reason}" if reason else "")
+            self.install_part_btn.setVisible(False)
+            self.install_module_btn.setVisible(False)
+            self.uninstall_module_btn.setVisible(False)
         else:
             self._clear_details()
 

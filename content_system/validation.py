@@ -267,20 +267,33 @@ def validate_manifest(
         _RESULT_CACHE[cache_key] = result
         return result
 
-    schema = _load_schema_file(schema_name)
-    schema_id = schema.get("$id") if isinstance(schema, dict) else None
-    issues = _validate(data, schema, current_file=schema_name, json_path="$")
-    error_summary = issues[0].message if issues else None
-    result = ValidationResult(
-        ok=not issues,
-        manifest_type=manifest_type,
-        schema_id=schema_id,
-        errors=issues,
-        warnings=warnings,
-        error_summary=error_summary,
-        mtime_ns=mtime_ns,
-        size=size,
-    )
+    try:
+        schema = _load_schema_file(schema_name)
+        schema_id = schema.get("$id") if isinstance(schema, dict) else None
+        issues = _validate(data, schema, current_file=schema_name, json_path="$")
+        error_summary = issues[0].message if issues else None
+        result = ValidationResult(
+            ok=not issues,
+            manifest_type=manifest_type,
+            schema_id=schema_id,
+            errors=issues,
+            warnings=warnings,
+            error_summary=error_summary,
+            mtime_ns=mtime_ns,
+            size=size,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        warnings.append(ValidationIssue("$", f"validator error: {exc}"))
+        result = ValidationResult(
+            ok=True,
+            manifest_type=manifest_type,
+            schema_id=None,
+            errors=[],
+            warnings=warnings,
+            error_summary=None,
+            mtime_ns=mtime_ns,
+            size=size,
+        )
     _RESULT_CACHE[cache_key] = result
     return result
 
