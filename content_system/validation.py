@@ -39,6 +39,10 @@ _SCHEMA_CACHE: Dict[str, Dict[str, Any]] = {}
 _RESULT_CACHE: Dict[str, ValidationResult] = {}
 
 
+def clear_validation_cache() -> None:
+    _RESULT_CACHE.clear()
+
+
 def _load_schema_file(name: str) -> Dict[str, Any]:
     cached = _SCHEMA_CACHE.get(name)
     if cached is not None:
@@ -326,4 +330,3 @@ def get_validation_report(limit: int = 50) -> Dict[str, Any]:
         "failures": failures,
         "warnings": warnings,
     }
-

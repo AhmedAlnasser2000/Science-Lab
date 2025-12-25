@@ -2489,6 +2489,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_workspace_changed,
             bus=APP_BUS,
             workspace_selector_factory=selector_factory,
+            on_open_component_management=self._open_component_management,
+            on_open_module_management=self._show_module_management,
+            on_open_content_management=self._open_content_management,
             log_handler=_agent_debug_log,
         )
         self.component_sandbox = ComponentSandboxScreen(

@@ -27,9 +27,10 @@ except Exception as exc:  # pragma: no cover
     CORE_CENTER_ERROR = str(exc)
 
 try:
-    from content_system.validation import get_validation_report
+    from content_system.validation import clear_validation_cache, get_validation_report
 except Exception:  # pragma: no cover - defensive
     get_validation_report = None
+    clear_validation_cache = None
 
 BUS_REPORT_REQUEST = (
     BUS_TOPICS.CORE_STORAGE_REPORT_REQUEST if BUS_TOPICS else "core.storage.report.request"
@@ -353,8 +354,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         page_content_layout = QtWidgets.QVBoxLayout(page_content)
         page_content_layout.setContentsMargins(0, 0, 0, 0)
         content_toolbar = QtWidgets.QHBoxLayout()
-        self.content_diag_refresh_btn = QtWidgets.QPushButton("Refresh")
-        self.content_diag_refresh_btn.clicked.connect(self._refresh_content_diagnostics)
+        self.content_diag_refresh_btn = QtWidgets.QPushButton("Refresh validation")
+        self.content_diag_refresh_btn.clicked.connect(lambda: self._refresh_content_diagnostics(force=True))
         content_toolbar.addWidget(self.content_diag_refresh_btn)
         self.content_diag_copy_btn = QtWidgets.QPushButton("Copy details")
         self.content_diag_copy_btn.clicked.connect(self._copy_content_diagnostics)
@@ -364,10 +365,14 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.content_diag_status = QtWidgets.QLabel("Content diagnostics unavailable.")
         self.content_diag_status.setStyleSheet("color: #555;")
         page_content_layout.addWidget(self.content_diag_status)
-        self.content_diag_view = QtWidgets.QPlainTextEdit()
-        self.content_diag_view.setReadOnly(True)
-        self.content_diag_view.setPlaceholderText("Validation details will appear here.")
-        page_content_layout.addWidget(self.content_diag_view, stretch=1)
+        self.content_diag_tree = QtWidgets.QTreeWidget()
+        self.content_diag_tree.setColumnCount(2)
+        self.content_diag_tree.setHeaderLabels(["Item", "Detail"])
+        header_view = self.content_diag_tree.header()
+        header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header_view.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        page_content_layout.addWidget(self.content_diag_tree, stretch=1)
+        self._content_diag_report: Optional[Dict[str, Any]] = None
         self._stack.addWidget(page_content)
         self._content_page_index = self._stack.count() - 1
 
@@ -1550,12 +1555,22 @@ class SystemHealthScreen(QtWidgets.QWidget):
         except Exception as exc:  # pragma: no cover - defensive
             QtWidgets.QMessageBox.warning(self, "System Health", f"Unable to open folder: {exc}")
 
-    def _refresh_content_diagnostics(self) -> None:
+    def _refresh_content_diagnostics(self, *, force: bool = False) -> None:
         if not callable(get_validation_report):
             self.content_diag_status.setText("Content diagnostics unavailable.")
-            self.content_diag_view.setPlainText("")
+            if hasattr(self, "content_diag_tree"):
+                self.content_diag_tree.clear()
             return
-        report = get_validation_report(limit=50)
+        if force and callable(clear_validation_cache):
+            clear_validation_cache()
+            try:
+                import content_system
+
+                content_system.list_tree()
+            except Exception:
+                pass
+        report = get_validation_report(limit=100)
+        self._content_diag_report = report
         ok_count = report.get("ok_count", 0)
         warn_count = report.get("warn_count", 0)
         fail_count = report.get("fail_count", 0)
@@ -1564,27 +1579,76 @@ class SystemHealthScreen(QtWidgets.QWidget):
         )
         failures = report.get("failures") or []
         warnings = report.get("warnings") or []
-        lines: list[str] = []
+        tree = self.content_diag_tree
+        tree.clear()
         if not failures and not warnings:
-            lines.append("No validation errors recorded.")
+            tree.addTopLevelItem(
+                QtWidgets.QTreeWidgetItem(["No validation issues recorded.", ""])
+            )
+            return
+
+        def _add_group(label: str, items: list[dict]) -> None:
+            group = QtWidgets.QTreeWidgetItem([label, f"{len(items)} item(s)"])
+            tree.addTopLevelItem(group)
+            grouped: Dict[str, list[dict]] = {}
+            for entry in items:
+                manifest_type = entry.get("manifest_type") or "unknown"
+                grouped.setdefault(manifest_type, []).append(entry)
+            for manifest_type, entries in grouped.items():
+                m_node = QtWidgets.QTreeWidgetItem(
+                    [manifest_type, f"{len(entries)} item(s)"]
+                )
+                group.addChild(m_node)
+                for entry in entries:
+                    summary = entry.get("error_summary") or "issue"
+                    node = QtWidgets.QTreeWidgetItem([summary, entry.get("json_path") or ""])
+                    m_node.addChild(node)
+                    node.addChild(QtWidgets.QTreeWidgetItem(["Path", entry.get("path") or ""]))
+                    node.addChild(
+                        QtWidgets.QTreeWidgetItem(["Schema", entry.get("schema_id") or ""])
+                    )
+                    node.addChild(
+                        QtWidgets.QTreeWidgetItem(
+                            ["JSON path", entry.get("json_path") or "$"]
+                        )
+                    )
+            group.setExpanded(True)
+
+        if failures:
+            _add_group("Failures", failures)
         if warnings:
+            _add_group("Warnings", warnings)
+        tree.expandToDepth(1)
+
+    def _copy_content_diagnostics(self) -> None:
+        report = self._content_diag_report or {}
+        lines: list[str] = []
+        lines.append("Content validation report")
+        lines.append(
+            f"OK={report.get('ok_count', 0)} "
+            f"WARN={report.get('warn_count', 0)} "
+            f"FAIL={report.get('fail_count', 0)}"
+        )
+        failures = report.get("failures") or []
+        warnings = report.get("warnings") or []
+        if warnings:
+            lines.append("")
             lines.append("Warnings:")
             for item in warnings:
                 lines.append(
-                    f"- {item.get('path')} ({item.get('manifest_type')}) {item.get('error_summary')}"
+                    f"- {item.get('manifest_type')} {item.get('path')} "
+                    f"{item.get('error_summary')} ({item.get('json_path') or '$'}) "
+                    f"[{item.get('schema_id') or 'no schema'}]"
                 )
         if failures:
+            lines.append("")
             lines.append("Failures:")
             for item in failures:
-                summary = item.get("error_summary")
-                path = item.get("path")
-                mtype = item.get("manifest_type")
-                json_path = item.get("json_path") or "$"
-                lines.append(f"- {path} ({mtype}) {summary} at {json_path}")
-        self.content_diag_view.setPlainText("\n".join(lines))
-
-    def _copy_content_diagnostics(self) -> None:
-        text = self.content_diag_view.toPlainText()
-        QtWidgets.QApplication.clipboard().setText(text or "")
+                lines.append(
+                    f"- {item.get('manifest_type')} {item.get('path')} "
+                    f"{item.get('error_summary')} ({item.get('json_path') or '$'}) "
+                    f"[{item.get('schema_id') or 'no schema'}]"
+                )
+        QtWidgets.QApplication.clipboard().setText("\n".join(lines))
 
 
