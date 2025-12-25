@@ -2,6 +2,7 @@
 
 import json
 import time
+import zipfile
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -87,6 +88,27 @@ def _save_workspace_config_to_root(prefs_root: Path, config: Dict[str, Any]) -> 
         path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     except Exception:
         pass
+
+
+def _read_git_commit_hash() -> Optional[str]:
+    root = Path(__file__).resolve().parent.parent.parent
+    head_path = root / ".git" / "HEAD"
+    if not head_path.exists():
+        return None
+    try:
+        head = head_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+    if head.startswith("ref:"):
+        ref = head.split(" ", 1)[1].strip()
+        ref_path = root / ".git" / ref
+        if not ref_path.exists():
+            return None
+        try:
+            return ref_path.read_text(encoding="utf-8").strip()[:12]
+        except Exception:
+            return None
+    return head[:12] if head else None
 
 
 def _request_inventory_snapshot(bus) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -199,6 +221,22 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         templates_layout.addWidget(self.template_status)
         layout.addWidget(templates_box)
 
+        io_box = QtWidgets.QGroupBox("Export / Import")
+        io_layout = QtWidgets.QVBoxLayout(io_box)
+        io_row = QtWidgets.QHBoxLayout()
+        self.export_btn = QtWidgets.QPushButton("Export Workspace...")
+        self.export_btn.clicked.connect(self._export_workspace)
+        self.import_btn = QtWidgets.QPushButton("Import Workspace...")
+        self.import_btn.clicked.connect(self._import_workspace)
+        io_row.addWidget(self.export_btn)
+        io_row.addWidget(self.import_btn)
+        io_row.addStretch()
+        io_layout.addLayout(io_row)
+        self.io_status = QtWidgets.QLabel("")
+        self.io_status.setStyleSheet("color: #555;")
+        io_layout.addWidget(self.io_status)
+        layout.addWidget(io_box)
+
         packs_box = QtWidgets.QGroupBox("Component Packs")
         packs_layout = QtWidgets.QVBoxLayout(packs_box)
         self.pack_tree = QtWidgets.QTreeWidget()
@@ -310,6 +348,10 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self.set_active_btn.setEnabled(bool(self.bus and has_ws and not active))
         self.delete_btn.setEnabled(bool(self.bus and has_ws and not active))
         self.create_btn.setEnabled(bool(self.bus))
+        if hasattr(self, "export_btn"):
+            self.export_btn.setEnabled(bool(self.bus and (has_ws or self._active_workspace())))
+        if hasattr(self, "import_btn"):
+            self.import_btn.setEnabled(bool(self.bus))
         self._refresh_pack_controls()
 
     def _refresh_pack_controls(self) -> None:
@@ -790,6 +832,175 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         else:
             self.template_status.setText(f"Applied template to: {', '.join(changed_files)}")
         self.refresh()
+
+    def _export_workspace(self) -> None:
+        ws = self._selected_workspace() or self._active_workspace()
+        if not ws:
+            self.io_status.setText("No workspace selected.")
+            return
+        prefs_root = self._prefs_root(ws)
+        if not prefs_root:
+            self.io_status.setText("Workspace prefs unavailable.")
+            return
+        target, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export workspace",
+            f"{ws.get('id') or 'workspace'}.zip",
+            "Workspace Zip (*.zip)",
+        )
+        if not target:
+            return
+        config = _load_workspace_config_from_root(prefs_root)
+        enabled_packs = config.get("enabled_component_packs")
+        inventory, _ = _request_inventory_snapshot(self.bus)
+        installed_modules = []
+        installed_packs = []
+        if isinstance(inventory, dict):
+            installed_modules = [
+                str(item.get("id"))
+                for item in inventory.get("modules") or []
+                if item.get("id")
+            ]
+            installed_packs = [
+                str(item.get("id"))
+                for item in inventory.get("component_packs") or []
+                if item.get("id")
+            ]
+        if not isinstance(enabled_packs, list):
+            enabled_packs = installed_packs
+        manifest = {
+            "format_version": 1,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "workspace": {
+                "id": ws.get("id"),
+                "name": ws.get("name") or ws.get("id"),
+                "template_id": ws.get("template_id"),
+            },
+            "requirements": {
+                "enabled_component_packs": enabled_packs,
+                "installed_modules": installed_modules,
+            },
+        }
+        commit = _read_git_commit_hash()
+        if commit:
+            manifest["app_commit"] = commit
+        try:
+            with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+                for name in self.TEMPLATE_PREF_FILES:
+                    path = prefs_root / name
+                    if path.exists():
+                        payload = path.read_text(encoding="utf-8")
+                    else:
+                        payload = "{}"
+                    zf.writestr(f"prefs/{name}", payload)
+        except Exception as exc:
+            self.io_status.setText(f"Export failed: {exc}")
+            return
+        self.io_status.setText(f"Exported workspace to {target}")
+
+    def _import_workspace(self) -> None:
+        if not self.bus:
+            self.io_status.setText("Runtime bus unavailable.")
+            return
+        source, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Import workspace",
+            "",
+            "Workspace Zip (*.zip)",
+        )
+        if not source:
+            return
+        try:
+            with zipfile.ZipFile(source, "r") as zf:
+                if "manifest.json" not in zf.namelist():
+                    self.io_status.setText("Import failed: manifest.json missing.")
+                    return
+                manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+                fmt = manifest.get("format_version")
+                if fmt not in (1, "1"):
+                    self.io_status.setText("Import failed: unsupported format_version.")
+                    return
+                pref_entries = [
+                    name for name in self.TEMPLATE_PREF_FILES if f"prefs/{name}" in zf.namelist()
+                ]
+                missing = [
+                    name
+                    for name in self.TEMPLATE_PREF_FILES
+                    if f"prefs/{name}" not in zf.namelist()
+                ]
+                if missing:
+                    self.io_status.setText(
+                        "Import failed: prefs files missing (" + ", ".join(missing) + ")."
+                    )
+                    return
+                workspace_info = manifest.get("workspace") or {}
+                base_id = self._slugify(str(workspace_info.get("id") or "imported"))
+                existing_ids = {ws.get("id") for ws in self._workspaces if ws.get("id")}
+                workspace_id = base_id
+                suffix = 1
+                while workspace_id in existing_ids:
+                    workspace_id = f"{base_id}_{suffix}"
+                    suffix += 1
+                payload = {"workspace_id": workspace_id}
+                if workspace_info.get("name"):
+                    payload["name"] = workspace_info.get("name")
+                response = self.bus.request(
+                    BUS_WORKSPACE_CREATE_REQUEST,
+                    payload,
+                    source="app_ui",
+                    timeout_ms=2000,
+                )
+                if not response.get("ok"):
+                    self.io_status.setText(
+                        f"Import failed: {response.get('error') or 'create_failed'}"
+                    )
+                    return
+                workspace = response.get("workspace") or {}
+                prefs_root = _workspace_prefs_root_from_paths(workspace.get("paths") or {})
+                prefs_root.mkdir(parents=True, exist_ok=True)
+                for name in pref_entries:
+                    data = zf.read(f"prefs/{name}")
+                    (prefs_root / name).write_text(data.decode("utf-8"), encoding="utf-8")
+        except Exception as exc:
+            self.io_status.setText(f"Import failed: {exc}")
+            return
+        self.io_status.setText(f"Imported workspace as {workspace_id}")
+        self.refresh()
+        missing = self._summarize_missing_requirements(manifest)
+        if missing:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Workspace import",
+                "Missing requirements:\n" + "\n".join(f"- {item}" for item in missing),
+            )
+
+    def _summarize_missing_requirements(self, manifest: Dict[str, Any]) -> List[str]:
+        inventory, _ = _request_inventory_snapshot(self.bus)
+        requirements = manifest.get("requirements") or {}
+        required_packs = requirements.get("enabled_component_packs") or []
+        required_modules = requirements.get("installed_modules") or []
+        installed_packs = set()
+        installed_modules = set()
+        if isinstance(inventory, dict):
+            installed_packs = {
+                str(item.get("id"))
+                for item in inventory.get("component_packs") or []
+                if item.get("id")
+            }
+            installed_modules = {
+                str(item.get("id"))
+                for item in inventory.get("modules") or []
+                if item.get("id")
+            }
+        missing: List[str] = []
+        for pack_id in required_packs:
+            if str(pack_id) not in installed_packs:
+                missing.append(f"Component pack: {pack_id}")
+        for module_id in required_modules:
+            if str(module_id) not in installed_modules:
+                missing.append(f"Module: {module_id}")
+        return missing
 
     def _show_text_dialog(self, title: str, text: str) -> None:
         dialog = QtWidgets.QDialog(self)

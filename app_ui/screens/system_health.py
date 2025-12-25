@@ -26,6 +26,11 @@ except Exception as exc:  # pragma: no cover
     CORE_CENTER_AVAILABLE = False
     CORE_CENTER_ERROR = str(exc)
 
+try:
+    from content_system.validation import get_validation_report
+except Exception:  # pragma: no cover - defensive
+    get_validation_report = None
+
 BUS_REPORT_REQUEST = (
     BUS_TOPICS.CORE_STORAGE_REPORT_REQUEST if BUS_TOPICS else "core.storage.report.request"
 )
@@ -186,7 +191,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._segment_runs_btn = _make_segment("Runs", 1)
         self._segment_maintenance_btn = _make_segment("Maintenance", 2)
         self._segment_modules_btn = _make_segment("Modules", 3)
-        self._segment_jobs_btn = _make_segment("Jobs", 4)
+        self._segment_content_btn = _make_segment("Content", 4)
+        self._segment_jobs_btn = _make_segment("Jobs", 5)
         for btn in self._segment_buttons:
             segment_row.addWidget(btn)
         segment_row.addStretch()
@@ -343,6 +349,28 @@ class SystemHealthScreen(QtWidgets.QWidget):
         page_modules_layout.addStretch()
         self._stack.addWidget(page_modules)
 
+        page_content = QtWidgets.QWidget()
+        page_content_layout = QtWidgets.QVBoxLayout(page_content)
+        page_content_layout.setContentsMargins(0, 0, 0, 0)
+        content_toolbar = QtWidgets.QHBoxLayout()
+        self.content_diag_refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.content_diag_refresh_btn.clicked.connect(self._refresh_content_diagnostics)
+        content_toolbar.addWidget(self.content_diag_refresh_btn)
+        self.content_diag_copy_btn = QtWidgets.QPushButton("Copy details")
+        self.content_diag_copy_btn.clicked.connect(self._copy_content_diagnostics)
+        content_toolbar.addWidget(self.content_diag_copy_btn)
+        content_toolbar.addStretch()
+        page_content_layout.addLayout(content_toolbar)
+        self.content_diag_status = QtWidgets.QLabel("Content diagnostics unavailable.")
+        self.content_diag_status.setStyleSheet("color: #555;")
+        page_content_layout.addWidget(self.content_diag_status)
+        self.content_diag_view = QtWidgets.QPlainTextEdit()
+        self.content_diag_view.setReadOnly(True)
+        self.content_diag_view.setPlaceholderText("Validation details will appear here.")
+        page_content_layout.addWidget(self.content_diag_view, stretch=1)
+        self._stack.addWidget(page_content)
+        self._content_page_index = self._stack.count() - 1
+
         page_jobs = QtWidgets.QWidget()
         page_jobs_layout = QtWidgets.QVBoxLayout(page_jobs)
         page_jobs_layout.setContentsMargins(0, 0, 0, 0)
@@ -397,6 +425,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._update_comm_controls()
         if self.bus and not self._inventory_checked:
             self._refresh_inventory()
+        self._refresh_content_diagnostics()
 
     def _set_segment(self, index: int) -> None:
         if index < 0 or index >= self._stack.count():
@@ -404,6 +433,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._stack.setCurrentIndex(index)
         for idx, btn in enumerate(self._segment_buttons):
             btn.setChecked(idx == index)
+        if index == getattr(self, "_content_page_index", -1):
+            self._refresh_content_diagnostics()
+
     def _set_control_enabled(self, enabled: bool) -> None:
         enable_refresh = bool(self.refresh_capability and enabled)
         self.refresh_btn.setEnabled(enable_refresh)
@@ -426,6 +458,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.runs_clear_btn.setEnabled(bool(enabled and runs_available))
         if hasattr(self, "runs_delete_all_workspace_btn"):
             self.runs_delete_all_workspace_btn.setEnabled(bool(enabled and runs_available))
+        if hasattr(self, "content_diag_refresh_btn"):
+            self.content_diag_refresh_btn.setEnabled(bool(enabled))
+        if hasattr(self, "content_diag_copy_btn"):
+            self.content_diag_copy_btn.setEnabled(bool(enabled))
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
         )
@@ -1513,5 +1549,42 @@ class SystemHealthScreen(QtWidgets.QWidget):
             QtGui.QDesktopServices.openUrl(url)
         except Exception as exc:  # pragma: no cover - defensive
             QtWidgets.QMessageBox.warning(self, "System Health", f"Unable to open folder: {exc}")
+
+    def _refresh_content_diagnostics(self) -> None:
+        if not callable(get_validation_report):
+            self.content_diag_status.setText("Content diagnostics unavailable.")
+            self.content_diag_view.setPlainText("")
+            return
+        report = get_validation_report(limit=50)
+        ok_count = report.get("ok_count", 0)
+        warn_count = report.get("warn_count", 0)
+        fail_count = report.get("fail_count", 0)
+        self.content_diag_status.setText(
+            f"Validation summary: OK={ok_count} WARN={warn_count} FAIL={fail_count}"
+        )
+        failures = report.get("failures") or []
+        warnings = report.get("warnings") or []
+        lines: list[str] = []
+        if not failures and not warnings:
+            lines.append("No validation errors recorded.")
+        if warnings:
+            lines.append("Warnings:")
+            for item in warnings:
+                lines.append(
+                    f"- {item.get('path')} ({item.get('manifest_type')}) {item.get('error_summary')}"
+                )
+        if failures:
+            lines.append("Failures:")
+            for item in failures:
+                summary = item.get("error_summary")
+                path = item.get("path")
+                mtype = item.get("manifest_type")
+                json_path = item.get("json_path") or "$"
+                lines.append(f"- {path} ({mtype}) {summary} at {json_path}")
+        self.content_diag_view.setPlainText("\n".join(lines))
+
+    def _copy_content_diagnostics(self) -> None:
+        text = self.content_diag_view.toPlainText()
+        QtWidgets.QApplication.clipboard().setText(text or "")
 
 
