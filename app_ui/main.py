@@ -1731,46 +1731,43 @@ class ContentManagementScreen(QtWidgets.QWidget):
         if node_type == "part":
             part_id = data.get("part_id")
             status = data.get("status") or ""
-            reason = data.get("reason") or "Not installed."
+            reason = data.get("reason")
             workspace_disabled = bool(data.get("workspace_disabled"))
             if workspace_disabled:
                 status = STATUS_UNAVAILABLE
                 reason = WORKSPACE_DISABLED_REASON
             self.detail_title.setText(f"Part {part_id}")
             self.detail_status_pill.set_status(status)
+            self.detail_status_pill.setVisible(True)
             self.detail_meta.setText(f"Module: {data.get('module_id') or 'physics'}")
             if workspace_disabled:
                 self.detail_action.setText("Action: Enable pack in Workspace Management.")
             elif status == STATUS_READY:
-                self.detail_action.setText("Action: Open in Content Browser or Uninstall Module.")
+                self.detail_action.setText("Action: Open in Content Browser.")
             else:
-                self.detail_action.setText("Action: Install Module.")
-            self.detail_hint.setText(f"Reason: {reason}")
-            self.install_part_btn.setVisible(True)
-            self.install_part_btn.setEnabled(not workspace_disabled and status != STATUS_READY)
-            self.install_module_btn.setVisible(True)
-            self.uninstall_module_btn.setVisible(True)
-            self.pending_module_id = data.get("module_id")
-            self._selected_module_status = data.get("module_status") or status
-            self._set_module_action_enabled()
+                self.detail_action.setText("Action: Install part.")
+            self.detail_hint.setText(self._format_reason(status, reason, workspace_disabled))
+            self.install_part_btn.setVisible(status == STATUS_NOT_INSTALLED and not workspace_disabled)
+            self.install_part_btn.setEnabled(status == STATUS_NOT_INSTALLED and not workspace_disabled)
+            self.install_module_btn.setVisible(False)
+            self.uninstall_module_btn.setVisible(False)
+            self.pending_module_id = None
+            self._selected_module_status = None
         elif node_type == "module":
             module_id = data.get("module_id") or "module"
             self.detail_title.setText(f"Module {module_id}")
             module_status = data.get("status") or item.text(1)
             self.detail_status_pill.set_status(module_status)
+            self.detail_status_pill.setVisible(True)
             self.detail_meta.setText(f"Module ID: {module_id}")
             if module_status == STATUS_READY:
                 self.detail_action.setText("Action: Uninstall Module.")
             else:
                 self.detail_action.setText("Action: Install Module.")
-            reason = data.get("reason")
-            if reason:
-                self.detail_hint.setText(f"Reason: {reason}")
-            else:
-                self.detail_hint.setText("Manage the entire module.")
+            self.detail_hint.setText(self._format_reason(module_status, data.get("reason"), False))
             self.install_part_btn.setVisible(False)
-            self.install_module_btn.setVisible(True)
-            self.uninstall_module_btn.setVisible(True)
+            self.install_module_btn.setVisible(module_status != STATUS_READY)
+            self.uninstall_module_btn.setVisible(module_status == STATUS_READY)
             self.pending_module_id = module_id
             self._selected_module_status = module_status
             self._set_module_action_enabled()
@@ -1778,24 +1775,28 @@ class ContentManagementScreen(QtWidgets.QWidget):
             section_id = item.text(0)
             self.detail_title.setText(f"Section {section_id}")
             self.detail_status_pill.set_status(item.text(1))
+            self.detail_status_pill.setVisible(True)
             self.detail_meta.setText("")
             self.detail_action.setText("Select a package to manage parts.")
-            reason = data.get("reason")
-            self.detail_hint.setText(f"Reason: {reason}" if reason else "")
+            self.detail_hint.setText(self._format_reason(data.get("status") or item.text(1), data.get("reason"), False))
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(False)
             self.uninstall_module_btn.setVisible(False)
+            self.pending_module_id = None
+            self._selected_module_status = None
         elif node_type == "package":
             package_id = item.text(0)
             self.detail_title.setText(f"Package {package_id}")
             self.detail_status_pill.set_status(item.text(1))
+            self.detail_status_pill.setVisible(True)
             self.detail_meta.setText("")
             self.detail_action.setText("Select a part to manage content.")
-            reason = data.get("reason")
-            self.detail_hint.setText(f"Reason: {reason}" if reason else "")
+            self.detail_hint.setText(self._format_reason(data.get("status") or item.text(1), data.get("reason"), False))
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(False)
             self.uninstall_module_btn.setVisible(False)
+            self.pending_module_id = None
+            self._selected_module_status = None
         else:
             self._clear_details()
 
@@ -1811,6 +1812,28 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self.uninstall_module_btn.setVisible(False)
         self.pending_module_id = None
         self._selected_module_status = None
+
+    def _format_reason(
+        self,
+        status: Optional[str],
+        reason: Optional[str],
+        workspace_disabled: bool,
+    ) -> str:
+        if status == STATUS_READY:
+            return ""
+        if not status and reason:
+            return f"Reason: {reason}"
+        if not status:
+            return ""
+        if workspace_disabled:
+            return "Reason: Disabled by project (enable pack in Project settings)"
+        if status == STATUS_NOT_INSTALLED:
+            return "Reason: Not installed (install to content_store)"
+        if reason:
+            return f"Reason: {reason}"
+        if status:
+            return f"Reason: {status}"
+        return "Reason: Unavailable"
 
     def _on_item_double_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         data = item.data(0, QtCore.Qt.ItemDataRole.UserRole) or {}
