@@ -5,6 +5,9 @@
   "description": "Groups packages under a module section.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "$ref": "common.schema.json#/$defs/schema_ref"
+    },
     "schema_version": {
       "$ref": "common.schema.json#/$defs/version"
     },

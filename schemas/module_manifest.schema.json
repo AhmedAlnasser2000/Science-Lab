@@ -5,6 +5,9 @@
   "description": "Top-level record for a subject module. V1 only supports a single Primary Mode.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "$ref": "common.schema.json#/$defs/schema_ref"
+    },
     "schema_version": {
       "$ref": "common.schema.json#/$defs/version"
     },

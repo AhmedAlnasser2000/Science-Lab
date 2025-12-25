@@ -5,6 +5,9 @@
   "description": "Defines a renderable part, such as text or a simple simulation.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "$ref": "common.schema.json#/$defs/schema_ref"
+    },
     "schema_version": {
       "$ref": "common.schema.json#/$defs/version"
     },
@@ -24,7 +27,7 @@
       "$ref": "common.schema.json#/$defs/identifier"
     },
     "component_id": {
-      "$ref": "common.schema.json#/$defs/identifier"
+      "$ref": "common.schema.json#/$defs/component_id"
     },
     "title": {
       "$ref": "common.schema.json#/$defs/title"
@@ -61,9 +64,7 @@
       "properties": {
         "preset": {
           "type": "string",
-          "enum": [
-            "gravity-demo"
-          ]
+          "pattern": "^[a-z0-9][a-z0-9_\\-]*$"
         },
         "parameters": {
           "type": "object",
@@ -79,7 +80,14 @@
               "exclusiveMinimum": 0
             }
           },
-          "additionalProperties": false
+          "additionalProperties": {
+            "type": [
+              "number",
+              "integer",
+              "boolean",
+              "string"
+            ]
+          }
         }
       },
       "required": [
@@ -101,25 +109,6 @@
     "title",
     "part_type",
     "content"
-  ],
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "part_type": {
-            "const": "simulation"
-          }
-        },
-        "required": [
-          "part_type"
-        ]
-      },
-      "then": {
-        "required": [
-          "behavior"
-        ]
-      }
-    }
   ],
   "$defs": {
     "lab_extension": {
@@ -185,6 +174,9 @@
         "properties": {
           "part_type": {
             "const": "simulation"
+          },
+          "component_id": {
+            "const": "__MISSING__"
           }
         },
         "required": [

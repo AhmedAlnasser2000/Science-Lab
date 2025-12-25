@@ -41,6 +41,18 @@
       "description": "Path to an asset relative to the module root.",
       "pattern": "^[^\\s]+$"
     },
+    "schema_ref": {
+      "type": "string",
+      "description": "Schema URI or relative path (no spaces).",
+      "pattern": "^[^\\s]+$"
+    },
+    "component_id": {
+      "type": "string",
+      "description": "Namespaced component id (e.g., labhost:gravity).",
+      "pattern": "^[a-z0-9_\\-]+(:[A-Za-z0-9_.\\-]+)+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
     "x_extensions": {
       "type": "object",
       "description": "Optional vendor or site-specific fields that are not interpreted by the core schemas.",
