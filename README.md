@@ -2,6 +2,8 @@
 
 PhysicsLab is a PyQt6 desktop sandbox for learning physics, backed by a local Management Core (optional) and a runtime bus. It uses content packs, labs, and components with an active workspace model.
 
+Canonical app summary: `docs/app_summary.md`.
+
 ## Folder Overview
 - `schemas/` JSON Schemas for manifests and runtime state.
 - `content_repo/` canonical Physics content pack source.

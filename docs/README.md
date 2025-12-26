@@ -6,6 +6,7 @@ This folder holds checkpoint summaries, plans, prompts, and overview notes for P
 - `docs/app_summary.md`: current, code-verified checkpoint summary.
 
 ## Checkpoints and inputs
+- `docs/checkpoints/README.md`: checkpoint conventions and workflow.
 - `docs/checkpoints/history/`: archived checkpoint snapshots (date/hash in filename).
 - `docs/checkpoints/inputs/`: raw input artifacts used during reconciliation.
 
