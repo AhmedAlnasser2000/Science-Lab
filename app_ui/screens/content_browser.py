@@ -7,6 +7,7 @@ from app_ui.ui_helpers.component_policy import (
     WorkspaceComponentPolicy,
     _get_global_component_policy,
 )
+from app_ui.ui_helpers import terms
 from app_ui.ui_helpers.install_worker import InstallWorker
 from app_ui.ui_helpers.statuses import (
     STATUS_READY,
@@ -75,7 +76,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
 
         detail_widget = QtWidgets.QWidget()
         detail_layout = QtWidgets.QVBoxLayout(detail_widget)
-        self.detail_title = QtWidgets.QLabel("Select a part to view details.")
+        self.detail_title = QtWidgets.QLabel("Select an activity to view details.")
         self.detail_title.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.detail_status = QtWidgets.QLabel("")
         self.detail_reason = QtWidgets.QLabel("")
@@ -90,7 +91,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         detail_layout.addWidget(self.debug_label)
 
         button_row = QtWidgets.QHBoxLayout()
-        self.install_button = QtWidgets.QPushButton("Install")
+        self.install_button = QtWidgets.QPushButton(f"Install {terms.ACTIVITY}")
         self.install_button.clicked.connect(self._install_selected)
         self.open_button = QtWidgets.QPushButton("Open")
         self.open_button.clicked.connect(self._open_selected)
@@ -103,7 +104,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
 
         self.viewer = QtWidgets.QPlainTextEdit()
         self.viewer.setReadOnly(True)
-        self.viewer.setPlaceholderText("Open a part to preview markdown content.")
+        self.viewer.setPlaceholderText("Open an activity to preview markdown content.")
         detail_layout.addWidget(self.viewer, stretch=1)
 
         self.splitter.addWidget(detail_widget)
@@ -153,28 +154,36 @@ class ContentBrowserScreen(QtWidgets.QWidget):
         data = self.adapter.list_tree()
         module = data.get("module")
         if not module:
-            QtWidgets.QMessageBox.warning(self, "Content", data.get("reason") or "Module data unavailable.")
+            QtWidgets.QMessageBox.warning(self, "Content", data.get("reason") or "Topic data unavailable.")
             return
         disabled_parts: List[str] = []
-        module_label = self._display_name(module.get("title"), module.get("module_id"), "Module")
+        module_label = self._display_name(
+            module.get("title"), module.get("module_id"), terms.TOPIC
+        )
         module_item = QtWidgets.QTreeWidgetItem([module_label, data.get("status", "")])
         module_item.setToolTip(0, module_label)
         module_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "module"})
         self.tree.addTopLevelItem(module_item)
         for section in module.get("sections", []):
-            sec_label = self._display_name(section.get("title"), section.get("section_id"), "Section")
+            sec_label = self._display_name(
+                section.get("title"), section.get("section_id"), terms.UNIT
+            )
             sec_item = QtWidgets.QTreeWidgetItem([sec_label, section.get("status", "")])
             sec_item.setToolTip(0, sec_label)
             sec_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "section"})
             module_item.addChild(sec_item)
             for package in section.get("packages", []):
-                pkg_label = self._display_name(package.get("title"), package.get("package_id"), "Package")
+                pkg_label = self._display_name(
+                    package.get("title"), package.get("package_id"), terms.LESSON
+                )
                 pkg_item = QtWidgets.QTreeWidgetItem([pkg_label, package.get("status", "")])
                 pkg_item.setToolTip(0, pkg_label)
                 pkg_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, {"type": "package"})
                 sec_item.addChild(pkg_item)
                 for part in package.get("parts", []):
-                    part_label = self._display_name(part.get("title"), part.get("part_id"), "Part")
+                    part_label = self._display_name(
+                        part.get("title"), part.get("part_id"), terms.ACTIVITY
+                    )
                     status = part.get("status")
                     reason = part.get("reason")
                     component_id = part.get("component_id")
@@ -215,7 +224,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
     def _clear_details(self):
         self.current_part_id = None
         self.current_part_info = None
-        self.detail_title.setText("Select a part to view details.")
+        self.detail_title.setText("Select an activity to view details.")
         self.detail_status.clear()
         self.detail_reason.clear()
         self.debug_label.clear()
@@ -236,7 +245,7 @@ class ContentBrowserScreen(QtWidgets.QWidget):
             return
         part_id = data.get("part_id")
         self.current_part_id = part_id
-        self.detail_title.setText(f"Part {part_id}")
+        self.detail_title.setText(f"{terms.ACTIVITY} {part_id}")
         status = data.get("status")
         reason = data.get("reason") or "—"
         workspace_disabled = bool(data.get("workspace_disabled"))
@@ -286,7 +295,9 @@ class ContentBrowserScreen(QtWidgets.QWidget):
     def _install_selected(self):
         if not self.current_part_id or self.install_thread:
             return
-        self.progress_dialog = QtWidgets.QProgressDialog("Installing part...", "", 0, 0, self)
+        self.progress_dialog = QtWidgets.QProgressDialog(
+            f"Installing {terms.ACTIVITY.lower()}...", "", 0, 0, self
+        )
         self.progress_dialog.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
         self.progress_dialog.setCancelButton(None)
         worker = InstallWorker(self.adapter, self.current_part_id)
@@ -354,7 +365,9 @@ class ContentBrowserScreen(QtWidgets.QWidget):
             lab_id = "projectile"
         if component_id:
             if detail.get("status") != STATUS_READY:
-                QtWidgets.QMessageBox.information(self, "Open", "Install this part first.")
+                QtWidgets.QMessageBox.information(
+                    self, "Open", f"Install this {terms.ACTIVITY.lower()} first."
+                )
                 return
             if not self._is_component_enabled(component_id):
                 QtWidgets.QMessageBox.information(self, "Open", WORKSPACE_DISABLED_REASON)
@@ -364,16 +377,22 @@ class ContentBrowserScreen(QtWidgets.QWidget):
 
         if lab_id:
             if detail.get("status") != STATUS_READY:
-                QtWidgets.QMessageBox.information(self, "Open", "Install this lab first.")
+                QtWidgets.QMessageBox.information(
+                    self, "Open", f"Install this {terms.ACTIVITY.lower()} first."
+                )
                 return
             self.open_lab(lab_id, self.current_part_id, manifest, detail)
             return
 
         if detail.get("status") != STATUS_READY:
-            QtWidgets.QMessageBox.information(self, "Open", "Part is not installed yet.")
+            QtWidgets.QMessageBox.information(
+                self, "Open", f"{terms.ACTIVITY} is not installed yet."
+            )
             return
         if not asset:
-            QtWidgets.QMessageBox.information(self, "Open", "Part has no content asset.")
+            QtWidgets.QMessageBox.information(
+                self, "Open", f"{terms.ACTIVITY} has no content asset."
+            )
             return
         text = read_asset_text(asset, detail.get("paths"))
         if text is not None:

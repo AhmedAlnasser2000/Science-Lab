@@ -10,6 +10,7 @@ from PyQt6 import QtCore, QtWidgets
 
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
+from app_ui.ui_helpers import terms
 
 try:
     from runtime_bus import topics as BUS_TOPICS
@@ -164,7 +165,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
         header = AppHeader(
-            title="Workspace Management",
+            title=f"{terms.PROJECT} Management",
             on_back=self.on_back,
             workspace_selector=selector,
         )
@@ -173,7 +174,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         header.add_action_widget(refresh_btn)
         layout.addWidget(header)
 
-        self.active_label = QtWidgets.QLabel("Active workspace: ?")
+        self.active_label = QtWidgets.QLabel(f"Active {terms.PROJECT.lower()}: ?")
         self.active_label.setStyleSheet("color: #444;")
         layout.addWidget(self.active_label)
 
@@ -190,11 +191,11 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         layout.addWidget(self.table, stretch=1)
 
         btn_row = QtWidgets.QHBoxLayout()
-        self.create_btn = QtWidgets.QPushButton("Create...")
+        self.create_btn = QtWidgets.QPushButton(f"Create {terms.PROJECT}...")
         self.create_btn.clicked.connect(self._create_workspace)
-        self.set_active_btn = QtWidgets.QPushButton("Set Active")
+        self.set_active_btn = QtWidgets.QPushButton(f"Set Active {terms.PROJECT}")
         self.set_active_btn.clicked.connect(self._set_active)
-        self.delete_btn = QtWidgets.QPushButton("Delete")
+        self.delete_btn = QtWidgets.QPushButton(f"Delete {terms.PROJECT}")
         self.delete_btn.clicked.connect(self._delete_workspace)
         btn_row.addWidget(self.create_btn)
         btn_row.addWidget(self.set_active_btn)
@@ -230,9 +231,9 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         io_box = QtWidgets.QGroupBox("Export / Import")
         io_layout = QtWidgets.QVBoxLayout(io_box)
         io_row = QtWidgets.QHBoxLayout()
-        self.export_btn = QtWidgets.QPushButton("Export Workspace...")
+        self.export_btn = QtWidgets.QPushButton("Export Project...")
         self.export_btn.clicked.connect(self._export_workspace)
-        self.import_btn = QtWidgets.QPushButton("Import Workspace...")
+        self.import_btn = QtWidgets.QPushButton("Import Project...")
         self.import_btn.clicked.connect(self._import_workspace)
         io_row.addWidget(self.export_btn)
         io_row.addWidget(self.import_btn)
@@ -243,7 +244,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         io_layout.addWidget(self.io_status)
         layout.addWidget(io_box)
 
-        packs_box = QtWidgets.QGroupBox("Component Packs")
+        packs_box = QtWidgets.QGroupBox(f"{terms.PACK}s")
         packs_layout = QtWidgets.QVBoxLayout(packs_box)
         self.pack_tree = QtWidgets.QTreeWidget()
         self.pack_tree.setColumnCount(2)
@@ -282,7 +283,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             )
             item.setData(0, QtCore.Qt.ItemDataRole.UserRole, ws)
             self.table.addTopLevelItem(item)
-        self.active_label.setText(f"Active workspace: {active_id or 'unknown'}")
+        self.active_label.setText(f"Active {terms.PROJECT.lower()}: {active_id or 'unknown'}")
         self._update_buttons()
         self._refresh_pack_controls()
 
@@ -333,10 +334,10 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
                 timeout_ms=2000,
             )
         except Exception as exc:
-            self.status.setText(f"Workspace list failed: {exc}")
+            self.status.setText(f"Project list failed: {exc}")
             return []
         if not response.get("ok"):
-            self.status.setText(f"Workspace list failed: {response.get('error') or 'unknown'}")
+            self.status.setText(f"Project list failed: {response.get('error') or 'unknown'}")
             return []
         return response.get("workspaces") or []
 
@@ -366,7 +367,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self._pack_syncing = True
         self.pack_tree.clear()
         self.pack_tree.setEnabled(False)
-        self.pack_status.setText("Select a workspace to edit component packs.")
+        self.pack_status.setText("Select a project to edit packs.")
         self._pack_context = {}
         ws = self._selected_workspace() or self._active_workspace()
         if not ws:
@@ -374,7 +375,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             return
         prefs_root = self._prefs_root(ws)
         if prefs_root is None:
-            self.pack_status.setText("Workspace prefs unavailable.")
+            self.pack_status.setText("Project prefs unavailable.")
             self._pack_syncing = False
             return
         inventory, error = _request_inventory_snapshot(self.bus)
@@ -389,7 +390,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             if pack.get("id")
         }
         if not packs:
-            self.pack_status.setText("No installed component packs.")
+            self.pack_status.setText("No installed packs.")
             self._pack_syncing = False
             return
         config = self._load_workspace_config(ws)
@@ -416,7 +417,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             self.pack_tree.addTopLevelItem(item)
         self.pack_tree.setEnabled(True)
         self.pack_status.setText(
-            f"Workspace '{ws.get('id') or '?'}': {len(enabled_set)}/{len(available_ids)} packs enabled."
+            f"Project '{ws.get('id') or '?'}': {len(enabled_set)}/{len(available_ids)} packs enabled."
         )
         self._pack_context = {
             "workspace": ws,
@@ -540,7 +541,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             self.status.setText("Runtime bus unavailable.")
             return
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Create Workspace")
+        dialog.setWindowTitle("Create Project")
         form = QtWidgets.QFormLayout(dialog)
         name_edit = QtWidgets.QLineEdit()
         id_edit = QtWidgets.QLineEdit()
@@ -584,7 +585,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         if not response.get("ok"):
             self.status.setText(f"Create failed: {response.get('error') or 'unknown'}")
             return
-        self.status.setText(f"Created workspace {workspace_id}.")
+        self.status.setText(f"Created project {workspace_id}.")
         self.refresh()
 
     def _set_active(self) -> None:
@@ -608,7 +609,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         workspace = response.get("workspace")
         if isinstance(workspace, dict):
             self.on_workspace_changed(workspace)
-        self.status.setText(f"Active workspace: {workspace_id}")
+        self.status.setText(f"Active project: {workspace_id}")
         self.refresh()
 
     def _delete_workspace(self) -> None:
@@ -616,13 +617,13 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         if not (self.bus and ws):
             return
         if ws.get("active"):
-            self.status.setText("Cannot delete the active workspace.")
+            self.status.setText("Cannot delete the active project.")
             return
         workspace_id = ws.get("id")
         confirm = QtWidgets.QMessageBox.question(
             self,
-            "Delete workspace",
-            f"Delete workspace '{workspace_id}'? This removes its runs and prefs.",
+            "Delete project",
+            f"Delete project '{workspace_id}'? This removes its runs and prefs.",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
@@ -639,7 +640,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         if not response.get("ok"):
             self.status.setText(f"Delete failed: {response.get('error') or 'unknown'}")
             return
-        self.status.setText(f"Deleted workspace {workspace_id}.")
+        self.status.setText(f"Deleted project {workspace_id}.")
         self.refresh()
 
     def _slugify(self, value: str) -> str:
@@ -752,12 +753,12 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             return
         workspace = self._active_workspace()
         if not workspace:
-            self.template_status.setText("No active workspace selected.")
+            self.template_status.setText("No active project selected.")
             return
         prefs_root = self._prefs_root(workspace)
         template_root = self._template_root(str(template_id))
         if not prefs_root or not template_root:
-            self.template_status.setText("Template or workspace prefs path missing.")
+            self.template_status.setText("Template or project prefs path missing.")
             return
         blocks: List[str] = []
         for name in self.TEMPLATE_PREF_FILES:
@@ -798,12 +799,12 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             return
         workspace = self._active_workspace()
         if not workspace:
-            self.template_status.setText("No active workspace selected.")
+            self.template_status.setText("No active project selected.")
             return
         prefs_root = self._prefs_root(workspace)
         template_root = self._template_root(str(template_id))
         if not prefs_root or not template_root:
-            self.template_status.setText("Template or workspace prefs path missing.")
+            self.template_status.setText("Template or project prefs path missing.")
             return
         prefs_root.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -842,11 +843,11 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
     def _export_workspace(self) -> None:
         ws = self._selected_workspace() or self._active_workspace()
         if not ws:
-            self.io_status.setText("No workspace selected.")
+            self.io_status.setText("No project selected.")
             return
         prefs_root = self._prefs_root(ws)
         if not prefs_root:
-            self.io_status.setText("Workspace prefs unavailable.")
+            self.io_status.setText("Project prefs unavailable.")
             return
         export_info = self._prompt_export_settings(ws)
         if not export_info:
@@ -900,24 +901,24 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         except Exception as exc:
             self.io_status.setText(f"Export failed: {exc}")
             return
-        self.io_status.setText(f"Exported workspace to {target}")
+        self.io_status.setText(f"Exported project to {target}")
 
     def _prompt_export_settings(self, workspace: Dict[str, Any]) -> Optional[tuple[str, list[str]]]:
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Export Workspace")
+        dialog.setWindowTitle("Export Project")
         layout = QtWidgets.QVBoxLayout(dialog)
         form = QtWidgets.QFormLayout()
         path_row = QtWidgets.QHBoxLayout()
         path_edit = QtWidgets.QLineEdit()
-        path_edit.setText(f"{workspace.get('id') or 'workspace'}.zip")
+        path_edit.setText(f"{workspace.get('id') or 'project'}.zip")
         browse_btn = QtWidgets.QPushButton("Browse...")
 
         def _browse() -> None:
             target, _ = QtWidgets.QFileDialog.getSaveFileName(
                 dialog,
-                "Export workspace",
+                "Export project",
                 path_edit.text(),
-                "Workspace Zip (*.zip)",
+                "Project Zip (*.zip)",
             )
             if target:
                 path_edit.setText(target)
@@ -970,9 +971,9 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             return
         source, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
-            "Import workspace",
+            "Import project",
             "",
-            "Workspace Zip (*.zip)",
+            "Project Zip (*.zip)",
         )
         if not source:
             return
@@ -1031,7 +1032,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         except Exception as exc:
             self.io_status.setText(f"Import failed: {exc}")
             return
-        self.io_status.setText(f"Imported workspace as {workspace_id}")
+        self.io_status.setText(f"Imported project as {workspace_id}")
         self.refresh()
         missing = self._summarize_missing_requirements(manifest)
         self._show_import_summary(workspace_id, workspace_info, pref_entries, manifest, missing)
@@ -1073,10 +1074,10 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         missing: Dict[str, List[str]],
     ) -> None:
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Workspace import summary")
+        dialog.setWindowTitle("Project import summary")
         dialog.resize(560, 420)
         layout = QtWidgets.QVBoxLayout(dialog)
-        title = QtWidgets.QLabel(f"Imported workspace: {workspace_id}")
+        title = QtWidgets.QLabel(f"Imported project: {workspace_id}")
         title.setStyleSheet("font-weight: bold;")
         layout.addWidget(title)
         details = QtWidgets.QPlainTextEdit()
@@ -1093,8 +1094,8 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             f"Prefs applied: {prefs_list}",
             "",
             "Requirements:",
-            f"Component packs: {', '.join(packs) if packs else '(none)'}",
-            f"Modules: {', '.join(modules) if modules else '(none)'}",
+            f"Packs: {', '.join(packs) if packs else '(none)'}",
+            f"Topics: {', '.join(modules) if modules else '(none)'}",
         ]
         missing_packs = missing.get("packs") or []
         missing_modules = missing.get("modules") or []
@@ -1102,18 +1103,18 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
             lines.append("")
             lines.append("Missing requirements:")
             if missing_packs:
-                lines.append(f"- Component packs: {', '.join(missing_packs)}")
+                lines.append(f"- Packs: {', '.join(missing_packs)}")
             if missing_modules:
-                lines.append(f"- Modules: {', '.join(missing_modules)}")
+                lines.append(f"- Topics: {', '.join(missing_modules)}")
         details.setPlainText("\n".join(lines))
         layout.addWidget(details, stretch=1)
 
         action_row = QtWidgets.QHBoxLayout()
         action_row.addStretch()
-        pack_btn = QtWidgets.QPushButton("Open Component Management")
+        pack_btn = QtWidgets.QPushButton("Open Pack Management")
         pack_btn.setEnabled(bool(self._open_component_management and missing_packs))
         pack_btn.clicked.connect(lambda: self._open_component_management())
-        module_btn = QtWidgets.QPushButton("Open Module Management")
+        module_btn = QtWidgets.QPushButton("Open Topic Management")
         module_btn.setEnabled(bool(self._open_module_management and missing_modules))
         module_btn.clicked.connect(lambda: self._open_module_management())
         content_btn = QtWidgets.QPushButton("Open Content Management")

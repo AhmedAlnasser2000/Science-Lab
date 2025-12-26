@@ -8,6 +8,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
+from app_ui.ui_helpers import terms
 
 try:
     from runtime_bus import topics as BUS_TOPICS
@@ -191,7 +192,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._segment_overview_btn = _make_segment("Overview", 0)
         self._segment_runs_btn = _make_segment("Runs", 1)
         self._segment_maintenance_btn = _make_segment("Maintenance", 2)
-        self._segment_modules_btn = _make_segment("Modules", 3)
+        self._segment_modules_btn = _make_segment(f"{terms.TOPIC}s", 3)
         self._segment_content_btn = _make_segment("Content", 4)
         self._segment_jobs_btn = _make_segment("Jobs", 5)
         for btn in self._segment_buttons:
@@ -252,10 +253,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.runs_clear_btn = QtWidgets.QPushButton("Clear (Lab)")
         self.runs_clear_btn.clicked.connect(self._clear_runs_for_lab)
         runs_toolbar.addWidget(self.runs_clear_btn)
-        self.runs_delete_all_workspace_btn = QtWidgets.QPushButton("Delete All (Workspace)")
+        self.runs_delete_all_workspace_btn = QtWidgets.QPushButton("Delete All (Project)")
         self.runs_delete_all_workspace_btn.clicked.connect(self._delete_all_runs_for_workspace)
         runs_toolbar.addWidget(self.runs_delete_all_workspace_btn)
-        self.runs_workspace_label = QtWidgets.QLabel("Workspace: ?")
+        self.runs_workspace_label = QtWidgets.QLabel(f"{terms.PROJECT}: ?")
         self.runs_workspace_label.setStyleSheet("color: #444;")
         runs_toolbar.addWidget(self.runs_workspace_label)
         runs_toolbar.addStretch()
@@ -320,9 +321,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
         page_modules_layout.setContentsMargins(0, 0, 0, 0)
 
         module_row = QtWidgets.QHBoxLayout()
-        self.install_btn = QtWidgets.QPushButton("Install module (local)")
+        self.install_btn = QtWidgets.QPushButton(f"Install {terms.TOPIC.lower()} (local)")
         self.install_btn.clicked.connect(lambda: self._start_module_job("install"))
-        self.uninstall_btn = QtWidgets.QPushButton("Uninstall module (local)")
+        self.uninstall_btn = QtWidgets.QPushButton(f"Uninstall {terms.TOPIC.lower()} (local)")
         self.uninstall_btn.clicked.connect(lambda: self._start_module_job("uninstall"))
         module_row.addWidget(self.install_btn)
         module_row.addWidget(self.uninstall_btn)
@@ -334,7 +335,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.module_panel.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }")
         module_layout = QtWidgets.QVBoxLayout(self.module_panel)
         module_header = QtWidgets.QHBoxLayout()
-        self.module_title = QtWidgets.QLabel("Module Status")
+        self.module_title = QtWidgets.QLabel(f"{terms.TOPIC} Status")
         self.module_title.setStyleSheet("font-weight: bold;")
         module_header.addWidget(self.module_title)
         module_header.addStretch()
@@ -485,11 +486,11 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.status_label.setText(text)
 
     def _update_module_button_labels(self) -> None:
-        module_id = self.pending_module_id or "module"
+        module_id = self.pending_module_id or terms.TOPIC.lower()
         if hasattr(self, "install_btn"):
-            self.install_btn.setText(f"Install {module_id} module (local)")
+            self.install_btn.setText(f"Install {module_id} topic (local)")
         if hasattr(self, "uninstall_btn"):
-            self.uninstall_btn.setText(f"Uninstall {module_id} module (local)")
+            self.uninstall_btn.setText(f"Uninstall {module_id} topic (local)")
 
     def _refresh_inventory(self) -> None:
         self._inventory_checked = True
@@ -634,7 +635,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
                     workspace_id = workspace.get("id") or workspace_id
                 elif isinstance(response.get("id"), str):
                     workspace_id = response.get("id")
-        self.runs_workspace_label.setText(f"Workspace: {workspace_id}")
+        self.runs_workspace_label.setText(f"{terms.PROJECT}: {workspace_id}")
 
     def _on_runs_item_changed(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         if getattr(self, "_runs_syncing", False) or column != 0:
@@ -819,13 +820,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         items = self._all_run_items()
         if not items:
-            self.runs_status.setText("No runs in this workspace.")
+            self.runs_status.setText("No runs in this project.")
             return
         total_bytes = sum(item.get("size_bytes") or 0 for item in items)
         confirm = QtWidgets.QMessageBox.question(
             self,
             "Delete all runs",
-            f"Delete all runs in this workspace ({len(items)} runs, ~{total_bytes/1024/1024:.2f} MB)?",
+            f"Delete all runs in this project ({len(items)} runs, ~{total_bytes/1024/1024:.2f} MB)?",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
@@ -1311,19 +1312,19 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _start_module_job(self, action: str) -> None:
         if not (self.bus and self._is_explorer):
-            QtWidgets.QMessageBox.information(self, "Module", "Runtime bus unavailable.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Runtime bus unavailable.")
             return
         if self._module_job_running:
-            QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Another topic job is running.")
             return
         if not self.pending_module_id:
-            QtWidgets.QMessageBox.information(self, "Module", "No module id available.")
+            QtWidgets.QMessageBox.information(self, "Topic", "No topic id available.")
             return
         if action == "install" and self._module_installed is True:
-            QtWidgets.QMessageBox.information(self, "Module", "Module already installed.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Topic already installed.")
             return
         if action == "uninstall" and self._module_installed is False:
-            QtWidgets.QMessageBox.information(self, "Module", "Module already uninstalled.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Topic already uninstalled.")
             return
         topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
         self._set_module_job_state(job_id=None, action=action, running=True)
@@ -1342,31 +1343,31 @@ class SystemHealthScreen(QtWidgets.QWidget):
         except Exception as exc:  # pragma: no cover - defensive
             self._set_module_job_state(job_id=None, action=None, running=False)
             self._show_module_panel(
-                "Module job failed",
+                "Topic job failed",
                 f"{action.title()} {self._format_module_job_label()}: {exc}",
                 running=False,
                 ok=False,
             )
-            QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
+            QtWidgets.QMessageBox.warning(self, "Topic", f"Request failed: {exc}")
             return
         if not response.get("ok") or not response.get("job_id"):
             self._set_module_job_state(job_id=None, action=None, running=False)
             self._show_module_panel(
-                "Module job failed",
+                "Topic job failed",
                 f"{action.title()} {self._format_module_job_label()}: {response.get('error') or 'unknown'}",
                 running=False,
                 ok=False,
             )
             QtWidgets.QMessageBox.warning(
                 self,
-                "Module",
+                "Topic",
                 f"Request failed: {response.get('error') or 'unknown'}",
             )
             return
         job_id = str(response["job_id"])
         self._set_module_job_state(job_id=job_id, action=action, running=True)
         self._show_module_panel(
-            "Module job queued",
+            "Topic job queued",
             f"{action.title()} {self._format_module_job_label()}: awaiting progress",
             running=True,
         )
@@ -1416,8 +1417,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if self._module_poll_deadline and time.monotonic() > self._module_poll_deadline:
             self._stop_module_poll_timer()
             self._show_module_panel(
-                "Module job timeout",
-                f"{(self.pending_module_action or 'Module').title()} {self.pending_module_id}: timed out waiting for completion",
+                "Topic job timeout",
+                f"{(self.pending_module_action or terms.TOPIC).title()} {self.pending_module_id}: timed out waiting for completion",
                 running=False,
                 ok=False,
             )
@@ -1475,22 +1476,22 @@ class SystemHealthScreen(QtWidgets.QWidget):
         stage = payload.get("stage") or "Working"
         percent = payload.get("percent")
         percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
-        action = (self.pending_module_action or "module").title()
+        action = (self.pending_module_action or terms.TOPIC.lower()).title()
         details = f"{action} {self._format_module_job_label()}: {percent_text} {stage}".strip()
-        self._show_module_panel("Module Progress", details, running=True)
+        self._show_module_panel("Topic Progress", details, running=True)
 
     def _handle_module_completed_ui(self, payload: Dict[str, Any]) -> None:
         if not self._is_active_module_payload(payload):
             return
         self._stop_module_poll_timer()
         ok = bool(payload.get("ok"))
-        action = payload.get("action") or (self.pending_module_action or "module")
+        action = payload.get("action") or (self.pending_module_action or terms.TOPIC.lower())
         error = payload.get("error")
         summary = "OK" if ok else error or "failed"
         job_label = self._format_module_job_label()
         self._set_module_job_state(job_id=None, action=None, running=False)
         self._show_module_panel(
-            "Module Result",
+            "Topic Result",
             f"{action.title()} {job_label}: {summary}",
             running=False,
             ok=ok,

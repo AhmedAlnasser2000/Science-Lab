@@ -56,6 +56,7 @@ from app_ui.ui_helpers.component_policy import (
     _get_global_component_policy,
     _set_global_component_policy,
 )
+from app_ui.ui_helpers import terms
 from app_ui.ui_helpers.install_worker import InstallWorker
 from app_ui.ui_helpers.statuses import (
     STATUS_READY,
@@ -391,20 +392,20 @@ class MainMenuScreen(QtWidgets.QWidget):
         self._add_button("Physics Content", self.on_open_content_browser)
 
         if self.profile in ("Educator", "Explorer"):
-            self._add_button("Module Management", self.on_open_module_mgmt)
+            self._add_button(f"{terms.TOPIC} Management", self.on_open_module_mgmt)
             self._add_button("Content Management", self.on_open_content_mgmt)
 
         if self.profile in ("Educator", "Explorer"):
             self._add_button("System Health / Storage", self.on_open_diagnostics)
 
         if self.profile == "Explorer" and self.on_open_workspace_mgmt:
-            self._add_button("Workspace Management", self.on_open_workspace_mgmt)
+            self._add_button(f"{terms.PROJECT} Management", self.on_open_workspace_mgmt)
 
         if self.profile == "Explorer" and self.on_open_component_mgmt:
-            self._add_button("Component Management", self.on_open_component_mgmt)
+            self._add_button(f"{terms.PACK} Management", self.on_open_component_mgmt)
 
         if self.profile == "Explorer" and self.on_open_component_sandbox and COMPONENT_RUNTIME_AVAILABLE:
-            self._add_button("Component Sandbox", self.on_open_component_sandbox)
+            self._add_button(f"{terms.BLOCK} Sandbox", self.on_open_component_sandbox)
 
         self._add_button("Settings", self.on_open_settings)
         self._add_button("Quit", self.on_quit)
@@ -421,7 +422,7 @@ class ModuleManagerScreen(QtWidgets.QWidget):
 
         main_layout = QtWidgets.QVBoxLayout(self)
 
-        header = QtWidgets.QLabel("Module Manager")
+        header = QtWidgets.QLabel(f"{terms.TOPIC} Manager")
         header.setStyleSheet("font-size: 20px; font-weight: bold;")
         main_layout.addWidget(header)
 
@@ -441,7 +442,7 @@ class ModuleManagerScreen(QtWidgets.QWidget):
         detail_widget = QtWidgets.QWidget()
         detail_layout = QtWidgets.QVBoxLayout(detail_widget)
 
-        self.part_title = QtWidgets.QLabel("Select a part to view details.")
+        self.part_title = QtWidgets.QLabel("Select an activity to view details.")
         self.part_title.setStyleSheet("font-size: 16px; font-weight: bold;")
         detail_layout.addWidget(self.part_title)
 
@@ -481,20 +482,20 @@ class ModuleManagerScreen(QtWidgets.QWidget):
         module = data.get("module")
         reason = data.get("reason")
         if not module:
-            self.error_label.setText(reason or "Module information unavailable.")
+            self.error_label.setText(reason or "Topic information unavailable.")
             return
 
         self.error_label.clear()
         module_status = data.get("status", STATUS_READY)
         module_item = QtWidgets.QTreeWidgetItem([
-            f"Module {module.get('module_id')}: {module.get('title')}",
+            f"{terms.TOPIC} {module.get('module_id')}: {module.get('title')}",
             module_status,
         ])
         self.tree.addTopLevelItem(module_item)
 
         for section in module.get("sections", []):
             sec_status = section.get("status", STATUS_READY)
-            section_text = f"Section {section.get('section_id')}: {section.get('title')}"
+            section_text = f"{terms.UNIT} {section.get('section_id')}: {section.get('title')}"
             section_item = QtWidgets.QTreeWidgetItem([section_text, sec_status])
             if section.get("reason"):
                 section_item.setToolTip(0, section.get("reason"))
@@ -502,14 +503,14 @@ class ModuleManagerScreen(QtWidgets.QWidget):
 
             for package in section.get("packages", []):
                 pkg_status = package.get("status", STATUS_READY)
-                package_text = f"Package {package.get('package_id')}: {package.get('title')}"
+                package_text = f"{terms.LESSON} {package.get('package_id')}: {package.get('title')}"
                 package_item = QtWidgets.QTreeWidgetItem([package_text, pkg_status])
                 if package.get("reason"):
                     package_item.setToolTip(0, package.get("reason"))
                 section_item.addChild(package_item)
 
                 for part in package.get("parts", []):
-                    part_text = f"Part {part.get('part_id')}: {part.get('title')}"
+                    part_text = f"{terms.ACTIVITY} {part.get('part_id')}: {part.get('title')}"
                     part_item = QtWidgets.QTreeWidgetItem([part_text, part.get("status")])
                     tooltip = part.get("reason")
                     if tooltip:
@@ -549,7 +550,7 @@ class ModuleManagerScreen(QtWidgets.QWidget):
 
     def _clear_details(self) -> None:
         self.current_part_id = None
-        self.part_title.setText("Select a part to view details.")
+        self.part_title.setText("Select an activity to view details.")
         self.part_status.clear()
         self.part_reason.clear()
         self.preview.setPlainText("")
@@ -594,12 +595,12 @@ class ModuleManagerScreen(QtWidgets.QWidget):
             return "Preview unavailable."
 
         if manifest.get("part_type") != "text":
-            return "Preview available only for text-based parts."
+            return "Preview available only for text-based activities."
 
         content = manifest.get("content") or {}
         asset = content.get("asset_path")
         if not asset:
-            return "Part manifest missing asset path."
+            return "Activity manifest missing asset path."
 
         text = read_asset_text(asset, paths)
         if text is not None:
@@ -614,13 +615,13 @@ class ModuleManagerScreen(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(
                 self,
                 "Download Failed",
-                f"Unable to download part: {result.get('reason', 'Unknown error')}",
+                f"Unable to download activity: {result.get('reason', 'Unknown error')}",
             )
         else:
             QtWidgets.QMessageBox.information(
                 self,
                 "Download Complete",
-                f"Part status: {result.get('status')} ({result.get('reason') or 'ok'})",
+                f"Activity status: {result.get('status')} ({result.get('reason') or 'ok'})",
             )
         self.refresh_tree()
         self._reselect_part(self.current_part_id)
@@ -643,7 +644,7 @@ class ModuleManagerScreen(QtWidgets.QWidget):
         part_data = self.adapter.get_part(self.current_part_id)
         manifest = part_data.get("manifest") if isinstance(part_data, dict) else None
         if not manifest:
-            QtWidgets.QMessageBox.warning(self, "Run Failed", "Part manifest unavailable.")
+            QtWidgets.QMessageBox.warning(self, "Run Failed", "Activity manifest unavailable.")
             return
 
         behavior = manifest.get("behavior") or {}
@@ -957,7 +958,7 @@ class ModuleManagementScreen(QtWidgets.QWidget):
 
         selector = workspace_selector_factory() if workspace_selector_factory else None
         header = AppHeader(
-            title="Module Management",
+            title=f"{terms.TOPIC} Management",
             on_back=self.on_back,
             workspace_selector=selector,
         )
@@ -970,7 +971,9 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         layout.addWidget(self.status_label)
 
         self.table = QtWidgets.QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Module ID", "Repo?", "Store?", "Size", "Actions"])
+        self.table.setHorizontalHeaderLabels(
+            [f"{terms.TOPIC} ID", "Repo?", "Store?", "Size", "Actions"]
+        )
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
@@ -1139,8 +1142,8 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             actions_widget = QtWidgets.QWidget()
             actions_layout = QtWidgets.QHBoxLayout(actions_widget)
             actions_layout.setContentsMargins(0, 0, 0, 0)
-            install_btn = QtWidgets.QPushButton("Install")
-            uninstall_btn = QtWidgets.QPushButton("Uninstall")
+            install_btn = QtWidgets.QPushButton(f"Install {terms.TOPIC}")
+            uninstall_btn = QtWidgets.QPushButton(f"Uninstall {terms.TOPIC}")
             install_btn.setEnabled(bool(mod.get("repo")) and not mod.get("store"))
             uninstall_btn.setEnabled(bool(mod.get("store")))
             install_btn.clicked.connect(lambda _=False, m=mod_id: self._start_job("install", m))
@@ -1153,17 +1156,17 @@ class ModuleManagementScreen(QtWidgets.QWidget):
 
     def _start_job(self, action: str, module_id: str) -> None:
         if not self.bus:
-            QtWidgets.QMessageBox.information(self, "Module", "Runtime bus unavailable.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Runtime bus unavailable.")
             return
         if self.pending_job_id:
-            QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Another topic job is running.")
             return
         entry = self._module_index.get(module_id, {})
         if action == "install" and entry.get("store"):
-            QtWidgets.QMessageBox.information(self, "Module", "Module already installed.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Topic already installed.")
             return
         if action == "uninstall" and not entry.get("store"):
-            QtWidgets.QMessageBox.information(self, "Module", "Module already uninstalled.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Topic already uninstalled.")
             return
         topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
         self._set_job_state(job_id=None, module_id=module_id, action=action, running=True)
@@ -1182,31 +1185,31 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         except Exception as exc:  # pragma: no cover - defensive
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
             self._show_progress_panel(
-                "Module job failed",
+                "Topic job failed",
                 f"{action.title()} {module_id}: {exc}",
                 running=False,
                 ok=False,
             )
-            QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
+            QtWidgets.QMessageBox.warning(self, "Topic", f"Request failed: {exc}")
             return
         if not response.get("ok") or not response.get("job_id"):
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
             self._show_progress_panel(
-                "Module job failed",
+                "Topic job failed",
                 f"{action.title()} {module_id}: {response.get('error') or 'unknown'}",
                 running=False,
                 ok=False,
             )
             QtWidgets.QMessageBox.warning(
                 self,
-                "Module",
+                "Topic",
                 f"Request failed: {response.get('error') or 'unknown'}",
             )
             return
         job_id = str(response["job_id"])
         self._set_job_state(job_id=job_id, module_id=module_id, action=action, running=True)
         self._show_progress_panel(
-            "Module job queued",
+            "Topic job queued",
             f"{action.title()} {module_id}: awaiting progress (job {job_id[:8]})",
             running=True,
         )
@@ -1243,10 +1246,10 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         stage = payload.get("stage") or "Working"
         percent = payload.get("percent")
         percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
-        module_id = payload.get("module_id") or self.pending_module_id or "module"
-        action = (self.pending_action or "module").title()
+        module_id = payload.get("module_id") or self.pending_module_id or terms.TOPIC.lower()
+        action = (self.pending_action or terms.TOPIC.lower()).title()
         details = f"{action} {module_id}: {percent_text} {stage}".strip()
-        self._show_progress_panel("Module Progress", details, running=True)
+        self._show_progress_panel("Topic Progress", details, running=True)
         self._set_status(details)
 
     def _on_module_completed_event(self, envelope: Any) -> None:
@@ -1256,11 +1259,11 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self._stop_job_poll_timer()
         ok = bool(payload.get("ok"))
         error = payload.get("error")
-        module_id = payload.get("module_id") or self.pending_module_id or "module"
-        action = payload.get("action") or self.pending_action or "module"
+        module_id = payload.get("module_id") or self.pending_module_id or terms.TOPIC.lower()
+        action = payload.get("action") or self.pending_action or terms.TOPIC.lower()
         summary = "OK" if ok else error or "failed"
         self._show_progress_panel(
-            "Module Result",
+            "Topic Result",
             f"{action.title()} {module_id}: {summary}",
             running=False,
             ok=ok,
@@ -1278,11 +1281,11 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         self._stop_job_poll_timer()
         ok = bool(payload.get("ok"))
         error = payload.get("error")
-        module_id = self.pending_module_id or "module"
-        action = self.pending_action or "module"
+        module_id = self.pending_module_id or terms.TOPIC.lower()
+        action = self.pending_action or terms.TOPIC.lower()
         summary = "OK" if ok else error or "failed"
         self._show_progress_panel(
-            "Module Result",
+            "Topic Result",
             f"{action.title()} {module_id}: {summary}",
             running=False,
             ok=ok,
@@ -1341,8 +1344,8 @@ class ModuleManagementScreen(QtWidgets.QWidget):
             if elapsed_ms > self._job_poll_timeout_ms:
                 self._stop_job_poll_timer()
                 self._show_progress_panel(
-                    "Module job timeout",
-                    f"{(self.pending_action or 'Module').title()} {self.pending_module_id or 'module'}: timed out waiting for completion",
+                    "Topic job timeout",
+                    f"{(self.pending_action or terms.TOPIC).title()} {self.pending_module_id or terms.TOPIC.lower()}: timed out waiting for completion",
                     running=False,
                     ok=False,
                 )
@@ -1510,12 +1513,12 @@ class ContentManagementScreen(QtWidgets.QWidget):
         detail_layout.addWidget(self.detail_hint)
 
         btn_row = QtWidgets.QHBoxLayout()
-        self.install_part_btn = QtWidgets.QPushButton("Install part")
+        self.install_part_btn = QtWidgets.QPushButton(f"Install {terms.ACTIVITY.lower()}")
         self.install_part_btn.clicked.connect(self._install_part)
         self.install_part_btn.setVisible(False)
-        self.install_module_btn = QtWidgets.QPushButton("Install module")
+        self.install_module_btn = QtWidgets.QPushButton(f"Install {terms.TOPIC.lower()}")
         self.install_module_btn.clicked.connect(lambda: self._start_module_job("install"))
-        self.uninstall_module_btn = QtWidgets.QPushButton("Uninstall module")
+        self.uninstall_module_btn = QtWidgets.QPushButton(f"Uninstall {terms.TOPIC.lower()}")
         self.uninstall_module_btn.clicked.connect(lambda: self._start_module_job("uninstall"))
         btn_row.addWidget(self.install_part_btn)
         btn_row.addWidget(self.install_module_btn)
@@ -1607,7 +1610,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         data = self._tree_data or {}
         module = data.get("module")
         if not module:
-            self._set_status(data.get("reason") or "Module data unavailable.")
+            self._set_status(data.get("reason") or "Topic data unavailable.")
             self._clear_details()
             return
 
@@ -1623,7 +1626,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
 
         module_status = data.get("status", "")
         module_item = QtWidgets.QTreeWidgetItem(
-            [self._display_name(module.get("title"), module.get("module_id"), "Module"), module_status]
+            [
+                self._display_name(
+                    module.get("title"),
+                    module.get("module_id"),
+                    terms.TOPIC,
+                ),
+                module_status,
+            ]
         )
         module_item.setData(
             0,
@@ -1638,7 +1648,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
         added_any = False
         for section in module.get("sections", []):
             sec_item = QtWidgets.QTreeWidgetItem(
-                [self._display_name(section.get("title"), section.get("section_id"), "Section"), section.get("status", "")]
+                [
+                    self._display_name(
+                        section.get("title"),
+                        section.get("section_id"),
+                        terms.UNIT,
+                    ),
+                    section.get("status", ""),
+                ]
             )
             sec_item.setData(
                 0,
@@ -1652,7 +1669,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
             sec_has_child = False
             for package in section.get("packages", []):
                 pkg_item = QtWidgets.QTreeWidgetItem(
-                    [self._display_name(package.get("title"), package.get("package_id"), "Package"), package.get("status", "")]
+                    [
+                        self._display_name(
+                            package.get("title"),
+                            package.get("package_id"),
+                            terms.LESSON,
+                        ),
+                        package.get("status", ""),
+                    ]
                 )
                 pkg_item.setData(
                     0,
@@ -1677,7 +1701,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
                         workspace_disabled = True
                         disabled_parts.append(part.get("part_id") or component_id)
                     part_item = QtWidgets.QTreeWidgetItem(
-                        [self._display_name(part.get("title"), part.get("part_id"), "Part"), status]
+                        [
+                            self._display_name(
+                                part.get("title"),
+                                part.get("part_id"),
+                                terms.ACTIVITY,
+                            ),
+                            status,
+                        ]
                     )
                     part_item.setData(
                         0,
@@ -1706,7 +1737,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
             self.tree.addTopLevelItem(module_item)
             self.tree.expandAll()
         else:
-            self._set_status("No installed modules yet. Install from Module Management.")
+            self._set_status(f"No installed {terms.TOPIC.lower()}s yet. Install from {terms.TOPIC} Management.")
         if disabled_parts:
             _agent_debug_log(
                 "workspace",
@@ -1736,16 +1767,16 @@ class ContentManagementScreen(QtWidgets.QWidget):
             if workspace_disabled:
                 status = STATUS_UNAVAILABLE
                 reason = WORKSPACE_DISABLED_REASON
-            self.detail_title.setText(f"Part {part_id}")
+            self.detail_title.setText(f"{terms.ACTIVITY} {part_id}")
             self.detail_status_pill.set_status(status)
             self.detail_status_pill.setVisible(True)
-            self.detail_meta.setText(f"Module: {data.get('module_id') or 'physics'}")
+            self.detail_meta.setText(f"{terms.TOPIC}: {data.get('module_id') or 'physics'}")
             if workspace_disabled:
-                self.detail_action.setText("Action: Enable pack in Workspace Management.")
+                self.detail_action.setText("Action: Enable pack in Project Management.")
             elif status == STATUS_READY:
                 self.detail_action.setText("Action: Open in Content Browser.")
             else:
-                self.detail_action.setText("Action: Install part.")
+                self.detail_action.setText(f"Action: Install {terms.ACTIVITY.lower()}.")
             self.detail_hint.setText(self._format_reason(status, reason, workspace_disabled))
             self.install_part_btn.setVisible(status == STATUS_NOT_INSTALLED and not workspace_disabled)
             self.install_part_btn.setEnabled(status == STATUS_NOT_INSTALLED and not workspace_disabled)
@@ -1754,16 +1785,16 @@ class ContentManagementScreen(QtWidgets.QWidget):
             self.pending_module_id = None
             self._selected_module_status = None
         elif node_type == "module":
-            module_id = data.get("module_id") or "module"
-            self.detail_title.setText(f"Module {module_id}")
-            module_status = data.get("status") or item.text(1)
+            module_id = data.get("module_id") or terms.TOPIC.lower()
+            self.detail_title.setText(f"{terms.TOPIC} {module_id}")
+            module_status = data.get("status") or item.text(1) or STATUS_READY
             self.detail_status_pill.set_status(module_status)
             self.detail_status_pill.setVisible(True)
-            self.detail_meta.setText(f"Module ID: {module_id}")
+            self.detail_meta.setText(f"{terms.TOPIC} ID: {module_id}")
             if module_status == STATUS_READY:
-                self.detail_action.setText("Action: Uninstall Module.")
+                self.detail_action.setText(f"Action: Uninstall {terms.TOPIC}.")
             else:
-                self.detail_action.setText("Action: Install Module.")
+                self.detail_action.setText(f"Action: Install {terms.TOPIC}.")
             self.detail_hint.setText(self._format_reason(module_status, data.get("reason"), False))
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(module_status != STATUS_READY)
@@ -1773,12 +1804,13 @@ class ContentManagementScreen(QtWidgets.QWidget):
             self._set_module_action_enabled()
         elif node_type == "section":
             section_id = item.text(0)
-            self.detail_title.setText(f"Section {section_id}")
-            self.detail_status_pill.set_status(item.text(1))
+            self.detail_title.setText(f"{terms.UNIT} {section_id}")
+            section_status = data.get("status") or item.text(1) or STATUS_READY
+            self.detail_status_pill.set_status(section_status)
             self.detail_status_pill.setVisible(True)
             self.detail_meta.setText("")
-            self.detail_action.setText("Select a package to manage parts.")
-            self.detail_hint.setText(self._format_reason(data.get("status") or item.text(1), data.get("reason"), False))
+            self.detail_action.setText(f"Select a {terms.LESSON.lower()} to manage {terms.ACTIVITY.lower()}s.")
+            self.detail_hint.setText(self._format_reason(section_status, data.get("reason"), False))
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(False)
             self.uninstall_module_btn.setVisible(False)
@@ -1786,12 +1818,13 @@ class ContentManagementScreen(QtWidgets.QWidget):
             self._selected_module_status = None
         elif node_type == "package":
             package_id = item.text(0)
-            self.detail_title.setText(f"Package {package_id}")
-            self.detail_status_pill.set_status(item.text(1))
+            self.detail_title.setText(f"{terms.LESSON} {package_id}")
+            package_status = data.get("status") or item.text(1) or STATUS_READY
+            self.detail_status_pill.set_status(package_status)
             self.detail_status_pill.setVisible(True)
             self.detail_meta.setText("")
-            self.detail_action.setText("Select a part to manage content.")
-            self.detail_hint.setText(self._format_reason(data.get("status") or item.text(1), data.get("reason"), False))
+            self.detail_action.setText(f"Select an {terms.ACTIVITY.lower()} to manage content.")
+            self.detail_hint.setText(self._format_reason(package_status, data.get("reason"), False))
             self.install_part_btn.setVisible(False)
             self.install_module_btn.setVisible(False)
             self.uninstall_module_btn.setVisible(False)
@@ -1826,7 +1859,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         if not status:
             return ""
         if workspace_disabled:
-            return "Reason: Disabled by project (enable pack in Project settings)"
+            return "Reason: Disabled by project (enable pack in Project Management)"
         if status == STATUS_NOT_INSTALLED:
             return "Reason: Not installed (install to content_store)"
         if reason:
@@ -1842,7 +1875,7 @@ class ContentManagementScreen(QtWidgets.QWidget):
         part_id = data.get("part_id")
         if part_id and self.on_open_part:
             if data.get("workspace_disabled"):
-                QtWidgets.QMessageBox.information(self, "Workspace", WORKSPACE_DISABLED_REASON)
+                QtWidgets.QMessageBox.information(self, "Project", WORKSPACE_DISABLED_REASON)
                 return
             self.on_open_part(part_id)
 
@@ -1850,12 +1883,14 @@ class ContentManagementScreen(QtWidgets.QWidget):
         if not self.current_selection or self.current_selection.get("type") != "part":
             return
         if self.current_selection.get("workspace_disabled"):
-            QtWidgets.QMessageBox.information(self, "Workspace", WORKSPACE_DISABLED_REASON)
+            QtWidgets.QMessageBox.information(self, "Project", WORKSPACE_DISABLED_REASON)
             return
         if self.install_thread:
             return
         part_id = self.current_selection.get("part_id")
-        self.progress_dialog = QtWidgets.QProgressDialog("Installing part...", "", 0, 0, self)
+        self.progress_dialog = QtWidgets.QProgressDialog(
+            f"Installing {terms.ACTIVITY.lower()}...", "", 0, 0, self
+        )
         self.progress_dialog.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
         self.progress_dialog.setCancelButton(None)
         worker = InstallWorker(self.adapter, part_id)
@@ -1915,19 +1950,19 @@ class ContentManagementScreen(QtWidgets.QWidget):
     def _start_module_job(self, action: str) -> None:
         module_id = self._selected_module_id()
         if not module_id:
-            QtWidgets.QMessageBox.information(self, "Module", "Select the module first.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Select the topic first.")
             return
         if not self.bus:
-            QtWidgets.QMessageBox.information(self, "Module", "Runtime bus unavailable.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Runtime bus unavailable.")
             return
         if self.pending_job_id:
-            QtWidgets.QMessageBox.information(self, "Module", "Another module job is running.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Another topic job is running.")
             return
         if action == "install" and self._selected_module_status == STATUS_READY:
-            QtWidgets.QMessageBox.information(self, "Module", "Module already installed.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Topic already installed.")
             return
         if action == "uninstall" and self._selected_module_status != STATUS_READY:
-            QtWidgets.QMessageBox.information(self, "Module", "Module already uninstalled.")
+            QtWidgets.QMessageBox.information(self, "Topic", "Topic already uninstalled.")
             return
         topic = BUS_MODULE_INSTALL_REQUEST if action == "install" else BUS_MODULE_UNINSTALL_REQUEST
         self._set_job_state(job_id=None, module_id=module_id, action=action, running=True)
@@ -1946,31 +1981,31 @@ class ContentManagementScreen(QtWidgets.QWidget):
         except Exception as exc:  # pragma: no cover - defensive
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
             self._show_progress_panel(
-                "Module job failed",
+                "Topic job failed",
                 f"{action.title()} {module_id}: {exc}",
                 running=False,
                 ok=False,
             )
-            QtWidgets.QMessageBox.warning(self, "Module", f"Request failed: {exc}")
+            QtWidgets.QMessageBox.warning(self, "Topic", f"Request failed: {exc}")
             return
         if not response.get("ok") or not response.get("job_id"):
             self._set_job_state(job_id=None, module_id=None, action=None, running=False)
             self._show_progress_panel(
-                "Module job failed",
+                "Topic job failed",
                 f"{action.title()} {module_id}: {response.get('error') or 'unknown'}",
                 running=False,
                 ok=False,
             )
             QtWidgets.QMessageBox.warning(
                 self,
-                "Module",
+                "Topic",
                 f"Request failed: {response.get('error') or 'unknown'}",
             )
             return
         job_id = str(response["job_id"])
         self._set_job_state(job_id=job_id, module_id=module_id, action=action, running=True)
         self._show_progress_panel(
-            "Module job queued",
+            "Topic job queued",
             f"{action.title()} {module_id}: awaiting progress (job {job_id[:8]})",
             running=True,
         )
@@ -2014,10 +2049,10 @@ class ContentManagementScreen(QtWidgets.QWidget):
         stage = payload.get("stage") or "Working"
         percent = payload.get("percent")
         percent_text = f"{percent:.1f}%" if isinstance(percent, (int, float)) else ""
-        module_id = payload.get("module_id") or self.pending_module_id or "module"
-        action = (self.pending_action or "module").title()
+        module_id = payload.get("module_id") or self.pending_module_id or terms.TOPIC.lower()
+        action = (self.pending_action or terms.TOPIC.lower()).title()
         details = f"{action} {module_id}: {percent_text} {stage}".strip()
-        self._show_progress_panel("Module Progress", details, running=True)
+        self._show_progress_panel("Topic Progress", details, running=True)
         self._set_status(details)
 
     def _on_module_completed_event(self, envelope: Any) -> None:
@@ -2026,11 +2061,11 @@ class ContentManagementScreen(QtWidgets.QWidget):
             return
         ok = bool(payload.get("ok"))
         error = payload.get("error")
-        module_id = payload.get("module_id") or self.pending_module_id or "module"
-        action = payload.get("action") or self.pending_action or "module"
+        module_id = payload.get("module_id") or self.pending_module_id or terms.TOPIC.lower()
+        action = payload.get("action") or self.pending_action or terms.TOPIC.lower()
         summary = "OK" if ok else error or "failed"
         self._show_progress_panel(
-            "Module Result",
+            "Topic Result",
             f"{action.title()} {module_id}: {summary}",
             running=False,
             ok=ok,
@@ -2052,11 +2087,11 @@ class ContentManagementScreen(QtWidgets.QWidget):
         self._stop_job_poll_timer()
         ok = bool(payload.get("ok"))
         error = payload.get("error")
-        module_id = self.pending_module_id or "module"
-        action = self.pending_action or "module"
+        module_id = self.pending_module_id or terms.TOPIC.lower()
+        action = self.pending_action or terms.TOPIC.lower()
         summary = "OK" if ok else error or "failed"
         self._show_progress_panel(
-            "Module Result",
+            "Topic Result",
             f"{action.title()} {module_id}: {summary}",
             running=False,
             ok=ok,
@@ -2109,8 +2144,8 @@ class ContentManagementScreen(QtWidgets.QWidget):
             if elapsed_ms > self._job_poll_timeout_ms:
                 self._stop_job_poll_timer()
                 self._show_progress_panel(
-                    "Module job timeout",
-                    f"{(self.pending_action or 'Module').title()} {self.pending_module_id or 'module'}: timed out waiting for completion",
+                    "Topic job timeout",
+                    f"{(self.pending_action or terms.TOPIC).title()} {self.pending_module_id or terms.TOPIC.lower()}: timed out waiting for completion",
                     running=False,
                     ok=False,
                 )
@@ -2179,7 +2214,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
         header = AppHeader(
-            title="Component Sandbox",
+            title=f"{terms.BLOCK} Sandbox",
             on_back=self.on_back,
             workspace_selector=selector,
         )
@@ -2196,7 +2231,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         left_layout = QtWidgets.QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
 
-        component_label = QtWidgets.QLabel("Components")
+        component_label = QtWidgets.QLabel(f"{terms.BLOCK}s")
         component_label.setStyleSheet("font-weight: bold;")
         left_layout.addWidget(component_label)
         self.component_list = QtWidgets.QListWidget()
@@ -2220,12 +2255,14 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         left_layout.addWidget(self.lab_list, stretch=1)
 
         lab_button_row = QtWidgets.QHBoxLayout()
-        self.open_lab_btn = QtWidgets.QPushButton("Open selected lab as component")
+        self.open_lab_btn = QtWidgets.QPushButton(
+            f"Open selected lab as {terms.BLOCK.lower()}"
+        )
         self.open_lab_btn.clicked.connect(self._open_selected_lab_component)
         lab_button_row.addWidget(self.open_lab_btn)
         left_layout.addLayout(lab_button_row)
 
-        pack_label = QtWidgets.QLabel("Pack Components")
+        pack_label = QtWidgets.QLabel(f"{terms.PACK} {terms.BLOCK}s")
         pack_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
         left_layout.addWidget(pack_label)
         self.pack_list = QtWidgets.QListWidget()
@@ -2233,7 +2270,9 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         left_layout.addWidget(self.pack_list, stretch=1)
 
         pack_button_row = QtWidgets.QHBoxLayout()
-        self.open_pack_btn = QtWidgets.QPushButton("Open selected pack component")
+        self.open_pack_btn = QtWidgets.QPushButton(
+            f"Open selected {terms.PACK.lower()} {terms.BLOCK.lower()}"
+        )
         self.open_pack_btn.clicked.connect(self._open_selected_pack_component)
         pack_button_row.addWidget(self.open_pack_btn)
         left_layout.addLayout(pack_button_row)
@@ -2245,7 +2284,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         host_layout.setContentsMargins(0, 0, 0, 0)
 
         if ComponentHost is None or component_registry is None:
-            msg = "Component runtime unavailable."
+            msg = "Block runtime unavailable."
             if COMPONENT_RUNTIME_ERROR:
                 msg = f"{msg} {COMPONENT_RUNTIME_ERROR}"
             error_label = QtWidgets.QLabel(msg)
@@ -2268,7 +2307,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         if self._host is not None:
             try:
                 self._host.unmount()
-                self.status_label.setText("Workspace changed. Reopen a component to refresh context.")
+                self.status_label.setText("Project changed. Reopen a block to refresh context.")
             except Exception:
                 pass
         self.refresh_components()
@@ -2328,55 +2367,55 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             return
         item = self.component_list.currentItem()
         if not item:
-            self.status_label.setText("Select a component to open.")
+            self.status_label.setText("Select a block to open.")
             return
         component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
         component = component_registry.get_registry().get_component(component_id)
         if not component:
-            self.status_label.setText(f"Component '{component_id}' is not available.")
+            self.status_label.setText(f"Block '{component_id}' is not available.")
             return
         context = self.context_provider()
         self._host.mount(component, context)
-        self.status_label.setText(f"Opened: {component_id}")
+        self.status_label.setText(f"Opened block: {component_id}")
 
     def _close_component(self) -> None:
         if self._host is None:
             return
         self._host.unmount()
-        self.status_label.setText("Component closed.")
+        self.status_label.setText("Block closed.")
 
     def _open_selected_lab_component(self) -> None:
         if component_registry is None or self._host is None:
             return
         item = self.lab_list.currentItem()
         if not item:
-            self.status_label.setText("Select a lab to open as a component.")
+            self.status_label.setText("Select a lab to open as a block.")
             return
         lab_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
         component_id = f"labhost:{lab_id}"
         component = component_registry.get_registry().get_component(component_id)
         if not component:
-            self.status_label.setText(f"Lab component '{component_id}' is not registered.")
+            self.status_label.setText(f"Lab block '{component_id}' is not registered.")
             return
         context = self.context_provider()
         self._host.mount(component, context)
-        self.status_label.setText(f"Opened lab component: {lab_id}")
+        self.status_label.setText(f"Opened lab block: {lab_id}")
 
     def _open_selected_pack_component(self) -> None:
         if component_registry is None or self._host is None:
             return
         item = self.pack_list.currentItem()
         if not item:
-            self.status_label.setText("Select a pack component to open.")
+            self.status_label.setText("Select a pack block to open.")
             return
         component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
         component = component_registry.get_registry().get_component(component_id)
         if not component:
-            self.status_label.setText(f"Pack component '{component_id}' is not registered.")
+            self.status_label.setText(f"Pack block '{component_id}' is not registered.")
             return
         context = self.context_provider()
         self._host.mount(component, context)
-        self.status_label.setText(f"Opened pack component: {component_id}")
+        self.status_label.setText(f"Opened pack block: {component_id}")
 
 
 # endregion
@@ -2398,7 +2437,7 @@ class ComponentHostScreen(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
         header = AppHeader(
-            title="Component Viewer",
+            title=f"{terms.BLOCK} Viewer",
             on_back=self.on_back,
             workspace_selector=selector,
         )
@@ -2412,7 +2451,7 @@ class ComponentHostScreen(QtWidgets.QWidget):
         layout.addWidget(self.status_label)
 
         if ComponentHost is None or component_registry is None:
-            msg = "Component runtime unavailable."
+            msg = "Block runtime unavailable."
             if COMPONENT_RUNTIME_ERROR:
                 msg = f"{msg} {COMPONENT_RUNTIME_ERROR}"
             error_label = QtWidgets.QLabel(msg)
@@ -2428,16 +2467,16 @@ class ComponentHostScreen(QtWidgets.QWidget):
             return
         component = component_registry.get_registry().get_component(component_id)
         if not component:
-            self.status_label.setText(f"Component '{component_id}' is not registered.")
+            self.status_label.setText(f"Block '{component_id}' is not registered.")
             return
         self._host.mount(component, context)
-        self.status_label.setText(f"Opened component: {component_id}")
+        self.status_label.setText(f"Opened block: {component_id}")
 
     def _close_component(self) -> None:
         if self._host is None:
             return
         self._host.unmount()
-        self.status_label.setText("Component closed.")
+        self.status_label.setText("Block closed.")
 
 
 # endregion
@@ -2785,7 +2824,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not workspace_id:
             return False
         if not (APP_BUS and BUS_WORKSPACE_SET_ACTIVE_REQUEST):
-            QtWidgets.QMessageBox.warning(self, "Workspace", "Runtime bus unavailable.")
+            QtWidgets.QMessageBox.warning(self, "Project", "Runtime bus unavailable.")
             return False
         try:
             response = APP_BUS.request(
@@ -2795,11 +2834,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 timeout_ms=1500,
             )
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Workspace", f"Set active failed: {exc}")
+            QtWidgets.QMessageBox.warning(self, "Project", f"Set active failed: {exc}")
             return False
         if not response.get("ok"):
             QtWidgets.QMessageBox.warning(
-                self, "Workspace", response.get("error") or "Set active failed."
+                self, "Project", response.get("error") or "Set active failed."
             )
             return False
         workspace = response.get("workspace")
@@ -2929,7 +2968,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._dispose_lab_widget()
         if self.content_management:
             self.content_management.refresh_tree()
-            self.content_management._set_status("Install a module to begin.")
+            self.content_management._set_status(f"Install a {terms.TOPIC.lower()} to begin.")
             self.stacked.setCurrentWidget(self.content_management)
             return
         self._show_module_management()
@@ -3038,7 +3077,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_component_sandbox(self):
         self._dispose_lab_widget()
         if not COMPONENT_RUNTIME_AVAILABLE:
-            QtWidgets.QMessageBox.warning(self, "Components", "Component runtime unavailable.")
+            QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
             return
         if self.component_sandbox:
             self.component_sandbox.refresh_components()
@@ -3053,11 +3092,11 @@ class MainWindow(QtWidgets.QMainWindow):
     ) -> None:
         self._dispose_lab_widget()
         if not COMPONENT_RUNTIME_AVAILABLE or self.component_host is None:
-            QtWidgets.QMessageBox.warning(self, "Components", "Component runtime unavailable.")
+            QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
             return
         context = self._build_component_context(part_id=part_id, detail=detail)
         if not self.workspace_component_policy.is_component_enabled(component_id):
-            QtWidgets.QMessageBox.information(self, "Component", WORKSPACE_DISABLED_REASON)
+            QtWidgets.QMessageBox.information(self, "Block", WORKSPACE_DISABLED_REASON)
             return
         self.component_host.open_component(component_id, context)
         self.stacked.setCurrentWidget(self.component_host)

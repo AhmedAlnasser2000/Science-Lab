@@ -4,6 +4,8 @@ from typing import Callable, Dict, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
 
+from app_ui.ui_helpers import terms
+
 
 class WorkspaceSelector(QtWidgets.QWidget):
     """
@@ -34,14 +36,14 @@ class WorkspaceSelector(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        self.label = QtWidgets.QLabel("Workspace:")
+        self.label = QtWidgets.QLabel(f"{terms.PROJECT}:")
         self.combo = QtWidgets.QComboBox()
         self.combo.setMinimumWidth(160)
         self.combo.currentIndexChanged.connect(self._on_combo_changed)
 
         refresh_btn = QtWidgets.QToolButton()
         refresh_btn.setText("Refresh")
-        refresh_btn.setToolTip("Refresh workspace list")
+        refresh_btn.setToolTip("Refresh project list")
         refresh_btn.clicked.connect(lambda: self.refresh())
 
         layout.addWidget(self.label)

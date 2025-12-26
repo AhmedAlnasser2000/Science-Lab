@@ -198,7 +198,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
         header = AppHeader(
-            title="Component Management",
+            title="Pack Management",
             on_back=self.on_back,
             workspace_selector=selector,
         )
@@ -217,11 +217,11 @@ class ComponentManagementScreen(QtWidgets.QWidget):
 
         repo_panel = QtWidgets.QWidget()
         repo_layout = QtWidgets.QVBoxLayout(repo_panel)
-        repo_layout.addWidget(QtWidgets.QLabel("Available (Repo)"))
+        repo_layout.addWidget(QtWidgets.QLabel("Available Packs (Repo)"))
         self.repo_list = QtWidgets.QListWidget()
         repo_layout.addWidget(self.repo_list, stretch=1)
         repo_btn_row = QtWidgets.QHBoxLayout()
-        self.install_btn = QtWidgets.QPushButton("Install")
+        self.install_btn = QtWidgets.QPushButton("Install Pack")
         self.install_btn.clicked.connect(self._install_selected)
         repo_btn_row.addWidget(self.install_btn)
         repo_layout.addLayout(repo_btn_row)
@@ -229,11 +229,11 @@ class ComponentManagementScreen(QtWidgets.QWidget):
 
         store_panel = QtWidgets.QWidget()
         store_layout = QtWidgets.QVBoxLayout(store_panel)
-        store_layout.addWidget(QtWidgets.QLabel("Installed (Store)"))
+        store_layout.addWidget(QtWidgets.QLabel("Installed Packs (Store)"))
         self.store_list = QtWidgets.QListWidget()
         store_layout.addWidget(self.store_list, stretch=1)
         store_btn_row = QtWidgets.QHBoxLayout()
-        self.uninstall_btn = QtWidgets.QPushButton("Uninstall")
+        self.uninstall_btn = QtWidgets.QPushButton("Uninstall Pack")
         self.uninstall_btn.clicked.connect(self._uninstall_selected)
         store_btn_row.addWidget(self.uninstall_btn)
         store_layout.addLayout(store_btn_row)
