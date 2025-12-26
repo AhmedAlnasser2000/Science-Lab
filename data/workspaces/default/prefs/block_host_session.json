@@ -1,7 +1,6 @@
 {
-  "open_blocks": [
-    "labhost:vector_add",
-    "labhost:gravity"
-  ],
-  "active_block": "labhost:gravity"
+  "version": 1,
+  "open_blocks": [],
+  "active_block": null,
+  "last_updated": "2025-12-26T17:52:41.034683Z"
 }

@@ -2213,6 +2213,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         context_provider: Callable[[], "ComponentContext"],
         on_open_block: Optional[Callable[[str], None]],
         on_open_empty: Optional[Callable[[], None]],
+        on_start_template: Optional[Callable[[Dict[str, Any]], None]] = None,
         *,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
     ):
@@ -2221,6 +2222,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         self.context_provider = context_provider
         self.on_open_block = on_open_block
         self.on_open_empty = on_open_empty
+        self.on_start_template = on_start_template
         self._templates: List[Dict[str, Any]] = []
         self._template_by_id: Dict[str, Dict[str, Any]] = {}
         self._component_pack_map: Dict[str, str] = {}
@@ -2450,7 +2452,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             if not isinstance(component_id, str):
                 continue
             openable, status, reason = self._component_status(component_id)
-            label = f"{component_id} ? {status}"
+            label = f"{component_id} - {status}"
             item = QtWidgets.QListWidgetItem(label)
             item.setToolTip(reason)
             if not openable:
@@ -2461,6 +2463,11 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         template = self._template_by_id.get(self._current_template_id) if self._current_template_id else None
         if not template:
             self.status_label.setText("Select a template to start.")
+            return
+        if self.on_start_template:
+            self.on_start_template(template)
+            title = template.get("title") or template.get("id") or "Template"
+            self.status_label.setText(f"Started template: {title}")
             return
         if self.on_open_empty:
             self.on_open_empty()
@@ -2752,6 +2759,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._build_component_context,
             self._add_block_to_host,
             self._open_block_host_empty,
+            self._start_block_template,
             workspace_selector_factory=selector_factory,
         )
         self.block_host = BlockHostScreen(
@@ -3302,6 +3310,14 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return
         self.block_host.add_block(component_id, activate=True)
+        self.stacked.setCurrentWidget(self.block_host)
+
+    def _start_block_template(self, template: Dict[str, Any]) -> None:
+        self._dispose_lab_widget()
+        if not COMPONENT_RUNTIME_AVAILABLE or self.block_host is None:
+            QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
+            return
+        self.block_host.start_template(template)
         self.stacked.setCurrentWidget(self.block_host)
 
     def _open_block_picker(self, on_pick: Callable[[str], None]) -> None:

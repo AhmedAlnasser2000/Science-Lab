@@ -2,10 +2,11 @@
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from app_ui.ui_helpers import terms
 from app_ui.ui_helpers.component_policy import (
@@ -29,6 +30,32 @@ except Exception:  # pragma: no cover
 class _SessionEntry:
     component_id: str
     display_name: str
+    pack_name: str
+    status: str
+    reason: str
+    openable: bool
+
+
+class _SessionRow(QtWidgets.QWidget):
+    def __init__(self, entry: _SessionEntry, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(6)
+
+        title = QtWidgets.QLabel(entry.display_name)
+        title.setStyleSheet("font-weight: bold;")
+        pack_badge = QtWidgets.QLabel(entry.pack_name)
+        pack_badge.setStyleSheet(
+            "color: #333; background: #eee; padding: 2px 6px; border-radius: 8px;"
+        )
+        status_label = QtWidgets.QLabel(_status_label(entry))
+        status_label.setStyleSheet(_status_style(entry.status))
+
+        layout.addWidget(title)
+        layout.addWidget(pack_badge)
+        layout.addStretch()
+        layout.addWidget(status_label)
 
 
 class BlockHostScreen(QtWidgets.QWidget):
@@ -52,10 +79,12 @@ class BlockHostScreen(QtWidgets.QWidget):
         self._session_entries: List[_SessionEntry] = []
         self._active_component_id: Optional[str] = None
         self._component_pack_map: Dict[str, str] = {}
+        self._pack_name_map: Dict[str, str] = {}
         self._installed_pack_ids: set[str] = set()
         self._available_pack_ids: set[str] = set()
         self._component_name_map: Dict[str, str] = {}
-        self._skip_messages: List[str] = []
+        self._skipped_ids: List[str] = []
+        self._skipped_reasons: Dict[str, str] = {}
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -66,18 +95,31 @@ class BlockHostScreen(QtWidgets.QWidget):
         )
         layout.addWidget(header)
 
+        banner_row = QtWidgets.QHBoxLayout()
         self.banner = QtWidgets.QLabel("")
         self.banner.setStyleSheet("color: #a33;")
         self.banner.setVisible(False)
-        layout.addWidget(self.banner)
+        banner_row.addWidget(self.banner)
+        banner_row.addStretch()
+        self.remove_skipped_btn = QtWidgets.QPushButton("Remove missing/unavailable")
+        self.remove_skipped_btn.clicked.connect(self._remove_skipped)
+        self.remove_skipped_btn.setVisible(False)
+        banner_row.addWidget(self.remove_skipped_btn)
+        layout.addLayout(banner_row)
 
         actions_row = QtWidgets.QHBoxLayout()
         self.add_btn = QtWidgets.QPushButton("Add Block…")
         self.add_btn.clicked.connect(self._open_picker)
         actions_row.addWidget(self.add_btn)
-        self.clear_btn = QtWidgets.QPushButton("Clear Session")
-        self.clear_btn.clicked.connect(self._clear_session)
-        actions_row.addWidget(self.clear_btn)
+        self.close_active_btn = QtWidgets.QPushButton("Close Active")
+        self.close_active_btn.clicked.connect(self._close_active)
+        actions_row.addWidget(self.close_active_btn)
+        self.close_others_btn = QtWidgets.QPushButton("Close Others")
+        self.close_others_btn.clicked.connect(self._close_others)
+        actions_row.addWidget(self.close_others_btn)
+        self.close_all_btn = QtWidgets.QPushButton("Close All")
+        self.close_all_btn.clicked.connect(self._close_all)
+        actions_row.addWidget(self.close_all_btn)
         actions_row.addStretch()
         layout.addLayout(actions_row)
 
@@ -98,9 +140,6 @@ class BlockHostScreen(QtWidgets.QWidget):
         self.activate_btn = QtWidgets.QPushButton("Activate")
         self.activate_btn.clicked.connect(self._activate_selected)
         session_buttons.addWidget(self.activate_btn)
-        self.close_btn = QtWidgets.QPushButton("Close")
-        self.close_btn.clicked.connect(self._close_selected)
-        session_buttons.addWidget(self.close_btn)
         session_buttons.addStretch()
         left_layout.addLayout(session_buttons)
         splitter.addWidget(left_panel)
@@ -139,6 +178,42 @@ class BlockHostScreen(QtWidgets.QWidget):
         self._render_session()
         self._show_empty_state()
 
+    def start_template(self, template: Dict[str, Any]) -> None:
+        if not isinstance(template, dict):
+            self._show_banner("Template unavailable.")
+            return
+        open_first = template.get("open_first") if isinstance(template.get("open_first"), str) else None
+        recommended = [cid for cid in template.get("recommended_blocks") or [] if isinstance(cid, str)]
+        if open_first and open_first not in recommended:
+            recommended.insert(0, open_first)
+
+        self._session_entries = []
+        self._active_component_id = None
+        self._skipped_ids = []
+        self._skipped_reasons = {}
+
+        for component_id in recommended:
+            entry = self._build_entry(component_id)
+            if entry is None or not entry.openable:
+                reason = entry.reason if entry else "Unavailable"
+                self._skipped_ids.append(component_id)
+                self._skipped_reasons[component_id] = reason
+                continue
+            self._session_entries.append(entry)
+
+        if open_first:
+            for entry in self._session_entries:
+                if entry.component_id == open_first and entry.openable:
+                    self._active_component_id = entry.component_id
+                    break
+        if not self._active_component_id and self._session_entries:
+            self._active_component_id = self._session_entries[0].component_id
+
+        self._save_session()
+        self._render_session()
+        self._mount_active()
+        self._update_skipped_banner()
+
     def add_block(self, component_id: str, *, activate: bool = True) -> None:
         if not component_id:
             return
@@ -146,12 +221,14 @@ class BlockHostScreen(QtWidgets.QWidget):
             if activate:
                 self._set_active(component_id)
             return
-        openable, _status, reason = self._component_status(component_id)
-        if not openable:
-            self._show_banner(reason)
+        entry = self._build_entry(component_id)
+        if entry is None:
+            self._show_banner("Block not available.")
             return
-        display_name = self._component_name_map.get(component_id) or component_id
-        self._session_entries.append(_SessionEntry(component_id=component_id, display_name=display_name))
+        if not entry.openable:
+            self._show_banner(entry.reason)
+            return
+        self._session_entries.append(entry)
         if activate:
             self._active_component_id = component_id
         self._save_session()
@@ -169,44 +246,67 @@ class BlockHostScreen(QtWidgets.QWidget):
 
         self.open_picker(_pick)
 
-    def _clear_session(self) -> None:
+    def _close_active(self) -> None:
+        if not self._active_component_id:
+            return
+        self._session_entries = [
+            entry for entry in self._session_entries if entry.component_id != self._active_component_id
+        ]
+        self._active_component_id = self._session_entries[0].component_id if self._session_entries else None
+        self._save_session()
+        self._render_session()
+        self._mount_active()
+
+    def _close_others(self) -> None:
+        if not self._active_component_id:
+            return
+        self._session_entries = [
+            entry for entry in self._session_entries if entry.component_id == self._active_component_id
+        ]
+        self._save_session()
+        self._render_session()
+        self._mount_active()
+
+    def _close_all(self) -> None:
         confirm = QtWidgets.QMessageBox.question(
             self,
-            f"Clear {terms.BLOCK} Session",
-            "Clear the current session?",
+            f"Close {terms.BLOCK} Session",
+            "Close all blocks in this session?",
         )
         if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         self.open_empty()
 
+    def _remove_skipped(self) -> None:
+        if not self._skipped_ids:
+            return
+        self._skipped_ids = []
+        self._skipped_reasons = {}
+        self._save_session()
+        self._update_skipped_banner()
+
     def _on_session_selected(self) -> None:
-        # Keep buttons enabled based on selection
-        has_selection = bool(self.session_list.currentItem())
-        self.activate_btn.setEnabled(has_selection)
-        self.close_btn.setEnabled(has_selection)
+        item = self.session_list.currentItem()
+        if not item:
+            self.activate_btn.setEnabled(False)
+            return
+        entry = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if isinstance(entry, _SessionEntry):
+            self.activate_btn.setEnabled(entry.openable)
+        else:
+            self.activate_btn.setEnabled(False)
 
     def _activate_selected(self) -> None:
         item = self.session_list.currentItem()
         if not item:
             return
-        component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
-        if not isinstance(component_id, str):
+        entry = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if not isinstance(entry, _SessionEntry):
             return
-        self._set_active(component_id)
-
-    def _close_selected(self) -> None:
-        item = self.session_list.currentItem()
-        if not item:
+        if not entry.openable:
+            self._show_banner(entry.reason)
             return
-        component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
-        if not isinstance(component_id, str):
-            return
-        self._session_entries = [e for e in self._session_entries if e.component_id != component_id]
-        if self._active_component_id == component_id:
-            self._active_component_id = self._session_entries[0].component_id if self._session_entries else None
-        self._save_session()
-        self._render_session()
-        self._mount_active()
+        self._set_active(entry.component_id)
 
     def _set_active(self, component_id: str) -> None:
         if component_id == self._active_component_id:
@@ -219,13 +319,27 @@ class BlockHostScreen(QtWidgets.QWidget):
     def _render_session(self) -> None:
         self.session_list.clear()
         for entry in self._session_entries:
-            item = QtWidgets.QListWidgetItem(entry.display_name)
-            item.setData(QtCore.Qt.ItemDataRole.UserRole, entry.component_id)
+            item = QtWidgets.QListWidgetItem()
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, entry)
+            widget = _SessionRow(entry)
+            item.setSizeHint(widget.sizeHint())
             self.session_list.addItem(item)
+            self.session_list.setItemWidget(item, widget)
             if entry.component_id == self._active_component_id:
-                item.setSelected(True)
-        self.activate_btn.setEnabled(bool(self.session_list.currentItem()))
-        self.close_btn.setEnabled(bool(self.session_list.currentItem()))
+                self.session_list.setCurrentItem(item)
+        self._update_button_state()
+
+    def _update_button_state(self) -> None:
+        has_active = bool(self._active_component_id)
+        self.close_active_btn.setEnabled(has_active)
+        self.close_others_btn.setEnabled(has_active and len(self._session_entries) > 1)
+        self.close_all_btn.setEnabled(bool(self._session_entries))
+        current = self.session_list.currentItem()
+        if current and isinstance(current.data(QtCore.Qt.ItemDataRole.UserRole), _SessionEntry):
+            entry = current.data(QtCore.Qt.ItemDataRole.UserRole)
+            self.activate_btn.setEnabled(entry.openable)
+        else:
+            self.activate_btn.setEnabled(False)
 
     def _mount_active(self) -> None:
         if self._active_component_id is None:
@@ -234,9 +348,9 @@ class BlockHostScreen(QtWidgets.QWidget):
         if component_registry is None or self._host is None:
             self._show_banner("Block runtime unavailable.")
             return
-        openable, _status, reason = self._component_status(self._active_component_id)
-        if not openable:
-            self._show_banner(reason)
+        entry = self._find_entry(self._active_component_id)
+        if entry and not entry.openable:
+            self._show_banner(entry.reason)
             self._show_empty_state()
             return
         component = component_registry.get_registry().get_component(self._active_component_id)
@@ -249,6 +363,12 @@ class BlockHostScreen(QtWidgets.QWidget):
         self.empty_label.setVisible(False)
         self.banner.setVisible(False)
 
+    def _find_entry(self, component_id: str) -> Optional[_SessionEntry]:
+        for entry in self._session_entries:
+            if entry.component_id == component_id:
+                return entry
+        return None
+
     def _show_empty_state(self) -> None:
         if self._host is not None:
             self._host.unmount()
@@ -257,9 +377,21 @@ class BlockHostScreen(QtWidgets.QWidget):
     def _show_banner(self, message: str) -> None:
         self.banner.setText(message)
         self.banner.setVisible(True)
+        self.remove_skipped_btn.setVisible(False)
+
+    def _update_skipped_banner(self) -> None:
+        if not self._skipped_ids:
+            self.banner.setVisible(False)
+            self.remove_skipped_btn.setVisible(False)
+            return
+        count = len(self._skipped_ids)
+        self.banner.setText(f"Skipped {count} block(s): disabled/unavailable.")
+        self.banner.setVisible(True)
+        self.remove_skipped_btn.setVisible(True)
 
     def _load_session(self) -> None:
-        self._skip_messages = []
+        self._skipped_ids = []
+        self._skipped_reasons = {}
         session_path = self._session_path()
         if not session_path.exists():
             self._session_entries = []
@@ -271,39 +403,50 @@ class BlockHostScreen(QtWidgets.QWidget):
             data = json.loads(session_path.read_text(encoding="utf-8"))
         except Exception:
             data = {}
-        open_blocks = data.get("open_blocks") if isinstance(data, dict) else None
-        active_block = data.get("active_block") if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            data = {}
+        open_blocks = data.get("open_blocks")
+        active_block = data.get("active_block")
         if not isinstance(open_blocks, list):
             open_blocks = []
+        seen: set[str] = set()
         self._session_entries = []
         for component_id in open_blocks:
             if not isinstance(component_id, str):
                 continue
-            openable, _status, reason = self._component_status(component_id)
-            if not openable:
-                self._skip_messages.append(f"{component_id}: {reason}")
+            if component_id in seen:
                 continue
-            display_name = self._component_name_map.get(component_id) or component_id
-            self._session_entries.append(_SessionEntry(component_id, display_name))
+            seen.add(component_id)
+            entry = self._build_entry(component_id)
+            if entry is None:
+                self._skipped_ids.append(component_id)
+                self._skipped_reasons[component_id] = "Unavailable"
+                continue
+            if not entry.openable:
+                self._skipped_ids.append(component_id)
+                self._skipped_reasons[component_id] = entry.reason
+            self._session_entries.append(entry)
         self._active_component_id = active_block if isinstance(active_block, str) else None
         if self._active_component_id and not any(
-            entry.component_id == self._active_component_id for entry in self._session_entries
+            entry.component_id == self._active_component_id and entry.openable for entry in self._session_entries
         ):
             self._active_component_id = None
-        if not self._active_component_id and self._session_entries:
-            self._active_component_id = self._session_entries[0].component_id
+        if not self._active_component_id:
+            for entry in self._session_entries:
+                if entry.openable:
+                    self._active_component_id = entry.component_id
+                    break
         self._render_session()
         self._mount_active()
-        if self._skip_messages:
-            self._show_banner("Skipped blocks: " + "; ".join(self._skip_messages))
-        else:
-            self.banner.setVisible(False)
+        self._update_skipped_banner()
 
     def _save_session(self) -> None:
         session_path = self._session_path()
         data = {
+            "version": 1,
             "open_blocks": [entry.component_id for entry in self._session_entries],
             "active_block": self._active_component_id,
+            "last_updated": datetime.utcnow().isoformat() + "Z",
         }
         try:
             session_path.parent.mkdir(parents=True, exist_ok=True)
@@ -317,6 +460,7 @@ class BlockHostScreen(QtWidgets.QWidget):
 
     def _refresh_registry_cache(self) -> None:
         self._component_pack_map = {}
+        self._pack_name_map = {}
         self._installed_pack_ids = set()
         self._available_pack_ids = set()
         self._component_name_map = {}
@@ -350,6 +494,8 @@ class BlockHostScreen(QtWidgets.QWidget):
             if not pack_id:
                 continue
             self._available_pack_ids.add(pack_id)
+            display_name = manifest.get("display_name") or pack_id
+            self._pack_name_map[pack_id] = display_name
             components = manifest.get("components") or []
             if not isinstance(components, list):
                 continue
@@ -362,6 +508,24 @@ class BlockHostScreen(QtWidgets.QWidget):
                     if component_id not in self._component_name_map:
                         display_name = component.get("display_name") or component_id
                         self._component_name_map[component_id] = display_name
+
+    def _build_entry(self, component_id: str) -> Optional[_SessionEntry]:
+        if not component_id:
+            return None
+        display_name = self._component_name_map.get(component_id) or _prettify_component_id(component_id)
+        pack_id = self._component_pack_map.get(component_id)
+        pack_name = self._pack_name_map.get(pack_id or "")
+        if not pack_name:
+            pack_name = "Built-in" if component_id.startswith("labhost:") else (pack_id or "Built-in")
+        openable, status, reason = self._component_status(component_id)
+        return _SessionEntry(
+            component_id=component_id,
+            display_name=display_name,
+            pack_name=pack_name,
+            status=status,
+            reason=reason,
+            openable=openable,
+        )
 
     def _component_status(self, component_id: str) -> Tuple[bool, str, str]:
         if not component_id:
@@ -388,3 +552,28 @@ class BlockHostScreen(QtWidgets.QWidget):
             except Exception:
                 return None
         return _get_global_component_policy()
+
+
+def _prettify_component_id(component_id: str) -> str:
+    if ":" in component_id:
+        prefix, rest = component_id.split(":", 1)
+        rest = rest.replace("_", " ").replace("-", " ")
+        return f"{prefix.title()}: {rest.title()}"
+    return component_id
+
+
+def _status_label(entry: _SessionEntry) -> str:
+    icon = "✅" if entry.status == "Enabled" else "⛔" if entry.status == "Disabled by project" else "⚠️"
+    return f"{icon} {entry.status}"
+
+
+def _status_style(status: str) -> str:
+    if status == "Enabled":
+        return "color: #1b7f3a; font-weight: bold;"
+    if status == "Disabled by project":
+        return "color: #b14a00; font-weight: bold;"
+    if status == "Not installed":
+        return "color: #666;"
+    if status == "Unavailable":
+        return "color: #a33;"
+    return "color: #333;"
