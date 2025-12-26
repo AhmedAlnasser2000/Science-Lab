@@ -1,0 +1,10 @@
+﻿{
+  "id": "welcome",
+  "title": "Welcome / Getting Started",
+  "description": "Open a welcome panel and a simple gravity lab.",
+  "recommended_blocks": [
+    "panel:welcome",
+    "labhost:gravity"
+  ],
+  "open_first": "panel:welcome"
+}

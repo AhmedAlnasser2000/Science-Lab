@@ -2209,13 +2209,22 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         self,
         on_back,
         context_provider: Callable[[], "ComponentContext"],
+        on_open_block: Optional[Callable[[str], None]],
+        on_open_empty: Optional[Callable[[], None]],
         *,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
     ):
         super().__init__()
         self.on_back = on_back
         self.context_provider = context_provider
-        self._host: Optional["ComponentHost"] = None
+        self.on_open_block = on_open_block
+        self.on_open_empty = on_open_empty
+        self._templates: List[Dict[str, Any]] = []
+        self._template_by_id: Dict[str, Dict[str, Any]] = {}
+        self._component_pack_map: Dict[str, str] = {}
+        self._installed_pack_ids: set[str] = set()
+        self._available_pack_ids: set[str] = set()
+        self._current_template_id: Optional[str] = None
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -2230,93 +2239,99 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         self.status_label.setStyleSheet("color: #444;")
         layout.addWidget(self.status_label)
 
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
-        layout.addWidget(splitter, stretch=1)
+        start_box = QtWidgets.QGroupBox("Start")
+        start_layout = QtWidgets.QVBoxLayout(start_box)
+        start_actions = QtWidgets.QHBoxLayout()
+        self.start_empty_btn = QtWidgets.QPushButton("Start Empty")
+        self.start_empty_btn.clicked.connect(self._start_empty)
+        start_actions.addWidget(self.start_empty_btn)
+        start_actions.addSpacing(12)
+        start_actions.addWidget(QtWidgets.QLabel("Template:"))
+        self.template_combo = QtWidgets.QComboBox()
+        self.template_combo.currentIndexChanged.connect(self._on_template_changed)
+        start_actions.addWidget(self.template_combo, stretch=1)
+        self.start_template_btn = QtWidgets.QPushButton("Start from Template")
+        self.start_template_btn.clicked.connect(self._start_from_template)
+        start_actions.addWidget(self.start_template_btn)
+        start_layout.addLayout(start_actions)
 
-        left_panel = QtWidgets.QWidget()
-        left_layout = QtWidgets.QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
+        self.template_desc = QtWidgets.QLabel("Choose a template to see its recommended blocks.")
+        self.template_desc.setStyleSheet("color: #555;")
+        start_layout.addWidget(self.template_desc)
+        self.template_list = QtWidgets.QListWidget()
+        start_layout.addWidget(self.template_list)
+        layout.addWidget(start_box)
 
+        advanced_box = QtWidgets.QGroupBox("Advanced")
+        advanced_box.setCheckable(True)
+        advanced_box.setChecked(False)
+        advanced_layout = QtWidgets.QHBoxLayout(advanced_box)
+
+        component_panel = QtWidgets.QWidget()
+        component_layout = QtWidgets.QVBoxLayout(component_panel)
+        component_layout.setContentsMargins(0, 0, 0, 0)
         component_label = QtWidgets.QLabel(f"{terms.BLOCK}s")
         component_label.setStyleSheet("font-weight: bold;")
-        left_layout.addWidget(component_label)
+        component_layout.addWidget(component_label)
         self.component_list = QtWidgets.QListWidget()
         self.component_list.itemDoubleClicked.connect(self._open_selected)
-        left_layout.addWidget(self.component_list, stretch=1)
-
+        component_layout.addWidget(self.component_list, stretch=1)
         button_row = QtWidgets.QHBoxLayout()
         self.open_btn = QtWidgets.QPushButton("Open")
         self.open_btn.clicked.connect(self._open_selected)
         button_row.addWidget(self.open_btn)
-        self.close_btn = QtWidgets.QPushButton("Close")
-        self.close_btn.clicked.connect(self._close_component)
-        button_row.addWidget(self.close_btn)
-        left_layout.addLayout(button_row)
+        button_row.addStretch()
+        component_layout.addLayout(button_row)
 
+        lab_panel = QtWidgets.QWidget()
+        lab_layout = QtWidgets.QVBoxLayout(lab_panel)
+        lab_layout.setContentsMargins(0, 0, 0, 0)
         lab_label = QtWidgets.QLabel("Labs")
-        lab_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        left_layout.addWidget(lab_label)
+        lab_label.setStyleSheet("font-weight: bold;")
+        lab_layout.addWidget(lab_label)
         self.lab_list = QtWidgets.QListWidget()
         self.lab_list.itemDoubleClicked.connect(self._open_selected_lab_component)
-        left_layout.addWidget(self.lab_list, stretch=1)
-
+        lab_layout.addWidget(self.lab_list, stretch=1)
         lab_button_row = QtWidgets.QHBoxLayout()
         self.open_lab_btn = QtWidgets.QPushButton(
             f"Open selected lab as {terms.BLOCK.lower()}"
         )
         self.open_lab_btn.clicked.connect(self._open_selected_lab_component)
         lab_button_row.addWidget(self.open_lab_btn)
-        left_layout.addLayout(lab_button_row)
+        lab_button_row.addStretch()
+        lab_layout.addLayout(lab_button_row)
 
+        pack_panel = QtWidgets.QWidget()
+        pack_layout = QtWidgets.QVBoxLayout(pack_panel)
+        pack_layout.setContentsMargins(0, 0, 0, 0)
         pack_label = QtWidgets.QLabel(f"{terms.PACK} {terms.BLOCK}s")
-        pack_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        left_layout.addWidget(pack_label)
+        pack_label.setStyleSheet("font-weight: bold;")
+        pack_layout.addWidget(pack_label)
         self.pack_list = QtWidgets.QListWidget()
         self.pack_list.itemDoubleClicked.connect(self._open_selected_pack_component)
-        left_layout.addWidget(self.pack_list, stretch=1)
-
+        pack_layout.addWidget(self.pack_list, stretch=1)
         pack_button_row = QtWidgets.QHBoxLayout()
         self.open_pack_btn = QtWidgets.QPushButton(
             f"Open selected {terms.PACK.lower()} {terms.BLOCK.lower()}"
         )
         self.open_pack_btn.clicked.connect(self._open_selected_pack_component)
         pack_button_row.addWidget(self.open_pack_btn)
-        left_layout.addLayout(pack_button_row)
+        pack_button_row.addStretch()
+        pack_layout.addLayout(pack_button_row)
 
-        splitter.addWidget(left_panel)
-
-        self.host_container = QtWidgets.QWidget()
-        host_layout = QtWidgets.QVBoxLayout(self.host_container)
-        host_layout.setContentsMargins(0, 0, 0, 0)
-
-        if ComponentHost is None or component_registry is None:
-            msg = "Block runtime unavailable."
-            if COMPONENT_RUNTIME_ERROR:
-                msg = f"{msg} {COMPONENT_RUNTIME_ERROR}"
-            error_label = QtWidgets.QLabel(msg)
-            error_label.setStyleSheet("color: #b00;")
-            host_layout.addWidget(error_label)
-            self.open_btn.setEnabled(False)
-            self.close_btn.setEnabled(False)
-        else:
-            self._host = ComponentHost()
-            host_layout.addWidget(self._host, stretch=1)
-
-        splitter.addWidget(self.host_container)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
-        splitter.setChildrenCollapsible(False)
+        advanced_layout.addWidget(component_panel, stretch=1)
+        advanced_layout.addWidget(lab_panel, stretch=1)
+        advanced_layout.addWidget(pack_panel, stretch=1)
+        layout.addWidget(advanced_box, stretch=1)
 
         self.refresh_components()
+        self._load_templates()
+        self._refresh_template_summary()
 
     def on_workspace_changed(self) -> None:
-        if self._host is not None:
-            try:
-                self._host.unmount()
-                self.status_label.setText("Project changed. Reopen a block to refresh context.")
-            except Exception:
-                pass
+        self.status_label.setText("Project changed. Refreshing available blocks.")
         self.refresh_components()
+        self._refresh_template_summary()
 
     def refresh_components(self) -> None:
         self.component_list.clear()
@@ -2330,29 +2345,49 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             pass
         policy = _get_global_component_policy()
         pack_manifests = []
+        self._component_pack_map = {}
+        self._installed_pack_ids = set()
+        self._available_pack_ids = set()
         if component_packs is not None:
             try:
-                pack_manifests = component_packs.load_installed_packs()
+                pack_manifests = component_packs.list_repo_packs()
             except Exception:
                 pack_manifests = []
+            try:
+                installed = component_packs.list_installed_packs()
+            except Exception:
+                installed = []
+            self._installed_pack_ids = {
+                str(pack.get("pack_id") or "").strip()
+                for pack in installed
+                if pack.get("pack_id")
+            }
         registry = component_registry.get_registry()
         for meta in registry.list_components():
-            label = f"{meta.display_name} ({meta.component_id})"
+            openable, status, _reason = self._component_status(str(meta.component_id))
+            label = f"{meta.display_name} ({meta.component_id}) - {status}"
             item = QtWidgets.QListWidgetItem(label)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, meta.component_id)
+            if not openable:
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
             self.component_list.addItem(item)
         for lab_id, plugin in lab_registry.list_labs().items():
             title = getattr(plugin, "title", lab_id)
             item = QtWidgets.QListWidgetItem(f"{title} ({lab_id})")
             item.setData(QtCore.Qt.ItemDataRole.UserRole, lab_id)
+            component_id = f"labhost:{lab_id}"
+            openable, status, _reason = self._component_status(component_id)
+            if status != "Enabled":
+                item.setText(f"{title} ({lab_id}) - {status}")
+            if not openable:
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
             self.lab_list.addItem(item)
         for pack in pack_manifests:
             manifest = pack.get("manifest") if isinstance(pack, dict) else None
             if not isinstance(manifest, dict):
                 continue
             pack_id = manifest.get("pack_id") or "pack"
-            if policy and not policy.is_pack_enabled(pack_id):
-                continue
+            self._available_pack_ids.add(str(pack_id))
             components = manifest.get("components")
             if not isinstance(components, list):
                 continue
@@ -2363,35 +2398,130 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
                 display_name = component.get("display_name") or component_id
                 if not component_id:
                     continue
-                label = f"{display_name} ({component_id}) [{pack_id}]"
+                self._component_pack_map[str(component_id)] = str(pack_id)
+                openable, status, _reason = self._component_status(str(component_id))
+                label = f"{display_name} ({component_id}) [{pack_id}] - {status}"
                 item = QtWidgets.QListWidgetItem(label)
                 item.setData(QtCore.Qt.ItemDataRole.UserRole, component_id)
+                if not openable:
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
                 self.pack_list.addItem(item)
 
+    def _component_status(self, component_id: str) -> tuple[bool, str, str]:
+        if component_registry is None:
+            return False, "Unavailable", "Block runtime unavailable."
+        policy = _get_global_component_policy()
+        pack_id = self._component_pack_map.get(component_id)
+        if pack_id and pack_id not in self._installed_pack_ids:
+            return False, "Not installed", f"Install the {terms.PACK.lower()} to use this block."
+        if policy and pack_id and not policy.is_pack_enabled(pack_id):
+            return False, "Disabled by project", "Enable this Pack in Project Management."
+        if policy and not policy.is_component_enabled(component_id):
+            return False, "Disabled by project", "Enable this Pack in Project Management."
+        component = component_registry.get_registry().get_component(component_id)
+        if not component:
+            return False, "Unavailable", "Block not registered."
+        return True, "Enabled", "Enabled in this project."
+
+    def _start_empty(self) -> None:
+        if self.on_open_empty:
+            self.on_open_empty()
+        self.status_label.setText("Opened an empty block host.")
+
+    def _on_template_changed(self) -> None:
+        idx = self.template_combo.currentIndex()
+        template_id = self.template_combo.itemData(idx)
+        self._current_template_id = template_id if isinstance(template_id, str) else None
+        self._refresh_template_summary()
+
+    def _refresh_template_summary(self) -> None:
+        template = self._template_by_id.get(self._current_template_id) if self._current_template_id else None
+        if not template:
+            self.template_desc.setText("Choose a template to see its recommended blocks.")
+            self.template_list.clear()
+            return
+        title = template.get("title") or template.get("id") or "Template"
+        desc = template.get("description") or "No description provided."
+        self.template_desc.setText(f"{title}: {desc}")
+        self.template_list.clear()
+        for component_id in template.get("recommended_blocks") or []:
+            if not isinstance(component_id, str):
+                continue
+            openable, status, reason = self._component_status(component_id)
+            label = f"{component_id} — {status}"
+            item = QtWidgets.QListWidgetItem(label)
+            item.setToolTip(reason)
+            if not openable:
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
+            self.template_list.addItem(item)
+
+    def _start_from_template(self) -> None:
+        template = self._template_by_id.get(self._current_template_id) if self._current_template_id else None
+        if not template:
+            self.status_label.setText("Select a template to start.")
+            return
+        if self.on_open_empty:
+            self.on_open_empty()
+        open_first = template.get("open_first")
+        candidates = [open_first] if isinstance(open_first, str) else []
+        for component_id in template.get("recommended_blocks") or []:
+            if isinstance(component_id, str) and component_id not in candidates:
+                candidates.append(component_id)
+        for component_id in candidates:
+            openable, _status, reason = self._component_status(component_id)
+            if openable and self.on_open_block:
+                self.on_open_block(component_id)
+                self.status_label.setText(f"Opened template block: {component_id}")
+                return
+            if not openable:
+                self.status_label.setText(reason)
+        self.status_label.setText("No available blocks for this template.")
+
+    def _load_templates(self) -> None:
+        self._templates = []
+        self._template_by_id = {}
+        template_root = Path("app_ui/templates/block_sandbox")
+        try:
+            template_root.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
+        for path in sorted(template_root.glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            template_id = data.get("id")
+            if not isinstance(template_id, str) or not template_id:
+                continue
+            self._templates.append(data)
+            self._template_by_id[template_id] = data
+        self.template_combo.blockSignals(True)
+        self.template_combo.clear()
+        self.template_combo.addItem("Select a template...", None)
+        for template in self._templates:
+            title = template.get("title") or template.get("id")
+            self.template_combo.addItem(str(title), template.get("id"))
+        self.template_combo.blockSignals(False)
+
     def _open_selected(self) -> None:
-        if component_registry is None or self._host is None:
+        if component_registry is None or not self.on_open_block:
             return
         item = self.component_list.currentItem()
         if not item:
             self.status_label.setText("Select a block to open.")
             return
         component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
-        component = component_registry.get_registry().get_component(component_id)
-        if not component:
-            self.status_label.setText(f"Block '{component_id}' is not available.")
+        openable, _status, reason = self._component_status(str(component_id))
+        if not openable:
+            self.status_label.setText(reason)
             return
-        context = self.context_provider()
-        self._host.mount(component, context)
+        self.on_open_block(str(component_id))
         self.status_label.setText(f"Opened block: {component_id}")
 
-    def _close_component(self) -> None:
-        if self._host is None:
-            return
-        self._host.unmount()
-        self.status_label.setText("Block closed.")
-
     def _open_selected_lab_component(self) -> None:
-        if component_registry is None or self._host is None:
+        if component_registry is None or not self.on_open_block:
             return
         item = self.lab_list.currentItem()
         if not item:
@@ -2399,28 +2529,26 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             return
         lab_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
         component_id = f"labhost:{lab_id}"
-        component = component_registry.get_registry().get_component(component_id)
-        if not component:
-            self.status_label.setText(f"Lab block '{component_id}' is not registered.")
+        openable, _status, reason = self._component_status(component_id)
+        if not openable:
+            self.status_label.setText(reason)
             return
-        context = self.context_provider()
-        self._host.mount(component, context)
+        self.on_open_block(component_id)
         self.status_label.setText(f"Opened lab block: {lab_id}")
 
     def _open_selected_pack_component(self) -> None:
-        if component_registry is None or self._host is None:
+        if component_registry is None or not self.on_open_block:
             return
         item = self.pack_list.currentItem()
         if not item:
             self.status_label.setText("Select a pack block to open.")
             return
         component_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
-        component = component_registry.get_registry().get_component(component_id)
-        if not component:
-            self.status_label.setText(f"Pack block '{component_id}' is not registered.")
+        openable, _status, reason = self._component_status(str(component_id))
+        if not openable:
+            self.status_label.setText(reason)
             return
-        context = self.context_provider()
-        self._host.mount(component, context)
+        self.on_open_block(str(component_id))
         self.status_label.setText(f"Opened pack block: {component_id}")
 
 
@@ -2477,6 +2605,12 @@ class ComponentHostScreen(QtWidgets.QWidget):
             return
         self._host.mount(component, context)
         self.status_label.setText(f"Opened block: {component_id}")
+
+    def show_empty_state(self, message: str = "No blocks added yet.") -> None:
+        if self._host is None:
+            return
+        self._host.unmount()
+        self.status_label.setText(message)
 
     def _close_component(self) -> None:
         if self._host is None:
@@ -2614,6 +2748,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.component_sandbox = ComponentSandboxScreen(
             self._show_main_menu,
             self._build_component_context,
+            self._open_component_by_id,
+            self._open_block_host_empty,
             workspace_selector_factory=selector_factory,
         )
         self.block_catalog = BlockCatalogScreen(
@@ -3123,6 +3259,14 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "Block", WORKSPACE_DISABLED_REASON)
             return
         self.component_host.open_component(component_id, context)
+        self.stacked.setCurrentWidget(self.component_host)
+
+    def _open_block_host_empty(self) -> None:
+        self._dispose_lab_widget()
+        if not COMPONENT_RUNTIME_AVAILABLE or self.component_host is None:
+            QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
+            return
+        self.component_host.show_empty_state("No blocks added yet.")
         self.stacked.setCurrentWidget(self.component_host)
 
     def _open_component_from_part(

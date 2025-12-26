@@ -1,0 +1,10 @@
+﻿{
+  "id": "motion_basics",
+  "title": "Motion Basics",
+  "description": "Launch gravity and projectile motion labs.",
+  "recommended_blocks": [
+    "labhost:gravity",
+    "labhost:projectile"
+  ],
+  "open_first": "labhost:gravity"
+}
