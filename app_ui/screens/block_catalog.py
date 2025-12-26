@@ -36,6 +36,95 @@ class _BlockEntry:
     docs_path: Optional[Path]
 
 
+@dataclass
+class _PackInfo:
+    pack_id: str
+    name: str
+    installed: bool
+    enabled: bool
+    component_count: int
+
+
+class _PackRow(QtWidgets.QWidget):
+    def __init__(self, info: _PackInfo, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(2)
+
+        name_label = QtWidgets.QLabel(info.name)
+        name_label.setStyleSheet("font-weight: bold;")
+        status_label = QtWidgets.QLabel(_pack_status_label(info))
+        status_label.setStyleSheet("color: #666;")
+        count_label = QtWidgets.QLabel(f"{info.component_count} {terms.BLOCK.lower()}s")
+        count_label.setStyleSheet("color: #777; font-size: 11px;")
+
+        layout.addWidget(name_label)
+        layout.addWidget(status_label)
+        layout.addWidget(count_label)
+
+
+class _BlockTile(QtWidgets.QFrame):
+    def __init__(
+        self,
+        entry: _BlockEntry,
+        on_open: Optional[Callable[[str], None]],
+        parent: Optional[QtWidgets.QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.entry = entry
+        self.on_open = on_open
+        self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 6px; }")
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+
+        top_row = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel(entry.display_name)
+        name_label.setStyleSheet("font-weight: bold;")
+        status_label = QtWidgets.QLabel(_status_label(entry.status))
+        status_label.setStyleSheet(_status_style(entry.status))
+        top_row.addWidget(name_label)
+        top_row.addStretch()
+        top_row.addWidget(status_label)
+
+        meta_row = QtWidgets.QHBoxLayout()
+        pack_label = QtWidgets.QLabel(f"{terms.PACK}: {entry.pack_name}")
+        pack_label.setStyleSheet("color: #666;")
+        category_label = QtWidgets.QLabel(entry.category or "General")
+        category_label.setStyleSheet(
+            "color: #444; background: #eee; padding: 2px 6px; border-radius: 8px;"
+        )
+        meta_row.addWidget(pack_label)
+        meta_row.addStretch()
+        meta_row.addWidget(category_label)
+
+        desc_label = QtWidgets.QLabel(entry.description)
+        desc_label.setStyleSheet("color: #555;")
+        desc_label.setWordWrap(True)
+
+        action_row = QtWidgets.QHBoxLayout()
+        open_btn = QtWidgets.QPushButton("Open in Sandbox")
+        open_btn.setEnabled(bool(on_open and entry.openable))
+        open_btn.clicked.connect(self._open)
+        action_row.addWidget(open_btn)
+        action_row.addStretch()
+
+        layout.addLayout(top_row)
+        layout.addLayout(meta_row)
+        layout.addWidget(desc_label)
+        layout.addLayout(action_row)
+
+    def _open(self) -> None:
+        if not self.on_open:
+            return
+        if not self.entry.openable:
+            return
+        self.on_open(self.entry.component_id)
+
+
 class BlockCatalogScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -52,7 +141,10 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         self.component_policy_provider = component_policy_provider
         self.bus = bus
         self._entries: List[_BlockEntry] = []
+        self._pack_infos: List[_PackInfo] = []
         self._search_text = ""
+        self._selected_pack_id: Optional[str] = None
+        self._current_entry: Optional[_BlockEntry] = None
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -61,9 +153,6 @@ class BlockCatalogScreen(QtWidgets.QWidget):
             on_back=self.on_back,
             workspace_selector=selector,
         )
-        refresh_btn = QtWidgets.QPushButton("Refresh")
-        refresh_btn.clicked.connect(self.refresh_catalog)
-        header.add_action_widget(refresh_btn)
         layout.addWidget(header)
 
         banner = QtWidgets.QLabel("")
@@ -84,17 +173,15 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         splitter.setChildrenCollapsible(False)
         layout.addWidget(splitter, stretch=1)
 
-        self.tree = QtWidgets.QTreeWidget()
-        self.tree.setHeaderLabels([terms.BLOCK, terms.PACK, "Status"])
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setColumnCount(3)
-        header_view = self.tree.header()
-        header_view.setStretchLastSection(False)
-        header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        header_view.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        header_view.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.tree.itemSelectionChanged.connect(self._on_selection_changed)
-        splitter.addWidget(self.tree)
+        self.pack_list = QtWidgets.QListWidget()
+        self.pack_list.setMinimumWidth(220)
+        self.pack_list.itemSelectionChanged.connect(self._on_pack_selected)
+        splitter.addWidget(self.pack_list)
+
+        self.block_list = QtWidgets.QListWidget()
+        self.block_list.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.block_list.itemSelectionChanged.connect(self._on_block_selected)
+        splitter.addWidget(self.block_list)
 
         detail_widget = QtWidgets.QWidget()
         detail_layout = QtWidgets.QVBoxLayout(detail_widget)
@@ -128,8 +215,9 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         detail_layout.addLayout(btn_row)
 
         splitter.addWidget(detail_widget)
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        splitter.setStretchFactor(2, 2)
 
         self.refresh_catalog()
 
@@ -146,20 +234,31 @@ class BlockCatalogScreen(QtWidgets.QWidget):
 
     def _on_search_changed(self, text: str) -> None:
         self._search_text = text.strip().lower()
-        self._build_tree()
+        self._build_block_list()
+
+    def _on_pack_selected(self) -> None:
+        item = self.pack_list.currentItem()
+        if not item:
+            self._selected_pack_id = None
+        else:
+            pack_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            self._selected_pack_id = pack_id if isinstance(pack_id, str) else None
+        self._build_block_list()
 
     def refresh_catalog(self) -> None:
-        self._entries = self._collect_entries()
-        self._build_tree()
+        self._entries, self._pack_infos = self._collect_entries()
+        self._build_pack_list()
+        self._build_block_list()
 
-    def _collect_entries(self) -> List[_BlockEntry]:
+    def _collect_entries(self) -> tuple[List[_BlockEntry], List[_PackInfo]]:
         entries: List[_BlockEntry] = []
         policy = self._component_policy()
         pack_entries: List[Dict[str, Any]] = []
         installed_ids: set[str] = set()
+        pack_info_map: Dict[str, _PackInfo] = {}
 
         if component_packs is None:
-            self.banner.setText("Component packs unavailable. Install the runtime to browse packs.")
+            self.banner.setText("Pack inventory unavailable. Install the runtime to browse packs.")
             self.banner.setVisible(True)
         else:
             self.banner.setVisible(False)
@@ -190,7 +289,16 @@ class BlockCatalogScreen(QtWidgets.QWidget):
             pack_enabled = policy.is_pack_enabled(pack_id) if policy else True
             components = manifest.get("components") or []
             if not isinstance(components, list):
-                continue
+                components = []
+
+            pack_info_map[pack_id] = _PackInfo(
+                pack_id=pack_id,
+                name=pack_name,
+                installed=installed,
+                enabled=pack_enabled,
+                component_count=len(components),
+            )
+
             for component in components:
                 if not isinstance(component, dict):
                     continue
@@ -205,7 +313,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
                     or params.get("topic")
                     or component.get("category")
                     or component.get("topic")
-                    or "Other"
+                    or "General"
                 )
                 description = params.get("description") or component.get("description") or "No description provided."
                 docs_path = _resolve_docs_path(pack_root, component.get("assets") or {})
@@ -216,7 +324,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
                     openable = False
                 elif policy and not pack_enabled:
                     status = "Disabled by project"
-                    reason = "Disabled by project. Enable the pack in Project Management."
+                    reason = "Enable this Pack in Project Management."
                     openable = False
                 else:
                     if registry and registry.get_component(component_id):
@@ -244,6 +352,8 @@ class BlockCatalogScreen(QtWidgets.QWidget):
                 )
 
         if registry:
+            built_in_id = "built_in"
+            built_in_entries: List[_BlockEntry] = []
             for meta in registry.list_components():
                 if meta.component_id in pack_component_ids:
                     continue
@@ -254,11 +364,11 @@ class BlockCatalogScreen(QtWidgets.QWidget):
                 if policy and not policy.is_component_enabled(meta.component_id):
                     status = "Disabled by project"
                     reason = "Disabled by project."
-                entries.append(
+                built_in_entries.append(
                     _BlockEntry(
                         component_id=meta.component_id,
                         display_name=meta.display_name or meta.component_id,
-                        pack_id="built_in",
+                        pack_id=built_in_id,
                         pack_name="Built-in",
                         category="Core",
                         description="Built-in block.",
@@ -268,17 +378,74 @@ class BlockCatalogScreen(QtWidgets.QWidget):
                         docs_path=None,
                     )
                 )
+            if built_in_entries:
+                entries.extend(built_in_entries)
+                pack_info_map[built_in_id] = _PackInfo(
+                    pack_id=built_in_id,
+                    name="Built-in",
+                    installed=True,
+                    enabled=True,
+                    component_count=len(built_in_entries),
+                )
 
-        return entries
+        pack_infos = list(pack_info_map.values())
+        pack_infos.sort(key=lambda p: p.name.lower())
+        return entries, pack_infos
 
-    def _build_tree(self) -> None:
-        self.tree.clear()
+    def _build_pack_list(self) -> None:
+        self.pack_list.clear()
+        all_item = QtWidgets.QListWidgetItem("All Packs")
+        all_item.setData(QtCore.Qt.ItemDataRole.UserRole, None)
+        self.pack_list.addItem(all_item)
+
+        for info in self._pack_infos:
+            item = QtWidgets.QListWidgetItem()
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, info.pack_id)
+            widget = _PackRow(info)
+            item.setSizeHint(widget.sizeHint())
+            self.pack_list.addItem(item)
+            self.pack_list.setItemWidget(item, widget)
+
+        self.pack_list.setCurrentRow(0)
+
+    def _build_block_list(self) -> None:
+        self.block_list.clear()
+        entries = self._filtered_entries()
+        grouped: Dict[str, List[_BlockEntry]] = {}
+        for entry in entries:
+            grouped.setdefault(entry.category or "General", []).append(entry)
+
+        for category in sorted(grouped.keys(), key=str.lower):
+            header_item = QtWidgets.QListWidgetItem(category)
+            header_item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+            header_item.setBackground(QtGui.QColor("#f0f0f0"))
+            header_item.setForeground(QtGui.QColor("#444"))
+            self.block_list.addItem(header_item)
+            for entry in grouped[category]:
+                item = QtWidgets.QListWidgetItem()
+                item.setData(QtCore.Qt.ItemDataRole.UserRole, entry)
+                tile = _BlockTile(entry, self._open_from_tile if entry.openable else None)
+                item.setSizeHint(tile.sizeHint())
+                self.block_list.addItem(item)
+                self.block_list.setItemWidget(item, tile)
+
+        self._clear_details()
+
+    def _filtered_entries(self) -> List[_BlockEntry]:
         search = self._search_text
-        packs: Dict[str, Dict[str, List[_BlockEntry]]] = {}
+        pack_id = self._selected_pack_id
+        entries = [
+            entry
+            for entry in self._entries
+            if (not pack_id or entry.pack_id == pack_id)
+        ]
 
-        for entry in self._entries:
-            if search:
-                haystack = " ".join(
+        if search:
+            entries = [
+                entry
+                for entry in entries
+                if search
+                in " ".join(
                     [
                         entry.display_name,
                         entry.component_id,
@@ -287,52 +454,43 @@ class BlockCatalogScreen(QtWidgets.QWidget):
                         entry.category,
                     ]
                 ).lower()
-                if search not in haystack:
-                    continue
-            packs.setdefault(entry.pack_name, {})
-            packs[entry.pack_name].setdefault(entry.category, [])
-            packs[entry.pack_name][entry.category].append(entry)
+            ]
 
-        for pack_name, categories in sorted(packs.items(), key=lambda item: item[0].lower()):
-            pack_item = QtWidgets.QTreeWidgetItem([pack_name, "", ""])
-            pack_item.setExpanded(True)
-            for category, entries in sorted(categories.items(), key=lambda item: item[0].lower()):
-                category_item = QtWidgets.QTreeWidgetItem([category, "", ""])
-                category_item.setExpanded(True)
-                for entry in sorted(entries, key=lambda e: e.display_name.lower()):
-                    item = QtWidgets.QTreeWidgetItem([
-                        entry.display_name,
-                        entry.pack_name,
-                        _status_label(entry.status),
-                    ])
-                    item.setData(0, QtCore.Qt.ItemDataRole.UserRole, entry)
-                    category_item.addChild(item)
-                pack_item.addChild(category_item)
-            self.tree.addTopLevelItem(pack_item)
+        def status_key(entry: _BlockEntry) -> int:
+            order = {
+                "Enabled": 0,
+                "Disabled by project": 1,
+                "Not installed": 2,
+                "Unavailable": 3,
+            }
+            return order.get(entry.status, 4)
 
-        if self.tree.topLevelItemCount() == 0:
-            self.detail_title.setText("No blocks found.")
-            self.open_btn.setEnabled(False)
-            self.docs_btn.setEnabled(False)
+        entries.sort(key=lambda e: (status_key(e), e.display_name.lower()))
+        return entries
 
-    def _on_selection_changed(self) -> None:
-        item = self.tree.currentItem()
+    def _on_block_selected(self) -> None:
+        item = self.block_list.currentItem()
         if not item:
             self._clear_details()
             return
-        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        data = item.data(QtCore.Qt.ItemDataRole.UserRole)
         if not isinstance(data, _BlockEntry):
             self._clear_details()
             return
-        self.detail_title.setText(f"{terms.BLOCK}: {data.display_name}")
-        self.detail_meta.setText(f"{terms.PACK}: {data.pack_name} | Category: {data.category}")
-        self.detail_status.setText(_status_label(data.status))
-        self.detail_reason.setText(data.reason)
-        self.detail_description.setText(data.description)
-        self.open_btn.setEnabled(bool(self.on_open_block and data.openable))
-        self.docs_btn.setEnabled(bool(data.docs_path))
+        self._render_details(data)
+
+    def _render_details(self, entry: _BlockEntry) -> None:
+        self.detail_title.setText(f"{terms.BLOCK}: {entry.display_name}")
+        self.detail_meta.setText(f"{terms.PACK}: {entry.pack_name} | Category: {entry.category}")
+        self.detail_status.setText(_status_label(entry.status))
+        self.detail_reason.setText(entry.reason)
+        self.detail_description.setText(entry.description)
+        self.open_btn.setEnabled(bool(self.on_open_block and entry.openable))
+        self.docs_btn.setEnabled(bool(entry.docs_path))
+        self._current_entry = entry
 
     def _clear_details(self) -> None:
+        self._current_entry = None
         self.detail_title.setText("Select a block to view details.")
         self.detail_meta.setText("")
         self.detail_status.setText("")
@@ -341,32 +499,32 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         self.open_btn.setEnabled(False)
         self.docs_btn.setEnabled(False)
 
+    def _open_from_tile(self, component_id: str) -> None:
+        if not self.on_open_block:
+            return
+        self.on_open_block(component_id)
+
     def _open_selected(self) -> None:
-        item = self.tree.currentItem()
-        if not item:
+        if not self._current_entry:
             return
-        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
-        if not isinstance(data, _BlockEntry):
-            return
+        entry = self._current_entry
         if not self.on_open_block:
             QtWidgets.QMessageBox.warning(self, terms.BLOCK, "Block runtime unavailable.")
             return
-        if not data.openable:
-            QtWidgets.QMessageBox.information(self, terms.BLOCK, data.reason)
+        if not entry.openable:
+            QtWidgets.QMessageBox.information(self, terms.BLOCK, entry.reason)
             return
-        self.on_open_block(data.component_id)
+        self.on_open_block(entry.component_id)
 
     def _open_docs(self) -> None:
-        item = self.tree.currentItem()
-        if not item:
+        if not self._current_entry or not self._current_entry.docs_path:
             return
-        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
-        if not isinstance(data, _BlockEntry) or not data.docs_path:
-            return
-        if not data.docs_path.exists():
+        if not self._current_entry.docs_path.exists():
             QtWidgets.QMessageBox.warning(self, "Docs", "Documentation file not found.")
             return
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(data.docs_path)))
+        QtGui.QDesktopServices.openUrl(
+            QtCore.QUrl.fromLocalFile(str(self._current_entry.docs_path))
+        )
 
 
 def _resolve_docs_path(pack_root: Optional[Path], assets: Dict[str, Any]) -> Optional[Path]:
@@ -382,11 +540,31 @@ def _resolve_docs_path(pack_root: Optional[Path], assets: Dict[str, Any]) -> Opt
 
 def _status_label(status: str) -> str:
     if status == "Enabled":
-        return "Enabled (ok)"
+        return "Enabled ✅"
     if status == "Disabled by project":
-        return "Disabled (project)"
+        return "Disabled ⛔"
     if status == "Not installed":
         return "Not installed"
     if status == "Unavailable":
         return "Unavailable"
     return status
+
+
+def _status_style(status: str) -> str:
+    if status == "Enabled":
+        return "color: #1b7f3a; font-weight: bold;"
+    if status == "Disabled by project":
+        return "color: #b14a00; font-weight: bold;"
+    if status == "Not installed":
+        return "color: #666;"
+    if status == "Unavailable":
+        return "color: #a33;"
+    return "color: #333;"
+
+
+def _pack_status_label(info: _PackInfo) -> str:
+    if not info.installed:
+        return "Not installed"
+    if info.enabled:
+        return "Enabled ✅"
+    return "Disabled ⛔"
