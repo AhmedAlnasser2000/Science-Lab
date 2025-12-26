@@ -128,6 +128,36 @@ def _ensure_safe_font(app: QtWidgets.QApplication, min_point_size: int = 10) -> 
     except Exception:
         pass
 
+
+_qt_msg_handler_installed = False
+_prev_qt_msg_handler = None
+
+
+def _install_qt_message_filter() -> None:
+    global _qt_msg_handler_installed, _prev_qt_msg_handler
+    if _qt_msg_handler_installed:
+        return
+    if os.environ.get("PHYSICSLAB_SUPPRESS_QFONT_WARN", "1") in ("0", "false", "False"):
+        _qt_msg_handler_installed = True
+        return
+
+    def _handler(mode, context, message):  # type: ignore[no-untyped-def]
+        try:
+            if mode == QtCore.QtMsgType.QtWarningMsg and message.startswith("QFont::setPointSize:"):
+                return
+        except Exception:
+            pass
+        if _prev_qt_msg_handler:
+            _prev_qt_msg_handler(mode, context, message)
+        else:
+            try:
+                sys.stderr.write(f"{message}\n")
+            except Exception:
+                pass
+
+    _prev_qt_msg_handler = QtCore.qInstallMessageHandler(_handler)
+    _qt_msg_handler_installed = True
+
 try:
     from runtime_bus import topics as BUS_TOPICS
     from runtime_bus.bus import get_global_bus
@@ -3500,6 +3530,7 @@ def main():
     profile = ui_config.load_experience_profile()
     print(f"Experience profile: {profile}")
     app = QtWidgets.QApplication(sys.argv)
+    _install_qt_message_filter()
     apply_ui_config_styles(app)
     window = MainWindow(profile)
     window.show()
