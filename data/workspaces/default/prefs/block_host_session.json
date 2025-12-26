@@ -1,0 +1,7 @@
+{
+  "open_blocks": [
+    "labhost:vector_add",
+    "labhost:gravity"
+  ],
+  "active_block": "labhost:gravity"
+}

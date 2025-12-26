@@ -69,11 +69,13 @@ class _BlockTile(QtWidgets.QFrame):
         self,
         entry: _BlockEntry,
         on_open: Optional[Callable[[str], None]],
+        action_label: str,
         parent: Optional[QtWidgets.QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.entry = entry
         self.on_open = on_open
+        self.action_label = action_label
         self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
         self.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 6px; }")
 
@@ -106,7 +108,7 @@ class _BlockTile(QtWidgets.QFrame):
         desc_label.setWordWrap(True)
 
         action_row = QtWidgets.QHBoxLayout()
-        open_btn = QtWidgets.QPushButton("Open in Sandbox")
+        open_btn = QtWidgets.QPushButton(self.action_label)
         open_btn.setEnabled(bool(on_open and entry.openable))
         open_btn.clicked.connect(self._open)
         action_row.addWidget(open_btn)
@@ -131,6 +133,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         *,
         on_back: Callable[[], None],
         on_open_block: Optional[Callable[[str], None]] = None,
+        on_pick: Optional[Callable[[str], None]] = None,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
         component_policy_provider: Optional[Callable[[], "WorkspaceComponentPolicy"]] = None,
         bus=None,
@@ -138,6 +141,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         super().__init__()
         self.on_back = on_back
         self.on_open_block = on_open_block
+        self.on_pick = on_pick
         self.component_policy_provider = component_policy_provider
         self.bus = bus
         self._entries: List[_BlockEntry] = []
@@ -145,6 +149,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         self._search_text = ""
         self._selected_pack_id: Optional[str] = None
         self._current_entry: Optional[_BlockEntry] = None
+        self._action_label = "Add to Session" if on_pick else "Open in Sandbox"
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -203,7 +208,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         detail_layout.addWidget(self.detail_description)
 
         btn_row = QtWidgets.QHBoxLayout()
-        self.open_btn = QtWidgets.QPushButton("Open in Sandbox")
+        self.open_btn = QtWidgets.QPushButton(self._action_label)
         self.open_btn.clicked.connect(self._open_selected)
         self.open_btn.setEnabled(False)
         self.docs_btn = QtWidgets.QPushButton("Open Docs")
@@ -324,7 +329,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
                     openable = False
                 elif policy and not pack_enabled:
                     status = "Disabled by project"
-                    reason = "Enable this Pack in Project Management."
+                    reason = "Enable this Pack in Project Settings."
                     openable = False
                 else:
                     if registry and registry.get_component(component_id):
@@ -424,7 +429,11 @@ class BlockCatalogScreen(QtWidgets.QWidget):
             for entry in grouped[category]:
                 item = QtWidgets.QListWidgetItem()
                 item.setData(QtCore.Qt.ItemDataRole.UserRole, entry)
-                tile = _BlockTile(entry, self._open_from_tile if entry.openable else None)
+                tile = _BlockTile(
+                    entry,
+                    self._open_from_tile if entry.openable else None,
+                    self._action_label,
+                )
                 item.setSizeHint(tile.sizeHint())
                 self.block_list.addItem(item)
                 self.block_list.setItemWidget(item, tile)
@@ -485,7 +494,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         self.detail_status.setText(_status_label(entry.status))
         self.detail_reason.setText(entry.reason)
         self.detail_description.setText(entry.description)
-        self.open_btn.setEnabled(bool(self.on_open_block and entry.openable))
+        self.open_btn.setEnabled(bool((self.on_open_block or self.on_pick) and entry.openable))
         self.docs_btn.setEnabled(bool(entry.docs_path))
         self._current_entry = entry
 
@@ -500,21 +509,26 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         self.docs_btn.setEnabled(False)
 
     def _open_from_tile(self, component_id: str) -> None:
-        if not self.on_open_block:
-            return
-        self.on_open_block(component_id)
+        self._handle_open_action(component_id)
 
     def _open_selected(self) -> None:
         if not self._current_entry:
             return
         entry = self._current_entry
-        if not self.on_open_block:
+        if not self.on_open_block and not self.on_pick:
             QtWidgets.QMessageBox.warning(self, terms.BLOCK, "Block runtime unavailable.")
             return
         if not entry.openable:
             QtWidgets.QMessageBox.information(self, terms.BLOCK, entry.reason)
             return
-        self.on_open_block(entry.component_id)
+        self._handle_open_action(entry.component_id)
+
+    def _handle_open_action(self, component_id: str) -> None:
+        if self.on_pick:
+            self.on_pick(component_id)
+            return
+        if self.on_open_block:
+            self.on_open_block(component_id)
 
     def _open_docs(self) -> None:
         if not self._current_entry or not self._current_entry.docs_path:

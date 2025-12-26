@@ -1,5 +1,25 @@
 [
   {
+    "job_id": "a800acff-3ef9-46b7-aff7-4bae0a250acd",
+    "job_type": "core.component_pack.uninstall",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 90,
+    "result": {
+      "pack_id": "welcome_pack",
+      "text": "Uninstalled welcome_pack"
+    },
+    "error": null,
+    "payload": {
+      "pack_id": "welcome_pack"
+    },
+    "started_at": "2025-12-26T17:06:00.175296+00:00",
+    "stage": "removed from store",
+    "finished_at": "2025-12-26T17:06:00.177817+00:00",
+    "ok": true,
+    "result_summary": "Uninstalled welcome_pack"
+  },
+  {
     "job_id": "fc58a0b4-4851-4d39-bd69-378104d8bb2c",
     "job_type": "core.report.generate",
     "source": "core_center",
@@ -7813,18 +7833,5 @@
     "finished_at": "2025-12-23T08:14:50.472846+00:00",
     "ok": true,
     "result_summary": "Storage Roots:\n  store: 4202 bytes\n  cache: 0 bytes\n  dumps: 0 bytes\n  roaming: 110398 bytes\n  total: 114600 bytes\n\nRuns"
-  },
-  {
-    "job_id": "52cf1617-250d-4a08-abb3-f74f20146e1a",
-    "job_type": "core.module.uninstall",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 0.0,
-    "result": null,
-    "error": "module not installed: physics_v1",
-    "started_at": "2025-12-23T07:59:13.015917+00:00",
-    "finished_at": "2025-12-23T07:59:13.016046+00:00",
-    "ok": false,
-    "result_summary": null
   }
 ]

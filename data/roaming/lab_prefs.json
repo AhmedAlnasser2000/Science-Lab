@@ -6,7 +6,7 @@
     },
     "vector_add": {
       "show_grid": true,
-      "show_axes": false
+      "show_axes": true
     },
     "electric_field": {
       "show_grid": true,

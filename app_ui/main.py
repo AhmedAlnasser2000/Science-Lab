@@ -12,6 +12,7 @@
 # [NAV-35] Screens: ComponentManagementScreen (app_ui/screens/component_management.py)
 # [NAV-36] Screens: ContentManagementScreen
 # [NAV-37] Screens: ComponentSandboxScreen
+# [NAV-37A] Screens: BlockHostScreen (app_ui/screens/block_host.py)
 # [NAV-37B] Screens: BlockCatalogScreen (app_ui/screens/block_catalog.py)
 # [NAV-38] Screens: ComponentHostScreen
 # [NAV-39] Screens: LabHostScreen
@@ -42,6 +43,7 @@ from .widgets.app_header import AppHeader
 from .widgets.workspace_selector import WorkspaceSelector
 from app_ui.screens.component_management import ComponentManagementScreen
 from app_ui.screens.block_catalog import BlockCatalogScreen
+from app_ui.screens.block_host import BlockHostScreen
 from app_ui.screens.content_browser import ContentBrowserScreen
 from app_ui.screens.system_health import SystemHealthScreen
 from app_ui.screens.workspace_management import (
@@ -2415,9 +2417,9 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
         if pack_id and pack_id not in self._installed_pack_ids:
             return False, "Not installed", f"Install the {terms.PACK.lower()} to use this block."
         if policy and pack_id and not policy.is_pack_enabled(pack_id):
-            return False, "Disabled by project", "Enable this Pack in Project Management."
+            return False, "Disabled by project", "Enable this Pack in Project Settings."
         if policy and not policy.is_component_enabled(component_id):
-            return False, "Disabled by project", "Enable this Pack in Project Management."
+            return False, "Disabled by project", "Enable this Pack in Project Settings."
         component = component_registry.get_registry().get_component(component_id)
         if not component:
             return False, "Unavailable", "Block not registered."
@@ -2448,7 +2450,7 @@ class ComponentSandboxScreen(QtWidgets.QWidget):
             if not isinstance(component_id, str):
                 continue
             openable, status, reason = self._component_status(component_id)
-            label = f"{component_id} — {status}"
+            label = f"{component_id} ? {status}"
             item = QtWidgets.QListWidgetItem(label)
             item.setToolTip(reason)
             if not openable:
@@ -2748,13 +2750,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.component_sandbox = ComponentSandboxScreen(
             self._show_main_menu,
             self._build_component_context,
-            self._open_component_by_id,
+            self._add_block_to_host,
             self._open_block_host_empty,
             workspace_selector_factory=selector_factory,
         )
+        self.block_host = BlockHostScreen(
+            on_back=self._show_main_menu,
+            context_provider=self._build_component_context,
+            prefs_root_provider=self._active_workspace_prefs_root,
+            workspace_selector_factory=selector_factory,
+            component_policy_provider=self._get_component_policy,
+            open_picker=self._open_block_picker,
+        )
         self.block_catalog = BlockCatalogScreen(
             on_back=self._show_main_menu,
-            on_open_block=self._open_component_by_id,
+            on_open_block=self._add_block_to_host,
             workspace_selector_factory=selector_factory,
             component_policy_provider=self._get_component_policy,
             bus=APP_BUS,
@@ -2771,6 +2781,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.component_management)
         self.stacked.addWidget(self.workspace_management)
         self.stacked.addWidget(self.component_sandbox)
+        self.stacked.addWidget(self.block_host)
         self.stacked.addWidget(self.block_catalog)
         self.stacked.addWidget(self.component_host)
         self._refresh_workspace_selectors()
@@ -3094,6 +3105,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.component_sandbox.on_workspace_changed()
             except Exception:
                 pass
+        if self.block_host:
+            try:
+                self.block_host.on_workspace_changed()
+            except Exception:
+                pass
         if self.block_catalog:
             try:
                 self.block_catalog.on_workspace_changed()
@@ -3256,18 +3272,58 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         context = self._build_component_context()
         if not self.workspace_component_policy.is_component_enabled(component_id):
-            QtWidgets.QMessageBox.information(self, "Block", WORKSPACE_DISABLED_REASON)
+            QtWidgets.QMessageBox.information(
+                self,
+                "Block",
+                "Disabled by project. Enable this Pack in Project Settings.",
+            )
             return
         self.component_host.open_component(component_id, context)
         self.stacked.setCurrentWidget(self.component_host)
 
     def _open_block_host_empty(self) -> None:
         self._dispose_lab_widget()
-        if not COMPONENT_RUNTIME_AVAILABLE or self.component_host is None:
+        if not COMPONENT_RUNTIME_AVAILABLE or self.block_host is None:
             QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
             return
-        self.component_host.show_empty_state("No blocks added yet.")
-        self.stacked.setCurrentWidget(self.component_host)
+        self.block_host.open_empty()
+        self.stacked.setCurrentWidget(self.block_host)
+
+    def _add_block_to_host(self, component_id: str) -> None:
+        self._dispose_lab_widget()
+        if not COMPONENT_RUNTIME_AVAILABLE or self.block_host is None:
+            QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
+            return
+        if not self.workspace_component_policy.is_component_enabled(component_id):
+            QtWidgets.QMessageBox.information(
+                self,
+                "Block",
+                "Disabled by project. Enable this Pack in Project Settings.",
+            )
+            return
+        self.block_host.add_block(component_id, activate=True)
+        self.stacked.setCurrentWidget(self.block_host)
+
+    def _open_block_picker(self, on_pick: Callable[[str], None]) -> None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"{terms.BLOCK} Catalog")
+        dialog.resize(900, 600)
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        def _handle_pick(component_id: str) -> None:
+            on_pick(component_id)
+            dialog.accept()
+
+        picker = BlockCatalogScreen(
+            on_back=dialog.reject,
+            on_open_block=None,
+            on_pick=_handle_pick,
+            workspace_selector_factory=self._make_workspace_selector,
+            component_policy_provider=self._get_component_policy,
+            bus=APP_BUS,
+        )
+        layout.addWidget(picker)
+        dialog.exec()
 
     def _open_component_from_part(
         self,
