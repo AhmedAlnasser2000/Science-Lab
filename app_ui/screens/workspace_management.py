@@ -145,6 +145,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         *,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
         on_open_component_management: Optional[Callable[[], None]] = None,
+        on_open_block_catalog: Optional[Callable[[], None]] = None,
         on_open_module_management: Optional[Callable[[], None]] = None,
         on_open_content_management: Optional[Callable[[], None]] = None,
         log_handler: Optional[
@@ -157,6 +158,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self.bus = bus
         self._log_handler = log_handler
         self._open_component_management = on_open_component_management
+        self._open_block_catalog = on_open_block_catalog
         self._open_module_management = on_open_module_management
         self._open_content_management = on_open_content_management
         self._templates: list[Dict[str, Any]] = []
@@ -172,6 +174,10 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
         header.add_action_widget(refresh_btn)
+        if self._open_block_catalog:
+            block_btn = QtWidgets.QPushButton(f"{terms.BLOCK} Catalog")
+            block_btn.clicked.connect(self._open_block_catalog)
+            header.add_action_widget(block_btn)
         layout.addWidget(header)
 
         self.active_label = QtWidgets.QLabel(f"Active {terms.PROJECT.lower()}: ?")

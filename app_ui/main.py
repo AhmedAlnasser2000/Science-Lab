@@ -12,6 +12,7 @@
 # [NAV-35] Screens: ComponentManagementScreen (app_ui/screens/component_management.py)
 # [NAV-36] Screens: ContentManagementScreen
 # [NAV-37] Screens: ComponentSandboxScreen
+# [NAV-37B] Screens: BlockCatalogScreen (app_ui/screens/block_catalog.py)
 # [NAV-38] Screens: ComponentHostScreen
 # [NAV-39] Screens: LabHostScreen
 # [NAV-90] MainWindow
@@ -40,6 +41,7 @@ from .labs.host import DEFAULT_POLICY as LAB_DEFAULT_POLICY
 from .widgets.app_header import AppHeader
 from .widgets.workspace_selector import WorkspaceSelector
 from app_ui.screens.component_management import ComponentManagementScreen
+from app_ui.screens.block_catalog import BlockCatalogScreen
 from app_ui.screens.content_browser import ContentBrowserScreen
 from app_ui.screens.system_health import SystemHealthScreen
 from app_ui.screens.workspace_management import (
@@ -315,6 +317,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         on_open_workspace_mgmt,
         on_open_component_mgmt,
         on_open_component_sandbox,
+        on_open_block_catalog,
         on_quit,
         experience_profile: str,
         *,
@@ -330,6 +333,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         self.on_open_workspace_mgmt = on_open_workspace_mgmt
         self.on_open_component_mgmt = on_open_component_mgmt
         self.on_open_component_sandbox = on_open_component_sandbox
+        self.on_open_block_catalog = on_open_block_catalog
         self.on_quit = on_quit
         self.profile = experience_profile
 
@@ -390,6 +394,8 @@ class MainMenuScreen(QtWidgets.QWidget):
         self._clear_buttons()
         self._add_button("Quick Start", self.on_start_physics)
         self._add_button("Physics Content", self.on_open_content_browser)
+        if self.on_open_block_catalog:
+            self._add_button(f"{terms.BLOCK} Catalog", self.on_open_block_catalog)
 
         if self.profile in ("Educator", "Explorer"):
             self._add_button(f"{terms.TOPIC} Management", self.on_open_module_mgmt)
@@ -2553,6 +2559,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_workspace_management,
             self._open_component_management,
             self._open_component_sandbox,
+            self._open_block_catalog,
             self._quit_app,
             self.current_profile,
             workspace_selector_factory=selector_factory,
@@ -2599,6 +2606,7 @@ class MainWindow(QtWidgets.QMainWindow):
             bus=APP_BUS,
             workspace_selector_factory=selector_factory,
             on_open_component_management=self._open_component_management,
+            on_open_block_catalog=self._open_block_catalog,
             on_open_module_management=self._show_module_management,
             on_open_content_management=self._open_content_management,
             log_handler=_agent_debug_log,
@@ -2607,6 +2615,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_main_menu,
             self._build_component_context,
             workspace_selector_factory=selector_factory,
+        )
+        self.block_catalog = BlockCatalogScreen(
+            on_back=self._show_main_menu,
+            on_open_block=self._open_component_by_id,
+            workspace_selector_factory=selector_factory,
+            component_policy_provider=self._get_component_policy,
+            bus=APP_BUS,
         )
         self.component_host = ComponentHostScreen(
             self._show_content_browser, workspace_selector_factory=selector_factory
@@ -2620,6 +2635,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.component_management)
         self.stacked.addWidget(self.workspace_management)
         self.stacked.addWidget(self.component_sandbox)
+        self.stacked.addWidget(self.block_catalog)
         self.stacked.addWidget(self.component_host)
         self._refresh_workspace_selectors()
 
@@ -2942,6 +2958,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.component_sandbox.on_workspace_changed()
             except Exception:
                 pass
+        if self.block_catalog:
+            try:
+                self.block_catalog.on_workspace_changed()
+            except Exception:
+                pass
         if self.content_browser:
             try:
                 self.content_browser.refresh_tree()
@@ -3082,6 +3103,27 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.component_sandbox:
             self.component_sandbox.refresh_components()
             self.stacked.setCurrentWidget(self.component_sandbox)
+
+    def _open_block_catalog(self):
+        self._dispose_lab_widget()
+        if not COMPONENT_RUNTIME_AVAILABLE:
+            QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
+            return
+        if self.block_catalog:
+            self.block_catalog.refresh_catalog()
+            self.stacked.setCurrentWidget(self.block_catalog)
+
+    def _open_component_by_id(self, component_id: str) -> None:
+        self._dispose_lab_widget()
+        if not COMPONENT_RUNTIME_AVAILABLE or self.component_host is None:
+            QtWidgets.QMessageBox.warning(self, "Blocks", "Block runtime unavailable.")
+            return
+        context = self._build_component_context()
+        if not self.workspace_component_policy.is_component_enabled(component_id):
+            QtWidgets.QMessageBox.information(self, "Block", WORKSPACE_DISABLED_REASON)
+            return
+        self.component_host.open_component(component_id, context)
+        self.stacked.setCurrentWidget(self.component_host)
 
     def _open_component_from_part(
         self,
