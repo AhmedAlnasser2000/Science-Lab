@@ -10,13 +10,14 @@ from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
-from . import icon_pack, layout_store, snapshot_io, view_config
+from . import icon_pack, layout_store, snapshot_index, snapshot_io, view_config
 from .badges import Badge, sort_by_priority
 from .canvas.scene import GraphScene
 from .canvas.view import GraphView
 from .collectors.atlas_builder import build_atlas_graph
 from .collectors.base import CollectorContext
 from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
+from .diff import DiffResult, NodeChange, diff_snapshots
 from .graph_model import ArchitectureGraph, Node
 from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, get_lens, get_lenses
 
@@ -63,6 +64,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._graph_stack: list[str] = [self._demo_root.graph_id]
         self._current_graph_id: Optional[str] = None
         self._current_graph: Optional[ArchitectureGraph] = None
+        self._render_graph_id: Optional[str] = None
+        self._snapshot_entries: list[dict] = []
+        self._diff_mode = False
+        self._diff_result: Optional[DiffResult] = None
+        self._diff_baseline_graph: Optional[ArchitectureGraph] = None
+        self._diff_compare_graph: Optional[ArchitectureGraph] = None
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -121,6 +128,23 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.load_btn = QtWidgets.QPushButton("Load Latest Snapshot")
         self.load_btn.clicked.connect(self._load_latest_snapshot_action)
         source_row.addWidget(self.load_btn)
+        source_row.addWidget(QtWidgets.QLabel("Baseline:"))
+        self.baseline_combo = QtWidgets.QComboBox()
+        self.baseline_combo.currentIndexChanged.connect(self._on_baseline_changed)
+        source_row.addWidget(self.baseline_combo)
+        source_row.addWidget(QtWidgets.QLabel("Compare:"))
+        self.compare_combo = QtWidgets.QComboBox()
+        self.compare_combo.currentIndexChanged.connect(self._on_compare_changed)
+        source_row.addWidget(self.compare_combo)
+        self.diff_toggle = QtWidgets.QToolButton()
+        self.diff_toggle.setText("Diff Mode")
+        self.diff_toggle.setCheckable(True)
+        self.diff_toggle.toggled.connect(self._on_diff_toggled)
+        source_row.addWidget(self.diff_toggle)
+        self.removed_button = QtWidgets.QToolButton()
+        self.removed_button.setText("Removed")
+        self.removed_button.clicked.connect(self._open_removed_dialog)
+        source_row.addWidget(self.removed_button)
         source_row.addWidget(QtWidgets.QLabel("Icon Style:"))
         self.style_combo = QtWidgets.QComboBox()
         self.style_combo.addItems(list(ICON_STYLE_LABELS.values()))
@@ -144,6 +168,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
         self._build_layer_menu()
         self._build_badge_menu()
+        self._refresh_snapshot_history()
         self._sync_style_combo()
         self._sync_view_controls()
         self._update_action_state()
@@ -159,10 +184,19 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
         self._icon_style = self._view_config.icon_style
+        self._diff_mode = False
+        self._diff_result = None
+        self._diff_baseline_graph = None
+        self._diff_compare_graph = None
         self._sync_style_combo()
         self._sync_view_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
+        self._refresh_snapshot_history()
+        self.diff_toggle.blockSignals(True)
+        self.diff_toggle.setChecked(False)
+        self.diff_toggle.blockSignals(False)
+        self._update_action_state()
         if self._source == SOURCE_ATLAS:
             self._build_atlas()
             return
@@ -227,18 +261,24 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
 
     def _save_layout(self) -> None:
-        if not self._current_graph_id:
+        if not self._render_graph_id:
             return
         positions = self.scene.node_positions()
-        layout_store.save_positions(self._workspace_id(), self._lens, self._current_graph_id, positions)
+        layout_store.save_positions(self._workspace_id(), self._lens, self._render_graph_id, positions)
 
     def _render_current_graph(self) -> None:
         if not self._current_graph_id or not self._current_graph:
             return
-        positions = layout_store.load_positions(self._workspace_id(), self._lens, self._current_graph_id)
-        filtered = self._filtered_graph(self._current_graph)
+        graph_to_render = self._current_graph
+        diff_result = None
+        if self._diff_mode and self._diff_compare_graph and self._diff_result:
+            graph_to_render = self._diff_compare_graph
+            diff_result = self._diff_result
+        self._render_graph_id = graph_to_render.graph_id
+        positions = layout_store.load_positions(self._workspace_id(), self._lens, self._render_graph_id)
+        filtered = self._filtered_graph(graph_to_render)
         empty_message = None
-        if self._lens == LENS_BUS and not _bus_nodes_present(self._current_graph):
+        if self._lens == LENS_BUS and not _bus_nodes_present(graph_to_render):
             empty_message = "No bus nodes found for this graph."
             filtered = ArchitectureGraph(
                 graph_id=filtered.graph_id,
@@ -247,7 +287,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 edges=[],
             )
         self.scene.set_empty_message(empty_message)
-        self.scene.build_graph(filtered, positions)
+        self.scene.build_graph(filtered, positions, diff_result=diff_result)
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
 
@@ -307,6 +347,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _update_action_state(self) -> None:
         self.capture_btn.setEnabled(self._source in (SOURCE_DEMO, SOURCE_ATLAS))
+        self.removed_button.setEnabled(self._diff_mode and self._diff_result is not None)
 
     def _build_layer_menu(self) -> None:
         self._category_actions: Dict[str, QtGui.QAction] = {}
@@ -433,6 +474,92 @@ class CodeSeeScreen(QtWidgets.QWidget):
             edges=edges,
         )
 
+    def _refresh_snapshot_history(self) -> None:
+        self._snapshot_entries = snapshot_index.list_snapshots_sorted(self._workspace_id())
+        baseline_path = self.baseline_combo.currentData()
+        compare_path = self.compare_combo.currentData()
+        self.baseline_combo.blockSignals(True)
+        self.compare_combo.blockSignals(True)
+        self.baseline_combo.clear()
+        self.compare_combo.clear()
+        self.baseline_combo.addItem("None", None)
+        self.compare_combo.addItem("None", None)
+        for entry in self._snapshot_entries:
+            label = _snapshot_label(entry)
+            path = entry.get("path")
+            self.baseline_combo.addItem(label, path)
+            self.compare_combo.addItem(label, path)
+        if baseline_path:
+            _set_combo_by_data(self.baseline_combo, baseline_path)
+        if compare_path:
+            _set_combo_by_data(self.compare_combo, compare_path)
+        self.baseline_combo.blockSignals(False)
+        self.compare_combo.blockSignals(False)
+        self._update_action_state()
+
+    def _on_baseline_changed(self, _index: int) -> None:
+        if self._diff_mode:
+            self._update_diff_result()
+            self._render_current_graph()
+
+    def _on_compare_changed(self, _index: int) -> None:
+        if self._diff_mode:
+            self._update_diff_result()
+            self._render_current_graph()
+
+    def _on_diff_toggled(self, checked: bool) -> None:
+        self._diff_mode = checked
+        if checked:
+            self._update_diff_result()
+        else:
+            self._diff_result = None
+            self._diff_baseline_graph = None
+            self._diff_compare_graph = None
+        self._update_action_state()
+        self._render_current_graph()
+
+    def _update_diff_result(self) -> None:
+        baseline_path = self.baseline_combo.currentData()
+        compare_path = self.compare_combo.currentData()
+        if not baseline_path or not compare_path or baseline_path == compare_path:
+            self._diff_result = None
+            self._diff_baseline_graph = None
+            self._diff_compare_graph = None
+            self.status_label.setText("Select two different snapshots for diff mode.")
+            self._update_action_state()
+            return
+        baseline_graph = self._load_snapshot_by_path(str(baseline_path))
+        compare_graph = self._load_snapshot_by_path(str(compare_path))
+        if not baseline_graph or not compare_graph:
+            self._diff_result = None
+            self._diff_baseline_graph = None
+            self._diff_compare_graph = None
+            self.status_label.setText("Snapshot diff load failed.")
+            self._update_action_state()
+            return
+        self._diff_baseline_graph = baseline_graph
+        self._diff_compare_graph = compare_graph
+        self._diff_result = diff_snapshots(baseline_graph, compare_graph)
+        summary = (
+            f"Diff: +{len(self._diff_result.nodes_added)} "
+            f"-{len(self._diff_result.nodes_removed)} "
+            f"Δ{len(self._diff_result.nodes_changed)}"
+        )
+        self.status_label.setText(summary)
+        self._update_action_state()
+
+    def _load_snapshot_by_path(self, path_value: str) -> Optional[ArchitectureGraph]:
+        try:
+            return snapshot_io.read_snapshot(Path(path_value))
+        except Exception:
+            return None
+
+    def _open_removed_dialog(self) -> None:
+        if not self._diff_result:
+            return
+        dialog = CodeSeeRemovedDialog(self._diff_result, parent=self)
+        dialog.exec()
+
     def _resolved_icon_style(self) -> str:
         return icon_pack.resolve_style(self._icon_style, self._reduced_motion)
 
@@ -451,9 +578,20 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.set_icon_style(self._resolved_icon_style())
 
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
-        if not self._current_graph:
+        graph = self._current_graph
+        if self._diff_mode and self._diff_compare_graph:
+            graph = self._diff_compare_graph
+        if not graph:
             return
-        dialog = CodeSeeInspectorDialog(node, self._current_graph, badge, parent=self)
+        diff_state = None
+        diff_change = None
+        if self._diff_mode and self._diff_result:
+            if node.node_id in self._diff_result.nodes_added:
+                diff_state = "added"
+            elif node.node_id in self._diff_result.nodes_changed:
+                diff_state = "changed"
+                diff_change = self._diff_result.node_change_details.get(node.node_id)
+        dialog = CodeSeeInspectorDialog(node, graph, badge, diff_state, diff_change, parent=self)
         dialog.exec()
 
     def _build_atlas(self) -> None:
@@ -496,9 +634,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
             "source": self._source,
             "workspace_id": self._workspace_id(),
             "graph_id": self._current_graph.graph_id,
+            "lens_id": self._lens,
+            "timestamp": timestamp,
         }
         snapshot_io.write_snapshot(self._current_graph, path, metadata)
         self.status_label.setText(f"Snapshot saved: {path.name}")
+        self._refresh_snapshot_history()
 
     def _load_latest_snapshot_action(self) -> None:
         self._load_latest_snapshot(show_status=True)
@@ -534,6 +675,22 @@ def _make_toggle_button(label: str, handler: Callable[[], None]) -> QtWidgets.QT
     btn.setCheckable(True)
     btn.toggled.connect(handler)
     return btn
+
+
+def _snapshot_label(entry: dict) -> str:
+    timestamp = entry.get("timestamp") or entry.get("filename") or "snapshot"
+    source = entry.get("source") or "Unknown"
+    graph_id = entry.get("graph_id") or "graph"
+    return f"{timestamp} | {source} | {graph_id}"
+
+
+def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None:
+    if value is None:
+        return
+    for idx in range(combo.count()):
+        if combo.itemData(idx) == value:
+            combo.setCurrentIndex(idx)
+            return
 
 
 def _category_keys() -> list[str]:
@@ -594,6 +751,8 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         node: Node,
         graph: ArchitectureGraph,
         selected_badge: Optional[Badge],
+        diff_state: Optional[str],
+        diff_change: Optional[NodeChange],
         parent: Optional[QtWidgets.QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -614,6 +773,16 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
             selected.setWordWrap(True)
             layout.addWidget(selected)
 
+        if diff_state:
+            diff_label = QtWidgets.QLabel(f"Diff status: {diff_state}")
+            diff_label.setStyleSheet("color: #555;")
+            layout.addWidget(diff_label)
+            if diff_change:
+                diff_details = QtWidgets.QPlainTextEdit()
+                diff_details.setReadOnly(True)
+                diff_details.setPlainText(_format_diff_change(diff_change))
+                layout.addWidget(diff_details)
+
         badges_label = QtWidgets.QLabel("Badges")
         badges_label.setStyleSheet("color: #444;")
         layout.addWidget(badges_label)
@@ -628,6 +797,37 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         edges_text = QtWidgets.QPlainTextEdit()
         edges_text.setReadOnly(True)
         edges_text.setPlainText(_format_edges(graph, node))
+        layout.addWidget(edges_text)
+
+        close_row = QtWidgets.QHBoxLayout()
+        close_row.addStretch()
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        close_row.addWidget(close_btn)
+        layout.addLayout(close_row)
+
+
+class CodeSeeRemovedDialog(QtWidgets.QDialog):
+    def __init__(self, diff_result: DiffResult, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Removed Items")
+        self.setMinimumWidth(420)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        nodes_label = QtWidgets.QLabel("Removed Nodes")
+        nodes_label.setStyleSheet("color: #444;")
+        layout.addWidget(nodes_label)
+        nodes_text = QtWidgets.QPlainTextEdit()
+        nodes_text.setReadOnly(True)
+        nodes_text.setPlainText(_format_removed_nodes(diff_result))
+        layout.addWidget(nodes_text)
+
+        edges_label = QtWidgets.QLabel("Removed Edges")
+        edges_label.setStyleSheet("color: #444;")
+        layout.addWidget(edges_label)
+        edges_text = QtWidgets.QPlainTextEdit()
+        edges_text.setReadOnly(True)
+        edges_text.setPlainText(_format_removed_edges(diff_result))
         layout.addWidget(edges_text)
 
         close_row = QtWidgets.QHBoxLayout()
@@ -678,4 +878,34 @@ def _format_edges(graph: ArchitectureGraph, node: Node) -> str:
     if incoming:
         lines.append("Incoming:")
         lines.extend(f"- {line}" for line in incoming)
+    return "\n".join(lines)
+
+
+def _format_diff_change(change: NodeChange) -> str:
+    lines = ["Before:", f"  title: {change.before.title}", f"  type: {change.before.node_type}"]
+    lines.append(f"  severity: {change.severity_before}")
+    lines.append("  badges:")
+    lines.extend(f"    - {_format_badge_line(badge)}" for badge in change.badges_before)
+    lines.append("After:")
+    lines.append(f"  title: {change.after.title}")
+    lines.append(f"  type: {change.after.node_type}")
+    lines.append(f"  severity: {change.severity_after}")
+    lines.append("  badges:")
+    lines.extend(f"    - {_format_badge_line(badge)}" for badge in change.badges_after)
+    lines.append(f"Changed fields: {', '.join(change.fields_changed)}")
+    return "\n".join(lines)
+
+
+def _format_removed_nodes(diff_result: DiffResult) -> str:
+    if not diff_result.nodes_removed:
+        return "No removed nodes."
+    return "\n".join(sorted(diff_result.nodes_removed))
+
+
+def _format_removed_edges(diff_result: DiffResult) -> str:
+    if not diff_result.edges_removed:
+        return "No removed edges."
+    lines = []
+    for src, dst, kind in sorted(diff_result.edges_removed):
+        lines.append(f"{kind}: {src} -> {dst}")
     return "\n".join(lines)

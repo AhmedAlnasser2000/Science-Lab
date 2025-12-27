@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .badges import badge_from_dict, badge_from_key, badge_to_dict
+from . import snapshot_index
 from .graph_model import ArchitectureGraph, Edge, Node
 
 FORMAT_VERSION = 1
@@ -19,6 +20,7 @@ def write_snapshot(graph: ArchitectureGraph, path: Path, metadata: Dict[str, Any
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        snapshot_index.register_snapshot(path, payload["metadata"])
     except Exception:
         return
 

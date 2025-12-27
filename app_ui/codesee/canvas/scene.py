@@ -4,6 +4,7 @@ from typing import Callable, Dict, Optional, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from ..diff import DiffResult, edge_key
 from ..graph_model import ArchitectureGraph
 from .items import EdgeItem, NodeItem, NODE_HEIGHT, NODE_WIDTH
 
@@ -29,7 +30,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._edges: list[EdgeItem] = []
         self.setSceneRect(-5000.0, -5000.0, 10000.0, 10000.0)
 
-    def build_graph(self, graph: ArchitectureGraph, positions: Dict[str, Tuple[float, float]]) -> None:
+    def build_graph(
+        self,
+        graph: ArchitectureGraph,
+        positions: Dict[str, Tuple[float, float]],
+        diff_result: Optional[DiffResult] = None,
+    ) -> None:
         self.clear()
         self._nodes = {}
         self._edges = []
@@ -44,6 +50,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
             return
 
         for idx, node in enumerate(graph.nodes):
+            diff_state = _node_diff_state(node.node_id, diff_result)
             item = NodeItem(
                 node,
                 on_open_subgraph=self.on_open_subgraph,
@@ -51,6 +58,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 on_inspect=self.on_inspect,
                 icon_style=self._icon_style,
                 show_badge_layers=self._badge_layers,
+                diff_state=diff_state,
             )
             self.addItem(item)
             pos = positions.get(node.node_id)
@@ -69,7 +77,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
             dst = self._nodes.get(edge.dst_node_id)
             if not src or not dst:
                 continue
-            edge_item = EdgeItem(src, dst, edge.kind)
+            diff_state = _edge_diff_state(edge, diff_result)
+            edge_item = EdgeItem(src, dst, edge.kind, diff_state=diff_state)
             src.add_edge(edge_item)
             dst.add_edge(edge_item)
             edge_item.update_path()
@@ -97,3 +106,21 @@ class GraphScene(QtWidgets.QGraphicsScene):
             pos = item.pos()
             positions[node_id] = (pos.x(), pos.y())
         return positions
+
+
+def _node_diff_state(node_id: str, diff_result: Optional[DiffResult]) -> Optional[str]:
+    if not diff_result:
+        return None
+    if node_id in diff_result.nodes_added:
+        return "added"
+    if node_id in diff_result.nodes_changed:
+        return "changed"
+    return None
+
+
+def _edge_diff_state(edge, diff_result: Optional[DiffResult]) -> Optional[str]:
+    if not diff_result:
+        return None
+    if edge_key(edge) in diff_result.edges_added:
+        return "added"
+    return None

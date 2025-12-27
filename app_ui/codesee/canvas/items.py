@@ -15,17 +15,19 @@ RAIL_HEIGHT = 14.0
 ICON_SIZE = 12.0
 ICON_SPACING = 6.0
 TITLE_PADDING = 8.0
+DIFF_BADGE_SIZE = 12.0
 _ICON_CACHE: Dict[Tuple[str, float], QtGui.QPixmap] = {}
 
 
 class EdgeItem(QtWidgets.QGraphicsPathItem):
-    def __init__(self, src: "NodeItem", dst: "NodeItem", kind: str) -> None:
+    def __init__(self, src: "NodeItem", dst: "NodeItem", kind: str, diff_state: Optional[str] = None) -> None:
         super().__init__()
         self.src = src
         self.dst = dst
         self.kind = kind
+        self.diff_state = diff_state
         self.setZValue(-1)
-        self.setPen(_edge_pen(kind))
+        self.setPen(_edge_pen(kind, diff_state))
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
 
     def update_path(self) -> None:
@@ -51,6 +53,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         on_inspect: Optional[Callable[[Node, Optional[Badge]], None]] = None,
         icon_style: str = "color",
         show_badge_layers: Optional[Dict[str, bool]] = None,
+        diff_state: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.node = node
@@ -59,6 +62,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.on_inspect = on_inspect
         self._icon_style = icon_style
         self._show_badge_layers = show_badge_layers or {}
+        self._diff_state = diff_state
         self._edges: List[EdgeItem] = []
         self._last_badge_key: Optional[str] = None
 
@@ -84,6 +88,10 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def set_badge_layers(self, layers: Dict[str, bool]) -> None:
         self._show_badge_layers = layers or {}
+        self.update()
+
+    def set_diff_state(self, diff_state: Optional[str]) -> None:
+        self._diff_state = diff_state
         self.update()
 
     def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
@@ -132,6 +140,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
             painter.setPen(QtGui.QPen(QtGui.QColor("#888"), 1.0, QtCore.Qt.PenStyle.DashLine))
             painter.drawRoundedRect(rect.adjusted(2.0, 2.0, -2.0, -2.0), NODE_RADIUS - 2.0, NODE_RADIUS - 2.0)
+
+        if self._diff_state:
+            _paint_diff_badge(painter, rect, self._diff_state)
 
     def hoverMoveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
         badge = self._badge_at(event.pos())
@@ -249,14 +260,18 @@ def _severity_color(state: str) -> QtGui.QColor:
     return QtGui.QColor("#444")
 
 
-def _edge_pen(kind: str) -> QtGui.QPen:
+def _edge_pen(kind: str, diff_state: Optional[str]) -> QtGui.QPen:
     color = QtGui.QColor("#888")
     if kind == "pubsub":
         color = QtGui.QColor("#4c6ef5")
     elif kind == "request":
         color = QtGui.QColor("#009688")
+    if diff_state == "added":
+        color = QtGui.QColor("#3a7d5d")
     pen = QtGui.QPen(color, 1.4)
     pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+    if diff_state == "added":
+        pen.setStyle(QtCore.Qt.PenStyle.DashLine)
     return pen
 
 
@@ -309,3 +324,20 @@ def _badge_layer(key: str) -> Optional[str]:
     if key == "activity.muted":
         return "activity"
     return None
+
+
+def _paint_diff_badge(painter: QtGui.QPainter, rect: QtCore.QRectF, state: str) -> None:
+    color = QtGui.QColor("#3a7d5d") if state == "added" else QtGui.QColor("#b07d21")
+    symbol = "+" if state == "added" else "Δ"
+    badge_rect = QtCore.QRectF(
+        rect.right() - DIFF_BADGE_SIZE - 4.0,
+        rect.top() + 4.0,
+        DIFF_BADGE_SIZE,
+        DIFF_BADGE_SIZE,
+    )
+    painter.setBrush(color)
+    painter.setPen(QtCore.Qt.PenStyle.NoPen)
+    painter.drawEllipse(badge_rect)
+    painter.setPen(QtGui.QPen(QtGui.QColor("#fff"), 1.0))
+    painter.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Weight.Bold))
+    painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, symbol)
