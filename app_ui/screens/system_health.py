@@ -33,6 +33,13 @@ except Exception:  # pragma: no cover - defensive
     get_validation_report = None
     clear_validation_cache = None
 
+try:
+    from app_ui.codesee.expectations import build_check
+    from app_ui.codesee.runtime.hub import publish_expect_check_global
+except Exception:  # pragma: no cover - defensive
+    build_check = None
+    publish_expect_check_global = None
+
 BUS_REPORT_REQUEST = (
     BUS_TOPICS.CORE_STORAGE_REPORT_REQUEST if BUS_TOPICS else "core.storage.report.request"
 )
@@ -1578,6 +1585,47 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.content_diag_status.setText(
             f"Validation summary: OK={ok_count} WARN={warn_count} FAIL={fail_count}"
         )
+        if callable(build_check) and callable(publish_expect_check_global):
+            workspace_id = "default"
+            if self.bus and BUS_WORKSPACE_GET_ACTIVE_REQUEST:
+                try:
+                    response = self.bus.request(
+                        BUS_WORKSPACE_GET_ACTIVE_REQUEST,
+                        {},
+                        source="app_ui",
+                        timeout_ms=1000,
+                    )
+                except Exception:
+                    response = {"ok": False}
+                if response.get("ok"):
+                    workspace = response.get("workspace")
+                    if isinstance(workspace, dict):
+                        workspace_id = workspace.get("id") or workspace_id
+                    elif isinstance(response.get("id"), str):
+                        workspace_id = response.get("id")
+            expected = {"failures": 0, "warnings": 0}
+            actual = {"failures": fail_count, "warnings": warn_count}
+            message = (
+                "Validation clean."
+                if fail_count == 0 and warn_count == 0
+                else f"Validation issues: FAIL={fail_count}, WARN={warn_count}."
+            )
+            check = build_check(
+                check_id="content.validation.summary",
+                node_id="system:content_system",
+                expected=expected,
+                actual=actual,
+                mode="exact",
+                message=message,
+                context={
+                    "action": "validate",
+                    "workspace_id": workspace_id,
+                    "ok_count": ok_count,
+                    "fail_count": fail_count,
+                    "warn_count": warn_count,
+                },
+            )
+            publish_expect_check_global(check)
         failures = report.get("failures") or []
         warnings = report.get("warnings") or []
         tree = self.content_diag_tree
@@ -1651,5 +1699,4 @@ class SystemHealthScreen(QtWidgets.QWidget):
                     f"[{item.get('schema_id') or 'no schema'}]"
                 )
         QtWidgets.QApplication.clipboard().setText("\n".join(lines))
-
 

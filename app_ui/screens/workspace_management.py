@@ -17,6 +17,13 @@ try:
 except Exception:  # pragma: no cover
     BUS_TOPICS = None
 
+try:
+    from app_ui.codesee.expectations import build_check
+    from app_ui.codesee.runtime.hub import publish_expect_check_global
+except Exception:  # pragma: no cover - defensive
+    build_check = None
+    publish_expect_check_global = None
+
 BUS_WORKSPACE_GET_ACTIVE_REQUEST = (
     BUS_TOPICS.CORE_WORKSPACE_GET_ACTIVE_REQUEST
     if BUS_TOPICS
@@ -859,6 +866,31 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         if not export_info:
             return
         target, include_files = export_info
+        expected_files = 1 + len(include_files)
+        written_files = 0
+
+        def _emit_export_check(status: str, message: str, error: Optional[str] = None) -> None:
+            if not callable(build_check) or not callable(publish_expect_check_global):
+                return
+            expected = {"status": "ok", "files": expected_files}
+            actual = {"status": status, "files": written_files}
+            if error:
+                actual["error"] = error
+            check = build_check(
+                check_id="content.export.summary",
+                node_id="system:content_system",
+                expected=expected,
+                actual=actual,
+                mode="exact",
+                message=message,
+                context={
+                    "action": "export",
+                    "workspace_id": ws.get("id"),
+                    "target": Path(target).name,
+                    "included_files": list(include_files),
+                },
+            )
+            publish_expect_check_global(check)
         config = _load_workspace_config_from_root(prefs_root)
         enabled_packs = config.get("enabled_component_packs")
         inventory, _ = _request_inventory_snapshot(self.bus)
@@ -897,6 +929,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         try:
             with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+                written_files += 1
                 for name in include_files:
                     path = prefs_root / name
                     if path.exists():
@@ -904,10 +937,13 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
                     else:
                         payload = "{}"
                     zf.writestr(f"prefs/{name}", payload)
+                    written_files += 1
         except Exception as exc:
             self.io_status.setText(f"Export failed: {exc}")
+            _emit_export_check("failed", "Export failed.", str(exc))
             return
         self.io_status.setText(f"Exported project to {target}")
+        _emit_export_check("ok", f"Export wrote {written_files}/{expected_files} file(s).")
 
     def _prompt_export_settings(self, workspace: Dict[str, Any]) -> Optional[tuple[str, list[str]]]:
         dialog = QtWidgets.QDialog(self)
@@ -983,28 +1019,62 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         )
         if not source:
             return
+        expected_files = 0
+        imported_files = 0
+        workspace_info: Dict[str, Any] = {}
+
+        def _emit_import_check(status: str, message: str, error: Optional[str] = None) -> None:
+            if not callable(build_check) or not callable(publish_expect_check_global):
+                return
+            expected = {"status": "ok", "files": expected_files}
+            actual = {"status": status, "files": imported_files}
+            if error:
+                actual["error"] = error
+            check = build_check(
+                check_id="content.import.summary",
+                node_id="system:content_system",
+                expected=expected,
+                actual=actual,
+                mode="exact",
+                message=message,
+                context={
+                    "action": "import",
+                    "workspace_id": workspace_info.get("id"),
+                    "source": Path(source).name,
+                },
+            )
+            publish_expect_check_global(check)
         try:
             with zipfile.ZipFile(source, "r") as zf:
                 if "manifest.json" not in zf.namelist():
                     self.io_status.setText("Import failed: manifest.json missing.")
+                    _emit_import_check("failed", "Import failed: manifest.json missing.")
                     return
                 manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
                 fmt = manifest.get("format_version")
                 if fmt not in (1, "1"):
                     self.io_status.setText("Import failed: unsupported format_version.")
+                    _emit_import_check("failed", "Import failed: unsupported format_version.")
                     return
-                expected_files = manifest.get("included_files") or list(self.TEMPLATE_PREF_FILES)
+                expected_entries = manifest.get("included_files") or list(self.TEMPLATE_PREF_FILES)
+                expected_files = len(expected_entries)
                 pref_entries = [
-                    name for name in expected_files if f"prefs/{name}" in zf.namelist()
+                    name for name in expected_entries if f"prefs/{name}" in zf.namelist()
                 ]
                 missing = [
                     name
-                    for name in expected_files
+                    for name in expected_entries
                     if f"prefs/{name}" not in zf.namelist()
                 ]
                 if missing:
                     self.io_status.setText(
                         "Import failed: prefs files missing (" + ", ".join(missing) + ")."
+                    )
+                    imported_files = len(pref_entries)
+                    _emit_import_check(
+                        "failed",
+                        "Import failed: preference files missing.",
+                        "missing: " + ", ".join(missing),
                     )
                     return
                 workspace_info = manifest.get("workspace") or {}
@@ -1035,10 +1105,16 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
                 for name in pref_entries:
                     data = zf.read(f"prefs/{name}")
                     (prefs_root / name).write_text(data.decode("utf-8"), encoding="utf-8")
+                    imported_files += 1
         except Exception as exc:
             self.io_status.setText(f"Import failed: {exc}")
+            _emit_import_check("failed", "Import failed.", str(exc))
             return
         self.io_status.setText(f"Imported project as {workspace_id}")
+        _emit_import_check(
+            "ok",
+            f"Import applied {imported_files}/{expected_files} file(s).",
+        )
         self.refresh()
         missing = self._summarize_missing_requirements(manifest)
         self._show_import_summary(workspace_id, workspace_info, pref_entries, manifest, missing)

@@ -8,6 +8,19 @@ from PyQt6 import QtCore
 from .events import CodeSeeEvent, EVENT_EXPECT_CHECK
 from ..expectations import EVACheck, check_to_dict
 
+_MAX_CHECKS = 200
+_RECENT_CHECKS: Deque[EVACheck] = deque(maxlen=_MAX_CHECKS)
+
+
+def _record_check(check: EVACheck) -> None:
+    _RECENT_CHECKS.append(check)
+
+
+def recent_checks(limit: int = _MAX_CHECKS) -> List[EVACheck]:
+    if limit <= 0:
+        return []
+    return list(_RECENT_CHECKS)[-limit:]
+
 
 class CodeSeeRuntimeHub(QtCore.QObject):
     event_emitted = QtCore.pyqtSignal(object)
@@ -35,6 +48,7 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         return list(self._events)[-limit:]
 
     def publish_expect_check(self, check: EVACheck) -> None:
+        _record_check(check)
         severity = "failure" if not check.passed else "info"
         event = CodeSeeEvent(
             ts=str(check.ts),
@@ -59,3 +73,11 @@ def set_global_hub(hub: CodeSeeRuntimeHub) -> None:
 
 def get_global_hub() -> Optional[CodeSeeRuntimeHub]:
     return _GLOBAL_HUB
+
+
+def publish_expect_check_global(check: EVACheck) -> None:
+    hub = get_global_hub()
+    if hub:
+        hub.publish_expect_check(check)
+    else:
+        _record_check(check)
