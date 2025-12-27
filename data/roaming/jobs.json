@@ -1,5 +1,26 @@
 [
   {
+    "job_id": "dfc7ad8c-82e5-41dd-92b4-ecd8df37d123",
+    "job_type": "core.component_pack.install",
+    "source": "core_center",
+    "status": "COMPLETED",
+    "progress": 90,
+    "result": {
+      "pack_id": "welcome_pack",
+      "install_path": "component_store\\component_v1\\packs\\welcome_pack",
+      "text": "Installed welcome_pack"
+    },
+    "error": null,
+    "payload": {
+      "pack_id": "welcome_pack"
+    },
+    "started_at": "2025-12-27T23:46:57.716263+00:00",
+    "stage": "installed to store",
+    "finished_at": "2025-12-27T23:46:57.722189+00:00",
+    "ok": true,
+    "result_summary": "Installed welcome_pack"
+  },
+  {
     "job_id": "5fbbbd34-76c6-4f80-a240-5c3090ada92e",
     "job_type": "core.module.uninstall",
     "source": "core_center",
@@ -7837,23 +7858,6 @@
     "started_at": "2025-12-23T08:19:41.399708+00:00",
     "stage": "registry updated",
     "finished_at": "2025-12-23T08:19:41.471874+00:00",
-    "ok": true,
-    "result_summary": null
-  },
-  {
-    "job_id": "b19eed55-7d9b-4d4f-821a-00ea53601226",
-    "job_type": "core.module.install",
-    "source": "core_center",
-    "status": "completed",
-    "progress": 95,
-    "result": {
-      "module_id": "physics_v1",
-      "install_path": "content_store\\physics_v1"
-    },
-    "error": null,
-    "started_at": "2025-12-23T08:19:40.240191+00:00",
-    "stage": "registry updated",
-    "finished_at": "2025-12-23T08:19:40.296408+00:00",
     "ok": true,
     "result_summary": null
   }
