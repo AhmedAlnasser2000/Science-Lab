@@ -12,6 +12,7 @@ from app_ui.widgets.workspace_selector import WorkspaceSelector
 
 from . import icon_pack, layout_store, snapshot_index, snapshot_io, view_config
 from .badges import Badge, badge_from_key, sort_by_priority
+from .canvas.items import clear_icon_cache
 from .canvas.scene import GraphScene
 from .canvas.view import GraphView
 from .collectors.atlas_builder import build_atlas_graph
@@ -22,6 +23,7 @@ from .graph_model import ArchitectureGraph, Node
 from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, get_lens, get_lenses
 from .runtime.events import CodeSeeEvent, EVENT_APP_ACTIVITY, EVENT_APP_CRASH, EVENT_APP_ERROR, EVENT_JOB_UPDATE
 from .runtime.hub import CodeSeeRuntimeHub
+from app_ui import ui_scale
 
 DEFAULT_LENS = LENS_ATLAS
 SOURCE_DEMO = "Demo"
@@ -85,11 +87,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._runtime_connected = False
 
         layout = QtWidgets.QVBoxLayout(self)
+        self._root_layout = layout
         selector = workspace_selector_factory() if workspace_selector_factory else None
         header = AppHeader(title="Code See", on_back=self._handle_back, workspace_selector=selector)
         layout.addWidget(header)
 
         breadcrumb_row = QtWidgets.QHBoxLayout()
+        self._breadcrumb_row = breadcrumb_row
         self.back_btn = QtWidgets.QPushButton("Back")
         self.back_btn.clicked.connect(self._back_to_parent)
         breadcrumb_row.addWidget(self.back_btn)
@@ -103,6 +107,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         layout.addLayout(breadcrumb_row)
 
         source_row = QtWidgets.QHBoxLayout()
+        self._source_row = source_row
         source_row.addWidget(QtWidgets.QLabel("Lens:"))
         self.lens_combo = QtWidgets.QComboBox()
         self._lens_map = get_lenses()
@@ -190,6 +195,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
         self.filter_status_row = QtWidgets.QWidget()
         status_layout = QtWidgets.QHBoxLayout(self.filter_status_row)
+        self._filter_status_layout = status_layout
         status_layout.setContentsMargins(0, 0, 0, 0)
         self.filter_status_label = QtWidgets.QLabel("")
         self.filter_status_label.setStyleSheet("color: #555;")
@@ -223,6 +229,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         layout.addWidget(self.view, stretch=1)
 
+        ui_scale.register_listener(self._on_ui_scale_changed)
+        self._apply_density(ui_scale.get_config())
         self._build_layer_menu()
         self._build_badge_menu()
         self._refresh_snapshot_history()
@@ -577,6 +585,22 @@ class CodeSeeScreen(QtWidgets.QWidget):
             nodes=nodes,
             edges=graph.edges,
         )
+
+    def _on_ui_scale_changed(self, cfg: ui_scale.UiScaleConfig) -> None:
+        clear_icon_cache()
+        self._apply_density(cfg)
+        self._render_current_graph()
+
+    def _apply_density(self, cfg: ui_scale.UiScaleConfig) -> None:
+        spacing = ui_scale.density_spacing(8)
+        if self._root_layout:
+            self._root_layout.setSpacing(spacing)
+        if self._breadcrumb_row:
+            self._breadcrumb_row.setSpacing(spacing)
+        if self._source_row:
+            self._source_row.setSpacing(spacing)
+        if self._filter_status_layout:
+            self._filter_status_layout.setSpacing(spacing)
 
     def _filters_active(self) -> bool:
         if view_config.is_filtered(self._view_config):

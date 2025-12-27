@@ -4,7 +4,8 @@ from typing import Any, Callable, Dict, Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from . import view_config
+from app_ui.window_state import restore_geometry as restore_window_geometry
+from app_ui.window_state import save_geometry as save_window_geometry
 from .runtime.hub import CodeSeeRuntimeHub
 from .screen import CodeSeeScreen
 
@@ -25,7 +26,6 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
         self.resize(1100, 720)
         self.setMinimumSize(900, 600)
         self._on_close = on_close
-        self._workspace_info_provider = workspace_info_provider
         self._save_timer = QtCore.QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._persist_geometry)
@@ -68,25 +68,7 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
         self._save_timer.start(350)
 
     def _persist_geometry(self) -> None:
-        geometry = self.saveGeometry()
-        encoded = bytes(geometry.toBase64()).decode("ascii")
-        view_config.save_window_geometry(self._workspace_id(), encoded)
+        save_window_geometry(self, "codesee")
 
     def _restore_geometry(self) -> None:
-        encoded = view_config.load_window_geometry(self._workspace_id())
-        if not encoded:
-            return
-        try:
-            data = QtCore.QByteArray.fromBase64(encoded.encode("ascii"))
-            if data:
-                self.restoreGeometry(data)
-        except Exception:
-            return
-
-    def _workspace_id(self) -> str:
-        info = self._workspace_info_provider() or {}
-        if isinstance(info, dict):
-            workspace_id = info.get("id") or info.get("workspace_id")
-            if workspace_id:
-                return str(workspace_id)
-        return "default"
+        restore_window_geometry(self, "codesee")

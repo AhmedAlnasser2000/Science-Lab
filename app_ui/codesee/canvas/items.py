@@ -5,17 +5,18 @@ from typing import Callable, Dict, List, Optional, Tuple
 from PyQt6 import QtCore, QtGui, QtSvg, QtWidgets
 
 from ..badges import Badge
+from app_ui import ui_scale
 from ..graph_model import Node
 from ..icon_pack import resolve_icon_path
 
 NODE_WIDTH = 180.0
 NODE_HEIGHT = 90.0
 NODE_RADIUS = 10.0
-RAIL_HEIGHT = 14.0
-ICON_SIZE = 12.0
-ICON_SPACING = 6.0
+RAIL_HEIGHT_BASE = 14
+ICON_SIZE_BASE = 12
+ICON_SPACING_BASE = 6
 TITLE_PADDING = 8.0
-DIFF_BADGE_SIZE = 12.0
+DIFF_BADGE_SIZE_BASE = 12
 _ICON_CACHE: Dict[Tuple[str, float], QtGui.QPixmap] = {}
 
 
@@ -131,17 +132,18 @@ class NodeItem(QtWidgets.QGraphicsItem):
         painter.drawRoundedRect(rect, NODE_RADIUS, NODE_RADIUS)
 
         rail_color = QtGui.QColor("#e9e9e9")
+        rail_height = _rail_height()
         top_rail = QtCore.QRectF(
             rect.left() + 1.0,
             rect.top() + 1.0,
             rect.width() - 2.0,
-            RAIL_HEIGHT,
+            rail_height,
         )
         bottom_rail = QtCore.QRectF(
             rect.left() + 1.0,
-            rect.bottom() - RAIL_HEIGHT - 1.0,
+            rect.bottom() - rail_height - 1.0,
             rect.width() - 2.0,
-            RAIL_HEIGHT,
+            rail_height,
         )
         painter.fillRect(top_rail, rail_color)
         painter.fillRect(bottom_rail, rail_color)
@@ -150,7 +152,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
             rect.left() + TITLE_PADDING,
             top_rail.bottom() + 6.0,
             rect.width() - 2 * TITLE_PADDING,
-            rect.height() - (2 * RAIL_HEIGHT) - 12.0,
+            rect.height() - (2 * rail_height) - 12.0,
         )
         painter.setPen(QtGui.QPen(QtGui.QColor("#222"), 1.0))
         painter.setFont(QtGui.QFont("Segoe UI", 9))
@@ -158,7 +160,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         for badge_rect, badge in self._badge_rects():
-            pixmap = _icon_pixmap(badge.key, self._icon_style, ICON_SIZE)
+            pixmap = _icon_pixmap(badge.key, self._icon_style, _icon_size())
             if pixmap is None:
                 painter.setBrush(QtGui.QColor("#666"))
                 painter.drawEllipse(badge_rect)
@@ -266,9 +268,10 @@ class NodeItem(QtWidgets.QGraphicsItem):
             return rects
         x = 10.0
         for badge in badges:
-            badge_rect = QtCore.QRectF(x, y_offset, ICON_SIZE, ICON_SIZE)
+            size = _icon_size()
+            badge_rect = QtCore.QRectF(x, y_offset, size, size)
             rects.append((badge_rect, badge))
-            x += ICON_SIZE + ICON_SPACING
+            x += size + _icon_spacing()
         return rects
 
     def _badge_at(self, pos: QtCore.QPointF) -> Optional[Badge]:
@@ -319,11 +322,12 @@ def _screen_point(event) -> QtCore.QPoint:
 
 
 def _rail_y_offset(*, top: bool) -> float:
+    rail_height = _rail_height()
     if top:
         rail_top = 1.0
     else:
-        rail_top = NODE_HEIGHT - RAIL_HEIGHT - 1.0
-    return rail_top + (RAIL_HEIGHT - ICON_SIZE) / 2.0
+        rail_top = NODE_HEIGHT - rail_height - 1.0
+    return rail_top + (rail_height - _icon_size()) / 2.0
 
 
 def _icon_pixmap(key: str, style: str, size: float) -> Optional[QtGui.QPixmap]:
@@ -365,11 +369,12 @@ def _badge_layer(key: str) -> Optional[str]:
 def _paint_diff_badge(painter: QtGui.QPainter, rect: QtCore.QRectF, state: str) -> None:
     color = QtGui.QColor("#3a7d5d") if state == "added" else QtGui.QColor("#b07d21")
     symbol = "+" if state == "added" else "Δ"
+    size = _diff_badge_size()
     badge_rect = QtCore.QRectF(
-        rect.right() - DIFF_BADGE_SIZE - 4.0,
+        rect.right() - size - 4.0,
         rect.top() + 4.0,
-        DIFF_BADGE_SIZE,
-        DIFF_BADGE_SIZE,
+        size,
+        size,
     )
     painter.setBrush(color)
     painter.setPen(QtCore.Qt.PenStyle.NoPen)
@@ -377,3 +382,24 @@ def _paint_diff_badge(painter: QtGui.QPainter, rect: QtCore.QRectF, state: str) 
     painter.setPen(QtGui.QPen(QtGui.QColor("#fff"), 1.0))
     painter.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Weight.Bold))
     painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, symbol)
+
+
+def _icon_size() -> float:
+    return float(ui_scale.scale_px(ICON_SIZE_BASE))
+
+
+def _icon_spacing() -> float:
+    return float(ui_scale.scale_px(ICON_SPACING_BASE))
+
+
+def _rail_height() -> float:
+    height = ui_scale.scale_px(RAIL_HEIGHT_BASE)
+    return float(max(height, _icon_size() + 2))
+
+
+def _diff_badge_size() -> float:
+    return float(ui_scale.scale_px(DIFF_BADGE_SIZE_BASE))
+
+
+def clear_icon_cache() -> None:
+    _ICON_CACHE.clear()

@@ -46,6 +46,9 @@ from app_ui.codesee.runtime.hooks import install_exception_hooks
 from app_ui.codesee.runtime.hub import CodeSeeRuntimeHub, get_global_hub, set_global_hub
 from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.codesee.window import CodeSeeWindow
+from app_ui import ui_scale
+from app_ui.window_state import restore_geometry as restore_window_geometry
+from app_ui.window_state import save_geometry as save_window_geometry
 from app_ui.screens.component_management import ComponentManagementScreen
 from app_ui.screens.block_catalog import BlockCatalogScreen
 from app_ui.screens.block_host import BlockHostScreen
@@ -746,6 +749,16 @@ class SettingsDialog(QtWidgets.QDialog):
         self.reduced_motion_cb = QtWidgets.QCheckBox("Enable Reduced Motion")
         layout.addWidget(self.reduced_motion_cb)
 
+        layout.addWidget(QtWidgets.QLabel("UI Scale"))
+        self.scale_combo = QtWidgets.QComboBox()
+        self.scale_combo.addItems(["80%", "90%", "100%", "110%", "125%", "150%"])
+        layout.addWidget(self.scale_combo)
+
+        layout.addWidget(QtWidgets.QLabel("Density"))
+        self.density_combo = QtWidgets.QComboBox()
+        self.density_combo.addItems(["Comfortable", "Compact"])
+        layout.addWidget(self.density_combo)
+
         layout.addWidget(QtWidgets.QLabel("Experience Profile"))
         self.profile_combo = QtWidgets.QComboBox()
         self.profile_combo.addItems(ui_config.EXPERIENCE_PROFILES)
@@ -766,6 +779,10 @@ class SettingsDialog(QtWidgets.QDialog):
         config = ui_config.load_ui_config()
         current_pack = config.get("active_pack_id", "default")
         self.reduced_motion_cb.setChecked(bool(config.get("reduced_motion", False)))
+        scale_cfg = ui_scale.load_config()
+        self.scale_combo.setCurrentText(f"{scale_cfg.scale_percent}%")
+        density_label = "Compact" if scale_cfg.density == "compact" else "Comfortable"
+        self.density_combo.setCurrentText(density_label)
         current_profile = ui_config.load_experience_profile()
         idx = self.profile_combo.findText(current_profile)
         if idx >= 0:
@@ -800,10 +817,16 @@ class SettingsDialog(QtWidgets.QDialog):
             profile = self.profile_combo.currentText()
             ui_config.save_experience_profile(profile)
 
+            scale_percent = int(self.scale_combo.currentText().replace("%", ""))
+            density = "compact" if self.density_combo.currentText().lower().startswith("compact") else "comfortable"
+            scale_cfg = ui_scale.UiScaleConfig(scale_percent=scale_percent, density=density)
+            ui_scale.save_config(scale_cfg)
+
             app = QtWidgets.QApplication.instance()
             applied = True
             if app:
                 applied = apply_ui_config_styles(app)
+                ui_scale.apply_to_app(app, scale_cfg)
 
             if applied:
                 QtWidgets.QMessageBox.information(self, "Settings", "Settings saved.")
@@ -2892,6 +2915,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._workspace_event_sub = None
 
         self._show_main_menu()
+        restore_window_geometry(self, "main")
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[name-defined]
+        save_window_geometry(self, "main")
+        super().closeEvent(event)
 
     def _open_workspace_management(self):
         self._dispose_lab_widget()
@@ -3664,6 +3692,8 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     _install_qt_message_filter()
     apply_ui_config_styles(app)
+    scale_cfg = ui_scale.load_config()
+    ui_scale.apply_to_app(app, scale_cfg)
     window = MainWindow(profile)
     window.show()
     sys.exit(app.exec())
