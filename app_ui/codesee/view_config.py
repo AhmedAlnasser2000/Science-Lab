@@ -84,6 +84,22 @@ def build_active_filter_chips(config: ViewConfig) -> list[str]:
     return chips
 
 
+def load_window_geometry(workspace_id: str) -> Optional[str]:
+    settings = _load_settings(workspace_id)
+    geometry = settings.get("codesee_window_geometry")
+    if isinstance(geometry, str) and geometry:
+        return geometry
+    return None
+
+
+def save_window_geometry(workspace_id: str, geometry: str) -> None:
+    if not geometry:
+        return
+    settings = _load_settings(workspace_id)
+    settings["codesee_window_geometry"] = geometry
+    _save_settings(workspace_id, settings)
+
+
 def load_view_config(workspace_id: str, lens_id: str) -> ViewConfig:
     settings = _load_settings(workspace_id)
     icon_style = settings.get("icon_style") or ICON_STYLE_AUTO

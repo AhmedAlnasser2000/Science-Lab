@@ -160,11 +160,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.live_toggle.toggled.connect(self._on_live_toggled)
         source_row.addWidget(self.live_toggle)
         toggle_style = _toggle_style()
-        self._only_errors_btn.setStyleSheet(toggle_style)
-        self._only_failures_btn.setStyleSheet(toggle_style)
-        self._only_expecting_btn.setStyleSheet(toggle_style)
-        self.diff_toggle.setStyleSheet(toggle_style)
-        self.live_toggle.setStyleSheet(toggle_style)
+        _apply_toggle_style(
+            [
+                self._only_errors_btn,
+                self._only_failures_btn,
+                self._only_expecting_btn,
+                self.diff_toggle,
+                self.live_toggle,
+            ],
+            toggle_style,
+        )
         self.removed_button = QtWidgets.QToolButton()
         self.removed_button.setText("Removed")
         self.removed_button.clicked.connect(self._open_removed_dialog)
@@ -864,8 +869,9 @@ def _style_from_label(label: str) -> str:
 
 def _toggle_style() -> str:
     return (
-        "QToolButton { padding: 4px 6px; }"
-        "QToolButton:checked { background: #d8e7ff; border: 1px solid #8bb0da; border-radius: 4px; }"
+        "QToolButton[codesee_toggle=\"true\"] { padding: 4px 6px; }"
+        "QToolButton[codesee_toggle=\"true\"]:checked {"
+        " background: #e6e6e6; border: 1px solid #c8c8c8; border-radius: 4px; }"
     )
 
 
@@ -875,6 +881,12 @@ def _make_toggle_button(label: str, handler: Callable[[], None]) -> QtWidgets.QT
     btn.setCheckable(True)
     btn.toggled.connect(handler)
     return btn
+
+
+def _apply_toggle_style(buttons: list[QtWidgets.QToolButton], style: str) -> None:
+    for button in buttons:
+        button.setProperty("codesee_toggle", True)
+        button.setStyleSheet(style)
 
 
 def _snapshot_label(entry: dict) -> str:
