@@ -217,6 +217,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         self.scene.set_reduced_motion(self._reduced_motion)
         self.view = GraphView(self.scene)
+        self.view.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         layout.addWidget(self.view, stretch=1)
 
         self._build_layer_menu()
@@ -869,15 +873,19 @@ def _style_from_label(label: str) -> str:
 
 def _toggle_style() -> str:
     return (
-        "QToolButton[codesee_toggle=\"true\"] { padding: 4px 6px; }"
+        "QToolButton[codesee_toggle=\"true\"] {"
+        " padding: 4px 8px; color: #f2f2f2; background: #3a3a3a;"
+        " border: 1px solid #2b2b2b; border-radius: 4px; }"
+        "QToolButton[codesee_toggle=\"true\"]:hover { background: #454545; }"
         "QToolButton[codesee_toggle=\"true\"]:checked {"
-        " background: #e6e6e6; border: 1px solid #c8c8c8; border-radius: 4px; }"
+        " background: #4a4a4a; border: 1px solid #6b6b6b; color: #fff; }"
     )
 
 
 def _make_toggle_button(label: str, handler: Callable[[], None]) -> QtWidgets.QToolButton:
     btn = QtWidgets.QToolButton()
     btn.setText(label)
+    btn.setAutoRaise(False)
     btn.setCheckable(True)
     btn.toggled.connect(handler)
     return btn

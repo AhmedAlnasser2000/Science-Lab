@@ -23,6 +23,7 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("Code See")
         self.resize(1100, 720)
+        self.setMinimumSize(900, 600)
         self._on_close = on_close
         self._workspace_info_provider = workspace_info_provider
         self._save_timer = QtCore.QTimer(self)
