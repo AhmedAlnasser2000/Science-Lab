@@ -1,0 +1,156 @@
+{
+  "format_version": 1,
+  "graph": {
+    "graph_id": "root",
+    "title": "Root",
+    "nodes": [
+      {
+        "id": "module.ui",
+        "title": "App UI",
+        "type": "module",
+        "severity_state": "normal",
+        "badges_top": [
+          "nav.stack",
+          "profile.explorer"
+        ],
+        "badges_bottom": [
+          "qstacked",
+          "screens"
+        ],
+        "subgraph_id": "module.ui"
+      },
+      {
+        "id": "module.runtime_bus",
+        "title": "Runtime Bus",
+        "type": "module",
+        "severity_state": "normal",
+        "badges_top": [
+          "pubsub",
+          "request.reply"
+        ],
+        "badges_bottom": [
+          "in.process"
+        ],
+        "subgraph_id": "module.runtime_bus"
+      },
+      {
+        "id": "module.core_center",
+        "title": "Management Core",
+        "type": "module",
+        "severity_state": "correctness",
+        "badges_top": [
+          "jobs",
+          "inventory"
+        ],
+        "badges_bottom": [
+          "policy"
+        ],
+        "subgraph_id": "module.core_center"
+      },
+      {
+        "id": "module.component_runtime",
+        "title": "Component Runtime",
+        "type": "module",
+        "severity_state": "error",
+        "badges_top": [
+          "blocks",
+          "packs"
+        ],
+        "badges_bottom": [
+          "host"
+        ],
+        "subgraph_id": "module.component_runtime"
+      },
+      {
+        "id": "module.content_system",
+        "title": "Content System",
+        "type": "module",
+        "severity_state": "normal",
+        "badges_top": [
+          "topics",
+          "assets"
+        ],
+        "badges_bottom": [
+          "status.ready"
+        ],
+        "subgraph_id": "module.content_system"
+      },
+      {
+        "id": "module.ui_system",
+        "title": "UI System",
+        "type": "module",
+        "severity_state": "normal",
+        "badges_top": [
+          "qss",
+          "packs"
+        ],
+        "badges_bottom": [
+          "themes"
+        ],
+        "subgraph_id": "module.ui_system"
+      },
+      {
+        "id": "module.kernel",
+        "title": "Kernel",
+        "type": "module",
+        "severity_state": "crash",
+        "badges_top": [
+          "dll"
+        ],
+        "badges_bottom": [
+          "gravity"
+        ],
+        "subgraph_id": "module.kernel"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge.ui.bus",
+        "src": "module.ui",
+        "dst": "module.runtime_bus",
+        "kind": "request"
+      },
+      {
+        "id": "edge.ui.content",
+        "src": "module.ui",
+        "dst": "module.content_system",
+        "kind": "dependency"
+      },
+      {
+        "id": "edge.ui.components",
+        "src": "module.ui",
+        "dst": "module.component_runtime",
+        "kind": "dependency"
+      },
+      {
+        "id": "edge.ui.ui_system",
+        "src": "module.ui",
+        "dst": "module.ui_system",
+        "kind": "dependency"
+      },
+      {
+        "id": "edge.ui.kernel",
+        "src": "module.ui",
+        "dst": "module.kernel",
+        "kind": "dependency"
+      },
+      {
+        "id": "edge.core.bus",
+        "src": "module.core_center",
+        "dst": "module.runtime_bus",
+        "kind": "pubsub"
+      },
+      {
+        "id": "edge.components.bus",
+        "src": "module.component_runtime",
+        "dst": "module.runtime_bus",
+        "kind": "pubsub"
+      }
+    ]
+  },
+  "metadata": {
+    "source": "Demo",
+    "workspace_id": "default",
+    "graph_id": "root"
+  }
+}

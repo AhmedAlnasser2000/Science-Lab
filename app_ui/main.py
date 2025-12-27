@@ -2817,6 +2817,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.codesee = CodeSeeScreen(
             on_back=self._show_main_menu,
             workspace_info_provider=self._get_workspace_info,
+            bus=APP_BUS,
+            content_adapter=self.adapter,
             workspace_selector_factory=selector_factory,
         )
         self.component_host = ComponentHostScreen(

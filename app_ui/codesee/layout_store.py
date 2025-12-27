@@ -15,9 +15,14 @@ def _normalize_workspace_id(workspace_id: str | None) -> str:
 def _layout_path(workspace_id: str | None, lens: str, graph_id: str) -> Path:
     safe_workspace = _normalize_workspace_id(workspace_id)
     safe_lens = (lens or "atlas").strip() or "atlas"
-    safe_graph = (graph_id or "root").strip() or "root"
+    safe_graph = _safe_graph_id(graph_id)
     root = Path("data") / "workspaces" / safe_workspace / "codesee" / "layouts" / safe_lens
     return root / f"{safe_graph}.json"
+
+
+def _safe_graph_id(graph_id: str | None) -> str:
+    value = str(graph_id or "").strip() or "root"
+    return value.replace(":", "_").replace("/", "_")
 
 
 def load_positions(

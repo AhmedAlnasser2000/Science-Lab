@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "graph_id": "pack:built_in",
+  "lens": "atlas",
+  "nodes": {
+    "pack:built_in": [
+      0.0,
+      0.0
+    ],
+    "block:demo.hello": [
+      260.0,
+      0.0
+    ],
+    "block:labhost:gravity": [
+      520.0,
+      0.0
+    ],
+    "block:labhost:projectile": [
+      0.0,
+      150.0
+    ],
+    "block:labhost:electric_field": [
+      260.0,
+      150.0
+    ],
+    "block:labhost:lens_ray": [
+      520.0,
+      150.0
+    ],
+    "block:labhost:vector_add": [
+      0.0,
+      300.0
+    ]
+  }
+}
