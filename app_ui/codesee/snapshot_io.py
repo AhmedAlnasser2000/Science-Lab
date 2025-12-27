@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .badges import badge_from_dict, badge_from_key, badge_to_dict
+from .expectations import check_from_dict, check_to_dict
 from . import snapshot_index
 from .graph_model import ArchitectureGraph, Edge, Node
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 def write_snapshot(graph: ArchitectureGraph, path: Path, metadata: Dict[str, Any]) -> None:
@@ -29,7 +30,7 @@ def read_snapshot(path: Path) -> ArchitectureGraph:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("snapshot payload not a dict")
-    if data.get("format_version") != FORMAT_VERSION:
+    if data.get("format_version") not in (1, FORMAT_VERSION):
         raise ValueError("unsupported snapshot format")
     graph = data.get("graph")
     if not isinstance(graph, dict):
@@ -53,6 +54,7 @@ def _node_to_dict(node: Node) -> Dict[str, Any]:
         "type": node.node_type,
         "severity_state": node.severity_state,
         "badges": [badge_to_dict(badge) for badge in node.badges],
+        "checks": [_check_to_dict(check) for check in node.checks],
         "subgraph_id": node.subgraph_id,
     }
 
@@ -85,6 +87,7 @@ def _graph_from_dict(graph: Dict[str, Any]) -> ArchitectureGraph:
                 badges=badges,
                 severity_state=_optional_str(raw.get("severity_state")),
                 subgraph_id=raw.get("subgraph_id"),
+                checks=_checks_from_raw(raw),
             )
         )
     edges = []
@@ -122,6 +125,24 @@ def _badges_from_raw(raw: Dict[str, Any]) -> list:
             if isinstance(key, str):
                 badges.append(badge_from_key(key, rail="bottom"))
     return badges
+
+
+def _checks_from_raw(raw: Dict[str, Any]) -> list:
+    checks = []
+    raw_checks = raw.get("checks")
+    if isinstance(raw_checks, list):
+        for item in raw_checks:
+            if isinstance(item, dict):
+                check = check_from_dict(item)
+                if check:
+                    checks.append(check)
+    return checks
+
+
+def _check_to_dict(check) -> Dict[str, Any]:
+    if isinstance(check, dict):
+        return check
+    return check_to_dict(check)
 
 
 def _optional_str(value: Any) -> Optional[str]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ..badges import badges_from_keys
+from ..expectations import build_check
 from ..graph_model import ArchitectureGraph, Edge, Node
 from .base import CollectorContext, CollectorResult
 from .content_collector import collect_content
@@ -16,6 +17,16 @@ def build_atlas_graph(ctx: CollectorContext) -> tuple[ArchitectureGraph, Dict[st
         title=f"Project: {ctx.workspace_id}",
         node_type="Workspace",
         badges=badges_from_keys(bottom=["workspace"]),
+        checks=[
+            build_check(
+                check_id="atlas.workspace.present",
+                node_id=f"workspace:{ctx.workspace_id}",
+                expected=True,
+                actual=True,
+                mode="exact",
+                message="Workspace root present.",
+            )
+        ],
     )
 
     results = [

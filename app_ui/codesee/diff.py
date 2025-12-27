@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple
 
 from .badges import Badge
+from .expectations import EVACheck
 from .graph_model import ArchitectureGraph, Edge, Node
 
 EdgeKey = Tuple[str, str, str]
@@ -78,6 +79,17 @@ def _badge_signature(badge: Badge) -> Tuple[str, str, str, str, str, str]:
     )
 
 
+def _check_signature(check: EVACheck) -> Tuple[str, bool, str, str, str, float]:
+    return (
+        check.check_id,
+        check.passed,
+        str(check.expected),
+        str(check.actual),
+        check.mode,
+        float(check.tolerance or 0.0),
+    )
+
+
 def _node_changed_fields(before: Node, after: Node) -> List[str]:
     changed: List[str] = []
     if before.title != after.title:
@@ -90,4 +102,8 @@ def _node_changed_fields(before: Node, after: Node) -> List[str]:
     after_badges = sorted(_badge_signature(badge) for badge in after.badges)
     if before_badges != after_badges:
         changed.append("badges")
+    before_checks = sorted(_check_signature(check) for check in before.checks)
+    after_checks = sorted(_check_signature(check) for check in after.checks)
+    if before_checks != after_checks:
+        changed.append("checks")
     return changed

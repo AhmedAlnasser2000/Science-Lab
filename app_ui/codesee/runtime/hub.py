@@ -5,7 +5,8 @@ from typing import Deque, List, Optional
 
 from PyQt6 import QtCore
 
-from .events import CodeSeeEvent
+from .events import CodeSeeEvent, EVENT_EXPECT_CHECK
+from ..expectations import EVACheck, check_to_dict
 
 
 class CodeSeeRuntimeHub(QtCore.QObject):
@@ -32,6 +33,20 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         if limit <= 0:
             return []
         return list(self._events)[-limit:]
+
+    def publish_expect_check(self, check: EVACheck) -> None:
+        severity = "failure" if not check.passed else "info"
+        event = CodeSeeEvent(
+            ts=str(check.ts),
+            kind=EVENT_EXPECT_CHECK,
+            severity=severity,
+            message=check.message,
+            node_ids=[check.node_id],
+            detail=None,
+            source="expectation",
+            payload=check_to_dict(check),
+        )
+        self.publish(event)
 
 
 _GLOBAL_HUB: Optional[CodeSeeRuntimeHub] = None

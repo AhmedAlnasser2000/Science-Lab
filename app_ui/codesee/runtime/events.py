@@ -11,6 +11,7 @@ EVENT_JOB_UPDATE = "job.update"
 EVENT_BUS_REQUEST = "bus.request"
 EVENT_BUS_REPLY = "bus.reply"
 EVENT_LOG_LINE = "log.line"
+EVENT_EXPECT_CHECK = "expect.check"
 
 
 @dataclass(frozen=True)
@@ -22,3 +23,4 @@ class CodeSeeEvent:
     node_ids: List[str] = field(default_factory=list)
     detail: Optional[str] = None
     source: Optional[str] = None
+    payload: Optional[dict] = None

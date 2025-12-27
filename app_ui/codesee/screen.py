@@ -19,9 +19,17 @@ from .collectors.atlas_builder import build_atlas_graph
 from .collectors.base import CollectorContext
 from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
 from .diff import DiffResult, NodeChange, diff_snapshots
+from .expectations import EVACheck, check_from_dict
 from .graph_model import ArchitectureGraph, Node
 from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, get_lens, get_lenses
-from .runtime.events import CodeSeeEvent, EVENT_APP_ACTIVITY, EVENT_APP_CRASH, EVENT_APP_ERROR, EVENT_JOB_UPDATE
+from .runtime.events import (
+    CodeSeeEvent,
+    EVENT_APP_ACTIVITY,
+    EVENT_APP_CRASH,
+    EVENT_APP_ERROR,
+    EVENT_EXPECT_CHECK,
+    EVENT_JOB_UPDATE,
+)
 from .runtime.hub import CodeSeeRuntimeHub
 from app_ui import ui_scale
 
@@ -85,6 +93,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._overlay_badges: Dict[str, list[Badge]] = {}
         self._overlay_limit = 8
         self._runtime_connected = False
+        self._overlay_checks: Dict[str, list[EVACheck]] = {}
 
         layout = QtWidgets.QVBoxLayout(self)
         self._root_layout = layout
@@ -137,9 +146,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._only_errors_btn = _make_toggle_button("Only errors", self._on_quick_filter_changed)
         self._only_failures_btn = _make_toggle_button("Only failures", self._on_quick_filter_changed)
         self._only_expecting_btn = _make_toggle_button("Only expecting", self._on_quick_filter_changed)
+        self._only_mismatches_btn = _make_toggle_button("Only mismatches", self._on_quick_filter_changed)
         source_row.addWidget(self._only_errors_btn)
         source_row.addWidget(self._only_failures_btn)
         source_row.addWidget(self._only_expecting_btn)
+        source_row.addWidget(self._only_mismatches_btn)
         self.capture_btn = QtWidgets.QPushButton("Capture Snapshot")
         self.capture_btn.clicked.connect(self._capture_snapshot)
         source_row.addWidget(self.capture_btn)
@@ -170,6 +181,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self._only_errors_btn,
                 self._only_failures_btn,
                 self._only_expecting_btn,
+                self._only_mismatches_btn,
                 self.diff_toggle,
                 self.live_toggle,
             ],
@@ -256,6 +268,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._live_enabled = False
         self._events_by_node.clear()
         self._overlay_badges.clear()
+        self._overlay_checks.clear()
         self._sync_style_combo()
         self._sync_view_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
@@ -350,6 +363,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         positions = layout_store.load_positions(self._workspace_id(), self._lens, self._render_graph_id)
         total_nodes = len(graph_to_render.nodes)
         overlay_graph = self._apply_runtime_overlay(graph_to_render)
+        overlay_graph = self._apply_expectation_badges(overlay_graph)
         filtered = self._filtered_graph(overlay_graph)
         shown_nodes = len(filtered.nodes)
         empty_message = None
@@ -467,6 +481,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._only_expecting_btn.blockSignals(True)
         self._only_expecting_btn.setChecked(self._view_config.quick_filters.get("only_expecting", False))
         self._only_expecting_btn.blockSignals(False)
+        self._only_mismatches_btn.blockSignals(True)
+        self._only_mismatches_btn.setChecked(self._view_config.quick_filters.get("only_mismatches", False))
+        self._only_mismatches_btn.blockSignals(False)
 
     def _sync_lens_combo(self) -> None:
         for idx in range(self.lens_combo.count()):
@@ -513,6 +530,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.quick_filters["only_errors"] = self._only_errors_btn.isChecked()
         self._view_config.quick_filters["only_failures"] = self._only_failures_btn.isChecked()
         self._view_config.quick_filters["only_expecting"] = self._only_expecting_btn.isChecked()
+        self._view_config.quick_filters["only_mismatches"] = self._only_mismatches_btn.isChecked()
         self._persist_view_config()
         self._render_current_graph()
 
@@ -575,6 +593,41 @@ class CodeSeeScreen(QtWidgets.QWidget):
                         subgraph_id=node.subgraph_id,
                         badges=merged,
                         severity_state=node.severity_state,
+                    )
+                )
+            else:
+                nodes.append(node)
+        return ArchitectureGraph(
+            graph_id=graph.graph_id,
+            title=graph.title,
+            nodes=nodes,
+            edges=graph.edges,
+        )
+
+    def _apply_expectation_badges(self, graph: ArchitectureGraph) -> ArchitectureGraph:
+        if not self._overlay_checks and not any(node.checks for node in graph.nodes):
+            return graph
+        nodes = []
+        for node in graph.nodes:
+            checks = list(node.checks)
+            overlay = self._overlay_checks.get(node.node_id, [])
+            if overlay:
+                checks.extend(overlay)
+            mismatch_badges = []
+            for check in checks:
+                if not check.passed:
+                    mismatch_badges.append(_badge_for_check(check))
+            if mismatch_badges or overlay:
+                merged_badges = list(node.badges) + mismatch_badges
+                nodes.append(
+                    Node(
+                        node_id=node.node_id,
+                        title=node.title,
+                        node_type=node.node_type,
+                        subgraph_id=node.subgraph_id,
+                        badges=merged_badges,
+                        severity_state=node.severity_state,
+                        checks=checks,
                     )
                 )
             else:
@@ -739,6 +792,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self._events_by_node[node_id] = events[-self._overlay_limit :]
             if self._live_enabled:
                 self._add_overlay_badge(node_id, event)
+                self._add_overlay_check(node_id, event)
         if self._live_enabled:
             self._render_current_graph()
             for node_id in event.node_ids or []:
@@ -753,6 +807,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
         overlay.append(badge)
         if len(overlay) > self._overlay_limit:
             self._overlay_badges[node_id] = overlay[-self._overlay_limit :]
+
+    def _add_overlay_check(self, node_id: str, event: CodeSeeEvent) -> None:
+        if event.kind != EVENT_EXPECT_CHECK or not isinstance(event.payload, dict):
+            return
+        check = check_from_dict(event.payload)
+        if not check:
+            return
+        overlay = self._overlay_checks.setdefault(node_id, [])
+        overlay.append(check)
+        if len(overlay) > self._overlay_limit:
+            self._overlay_checks[node_id] = overlay[-self._overlay_limit :]
 
     def _flash_node(self, node_id: str, event: CodeSeeEvent) -> None:
         color = _event_color(event)
@@ -938,6 +1003,9 @@ def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None
 
 
 def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:
+    if event.kind == EVENT_EXPECT_CHECK:
+        if isinstance(event.payload, dict) and not event.payload.get("passed", True):
+            return "expect.mismatch"
     if event.severity == "crash" or event.kind == EVENT_APP_CRASH:
         return "state.crash"
     if event.severity == "error" or event.kind == EVENT_APP_ERROR:
@@ -956,6 +1024,8 @@ def _event_color(event: CodeSeeEvent) -> QtGui.QColor:
         return QtGui.QColor("#111")
     if event.severity == "error":
         return QtGui.QColor("#c0392b")
+    if event.severity == "failure":
+        return QtGui.QColor("#7b3fb3")
     if event.severity == "warn":
         return QtGui.QColor("#d68910")
     return QtGui.QColor("#4c6ef5")
@@ -1000,6 +1070,9 @@ def _passes_quick_filters(node: Node, quick_filters: Dict[str, bool]) -> bool:
     if quick_filters.get("only_expecting"):
         if "expect.value" not in keys:
             return False
+    if quick_filters.get("only_mismatches"):
+        if not _node_has_mismatch(node):
+            return False
     return True
 
 
@@ -1009,6 +1082,13 @@ def _bus_nodes_present(graph: ArchitectureGraph) -> bool:
             continue
         token = f"{node.node_id} {node.title}".lower()
         if "bus" in token:
+            return True
+    return False
+
+
+def _node_has_mismatch(node: Node) -> bool:
+    for check in node.checks or []:
+        if not check.passed:
             return True
     return False
 
@@ -1075,6 +1155,14 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         events_text.setReadOnly(True)
         events_text.setPlainText(_format_events(events))
         layout.addWidget(events_text)
+
+        checks_label = QtWidgets.QLabel("Expected vs Actual")
+        checks_label.setStyleSheet("color: #444;")
+        layout.addWidget(checks_label)
+        checks_text = QtWidgets.QPlainTextEdit()
+        checks_text.setReadOnly(True)
+        checks_text.setPlainText(_format_checks(node.checks))
+        layout.addWidget(checks_text)
 
         close_row = QtWidgets.QHBoxLayout()
         close_row.addStretch()
@@ -1198,3 +1286,34 @@ def _format_events(events: list[CodeSeeEvent]) -> str:
             line = f"{line}\n  {event.detail}"
         lines.append(line)
     return "\n".join(lines)
+
+
+def _format_checks(checks: list[EVACheck], limit: int = 5) -> str:
+    if not checks:
+        return "No expectation checks."
+    recent = sorted(checks, key=lambda c: c.ts or 0.0, reverse=True)[:limit]
+    lines = []
+    for check in recent:
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(check.ts)) if check.ts else "n/a"
+        status = "PASS" if check.passed else "FAIL"
+        lines.append(f"{stamp} | {status} | {check.message}")
+        lines.append(f"  expected: {check.expected}")
+        lines.append(f"  actual: {check.actual}")
+        lines.append(f"  mode: {check.mode}")
+        if check.tolerance is not None:
+            lines.append(f"  tolerance: {check.tolerance}")
+        if check.context:
+            lines.append(f"  context: {check.context}")
+    return "\n".join(lines)
+
+
+def _badge_for_check(check: EVACheck) -> Badge:
+    return Badge(
+        key="expect.mismatch",
+        rail="bottom",
+        title="Mismatch",
+        summary=check.message or "Expected vs actual mismatch.",
+        detail=str(check.context) if check.context else None,
+        severity="failure",
+        timestamp=str(check.ts),
+    )

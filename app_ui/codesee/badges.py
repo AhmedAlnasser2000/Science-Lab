@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-SEVERITY_ORDER = ["crash", "error", "warn", "probe.fail", "expect.value", "normal"]
+SEVERITY_ORDER = ["crash", "error", "failure", "warn", "probe.fail", "expect.value", "normal"]
 
 
 @dataclass(frozen=True)
@@ -134,6 +134,8 @@ BADGE_DEFS: Dict[str, tuple[str, str, str, str]] = {
     "perf.slow": ("Slow", "Performance degraded.", "warn", "top"),
     "activity.muted": ("Muted", "Muted activity detected.", "normal", "top"),
     "expect.value": ("Expectation", "Expectation value tracked.", "expect.value", "bottom"),
+    "expect.mismatch": ("Mismatch", "Expected vs actual mismatch.", "failure", "bottom"),
+    "expect.pass": ("Expectation Pass", "Expectation satisfied.", "normal", "bottom"),
     "probe.fail": ("Probe Fail", "Probe failed.", "probe.fail", "bottom"),
     "probe.pass": ("Probe Pass", "Probe passed.", "normal", "bottom"),
 }

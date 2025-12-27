@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict
 
 from .badges import badges_from_keys
+from .expectations import build_check
 from .graph_model import ArchitectureGraph, Edge, Node
 
 
@@ -14,6 +15,16 @@ def build_demo_root_graph() -> ArchitectureGraph:
             node_type="module",
             badges=badges_from_keys(top=["state.warn"]),
             subgraph_id="module.ui",
+            checks=[
+                build_check(
+                    check_id="demo.ui.check.pass",
+                    node_id="module.ui",
+                    expected="UI ready",
+                    actual="UI ready",
+                    mode="exact",
+                    message="UI status matches expected.",
+                )
+            ],
         ),
         Node(
             node_id="module.runtime_bus",
@@ -56,6 +67,17 @@ def build_demo_root_graph() -> ArchitectureGraph:
             node_type="module",
             badges=badges_from_keys(top=["state.crash"], bottom=["probe.fail"]),
             subgraph_id="module.kernel",
+            checks=[
+                build_check(
+                    check_id="demo.kernel.mismatch",
+                    node_id="module.kernel",
+                    expected={"gravity": 9.8},
+                    actual={"gravity": 8.1},
+                    mode="tolerance",
+                    tolerance=0.1,
+                    message="Gravity constant mismatch.",
+                )
+            ],
         ),
     ]
     edges = [

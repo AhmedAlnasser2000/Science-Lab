@@ -288,7 +288,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
 
 def _severity_color(state: str) -> QtGui.QColor:
-    if state in ("probe.fail", "correctness"):
+    if state in ("probe.fail", "correctness", "failure"):
         return QtGui.QColor("#7b3fb3")
     if state == "error":
         return QtGui.QColor("#c0392b")
@@ -355,7 +355,7 @@ def _badge_layer(key: str) -> Optional[str]:
             return "health"
         if key == "state.blocked":
             return "policy"
-    if key in ("probe.fail", "probe.pass", "expect.value"):
+    if key in ("probe.fail", "probe.pass", "expect.value", "expect.mismatch", "expect.pass"):
         return "correctness"
     if key == "conn.offline":
         return "connectivity"

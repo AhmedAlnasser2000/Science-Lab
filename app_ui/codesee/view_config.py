@@ -42,6 +42,7 @@ _QUICK_FILTER_DEFAULTS = {
     "only_errors": False,
     "only_failures": False,
     "only_expecting": False,
+    "only_mismatches": False,
 }
 
 

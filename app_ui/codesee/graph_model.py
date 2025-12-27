@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from .badges import Badge, badge_from_dict, badge_from_key, sort_by_priority, severity_for_badge
+from .expectations import EVACheck, check_from_dict
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class Node:
     subgraph_id: Optional[str] = None
     badges: List[Badge] = field(default_factory=list)
     severity_state: Optional[str] = None
+    checks: List[EVACheck] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         normalized: List[Badge] = []
@@ -29,6 +31,16 @@ class Node:
                 if badge:
                     normalized.append(badge)
         object.__setattr__(self, "badges", normalized)
+
+        checks: List[EVACheck] = []
+        for entry in self.checks or []:
+            if isinstance(entry, EVACheck):
+                checks.append(entry)
+            elif isinstance(entry, dict):
+                parsed = check_from_dict(entry)
+                if parsed:
+                    checks.append(parsed)
+        object.__setattr__(self, "checks", checks)
 
     @property
     def id(self) -> str:
