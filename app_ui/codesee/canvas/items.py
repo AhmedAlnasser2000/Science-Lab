@@ -50,6 +50,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         on_layout_changed: Optional[Callable[[], None]] = None,
         on_inspect: Optional[Callable[[Node, Optional[Badge]], None]] = None,
         icon_style: str = "color",
+        show_badge_layers: Optional[Dict[str, bool]] = None,
     ) -> None:
         super().__init__()
         self.node = node
@@ -57,6 +58,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.on_layout_changed = on_layout_changed
         self.on_inspect = on_inspect
         self._icon_style = icon_style
+        self._show_badge_layers = show_badge_layers or {}
         self._edges: List[EdgeItem] = []
         self._last_badge_key: Optional[str] = None
 
@@ -78,6 +80,10 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def set_icon_style(self, style: str) -> None:
         self._icon_style = style
+        self.update()
+
+    def set_badge_layers(self, layers: Dict[str, bool]) -> None:
+        self._show_badge_layers = layers or {}
         self.update()
 
     def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
@@ -193,9 +199,17 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def _badge_rects(self) -> List[Tuple[QtCore.QRectF, Badge]]:
         rects: List[Tuple[QtCore.QRectF, Badge]] = []
-        rects.extend(self._rail_badges(self.node.badges_for_rail("top"), y_offset=_rail_y_offset(top=True)))
         rects.extend(
-            self._rail_badges(self.node.badges_for_rail("bottom"), y_offset=_rail_y_offset(top=False))
+            self._rail_badges(
+                [badge for badge in self.node.badges_for_rail("top") if self._badge_visible(badge)],
+                y_offset=_rail_y_offset(top=True),
+            )
+        )
+        rects.extend(
+            self._rail_badges(
+                [badge for badge in self.node.badges_for_rail("bottom") if self._badge_visible(badge)],
+                y_offset=_rail_y_offset(top=False),
+            )
         )
         return rects
 
@@ -215,6 +229,12 @@ class NodeItem(QtWidgets.QGraphicsItem):
             if rect.contains(pos):
                 return badge
         return None
+
+    def _badge_visible(self, badge: Badge) -> bool:
+        layer = _badge_layer(badge.key)
+        if not layer:
+            return True
+        return self._show_badge_layers.get(layer, True)
 
 
 def _severity_color(state: str) -> QtGui.QColor:
@@ -272,3 +292,20 @@ def _icon_pixmap(key: str, style: str, size: float) -> Optional[QtGui.QPixmap]:
     painter.end()
     _ICON_CACHE[cache_key] = pixmap
     return pixmap
+
+
+def _badge_layer(key: str) -> Optional[str]:
+    if key.startswith("state."):
+        if key in ("state.crash", "state.error", "state.warn"):
+            return "health"
+        if key == "state.blocked":
+            return "policy"
+    if key in ("probe.fail", "probe.pass", "expect.value"):
+        return "correctness"
+    if key == "conn.offline":
+        return "connectivity"
+    if key == "perf.slow":
+        return "perf"
+    if key == "activity.muted":
+        return "activity"
+    return None

@@ -4,13 +4,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
-from . import icon_pack, layout_store, snapshot_io
+from . import icon_pack, layout_store, snapshot_io, view_config
 from .badges import Badge, sort_by_priority
 from .canvas.scene import GraphScene
 from .canvas.view import GraphView
@@ -18,8 +18,9 @@ from .collectors.atlas_builder import build_atlas_graph
 from .collectors.base import CollectorContext
 from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
 from .graph_model import ArchitectureGraph, Node
+from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, get_lens, get_lenses
 
-DEFAULT_LENS = "atlas"
+DEFAULT_LENS = LENS_ATLAS
 SOURCE_DEMO = "Demo"
 SOURCE_ATLAS = "Atlas"
 SOURCE_SNAPSHOT = "Snapshot (Latest)"
@@ -45,9 +46,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._workspace_info_provider = workspace_info_provider
         self._bus = bus
         self._content_adapter = content_adapter
-        self._lens = DEFAULT_LENS
+        self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
         self._reduced_motion = ui_config.get_reduced_motion()
-        self._icon_style = icon_pack.load_style(self._workspace_id())
+        self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
+        self._icon_style = self._view_config.icon_style
 
         self._demo_root = build_demo_root_graph()
         self._demo_subgraphs = build_demo_subgraphs()
@@ -75,17 +77,44 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.breadcrumb_layout = QtWidgets.QHBoxLayout(self.breadcrumb_container)
         self.breadcrumb_layout.setContentsMargins(0, 0, 0, 0)
         breadcrumb_row.addWidget(self.breadcrumb_container, stretch=1)
-        lens_label = QtWidgets.QLabel(f"Lens: {self._lens}")
-        lens_label.setStyleSheet("color: #555;")
-        breadcrumb_row.addWidget(lens_label)
+        self.lens_label = QtWidgets.QLabel("")
+        self.lens_label.setStyleSheet("color: #555;")
+        breadcrumb_row.addWidget(self.lens_label)
         layout.addLayout(breadcrumb_row)
 
         source_row = QtWidgets.QHBoxLayout()
+        source_row.addWidget(QtWidgets.QLabel("Lens:"))
+        self.lens_combo = QtWidgets.QComboBox()
+        self._lens_map = get_lenses()
+        for lens_id in [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS]:
+            lens = self._lens_map.get(lens_id)
+            if lens:
+                self.lens_combo.addItem(lens.title, lens_id)
+        self.lens_combo.currentIndexChanged.connect(self._on_lens_changed)
+        source_row.addWidget(self.lens_combo)
         source_row.addWidget(QtWidgets.QLabel("Source:"))
         self.source_combo = QtWidgets.QComboBox()
         self.source_combo.addItems([SOURCE_DEMO, SOURCE_ATLAS, SOURCE_SNAPSHOT])
         self.source_combo.currentTextChanged.connect(self._on_source_changed)
         source_row.addWidget(self.source_combo)
+        self.layers_button = QtWidgets.QToolButton()
+        self.layers_button.setText("Layers")
+        self.layers_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.layers_menu = QtWidgets.QMenu(self.layers_button)
+        self.layers_button.setMenu(self.layers_menu)
+        source_row.addWidget(self.layers_button)
+        self.badges_button = QtWidgets.QToolButton()
+        self.badges_button.setText("Badges")
+        self.badges_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.badges_menu = QtWidgets.QMenu(self.badges_button)
+        self.badges_button.setMenu(self.badges_menu)
+        source_row.addWidget(self.badges_button)
+        self._only_errors_btn = _make_toggle_button("Only errors", self._on_quick_filter_changed)
+        self._only_failures_btn = _make_toggle_button("Only failures", self._on_quick_filter_changed)
+        self._only_expecting_btn = _make_toggle_button("Only expecting", self._on_quick_filter_changed)
+        source_row.addWidget(self._only_errors_btn)
+        source_row.addWidget(self._only_failures_btn)
+        source_row.addWidget(self._only_expecting_btn)
         self.capture_btn = QtWidgets.QPushButton("Capture Snapshot")
         self.capture_btn.clicked.connect(self._capture_snapshot)
         source_row.addWidget(self.capture_btn)
@@ -113,7 +142,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.view = GraphView(self.scene)
         layout.addWidget(self.view, stretch=1)
 
+        self._build_layer_menu()
+        self._build_badge_menu()
         self._sync_style_combo()
+        self._sync_view_controls()
         self._update_action_state()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
 
@@ -124,9 +156,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._set_graph(self._active_root.graph_id)
 
     def on_workspace_changed(self) -> None:
-        self._icon_style = icon_pack.load_style(self._workspace_id())
+        self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
+        self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
+        self._icon_style = self._view_config.icon_style
         self._sync_style_combo()
+        self._sync_view_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
+        self.scene.set_badge_layers(self._view_config.show_badge_layers)
         if self._source == SOURCE_ATLAS:
             self._build_atlas()
             return
@@ -185,18 +221,35 @@ class CodeSeeScreen(QtWidgets.QWidget):
         graph = self._graph_for_id(graph_id)
         if not graph:
             return
-        positions = layout_store.load_positions(self._workspace_id(), self._lens, graph_id)
-        self.scene.build_graph(graph, positions)
-        self.scene.set_icon_style(self._resolved_icon_style())
         self._current_graph_id = graph_id
         self._current_graph = graph
         self._refresh_breadcrumb()
+        self._render_current_graph()
 
     def _save_layout(self) -> None:
         if not self._current_graph_id:
             return
         positions = self.scene.node_positions()
         layout_store.save_positions(self._workspace_id(), self._lens, self._current_graph_id, positions)
+
+    def _render_current_graph(self) -> None:
+        if not self._current_graph_id or not self._current_graph:
+            return
+        positions = layout_store.load_positions(self._workspace_id(), self._lens, self._current_graph_id)
+        filtered = self._filtered_graph(self._current_graph)
+        empty_message = None
+        if self._lens == LENS_BUS and not _bus_nodes_present(self._current_graph):
+            empty_message = "No bus nodes found for this graph."
+            filtered = ArchitectureGraph(
+                graph_id=filtered.graph_id,
+                title=filtered.title,
+                nodes=[],
+                edges=[],
+            )
+        self.scene.set_empty_message(empty_message)
+        self.scene.build_graph(filtered, positions)
+        self.scene.set_icon_style(self._resolved_icon_style())
+        self.scene.set_badge_layers(self._view_config.show_badge_layers)
 
     def _refresh_breadcrumb(self) -> None:
         while self.breadcrumb_layout.count():
@@ -215,6 +268,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 sep.setStyleSheet("color: #666;")
                 self.breadcrumb_layout.addWidget(sep)
         self.back_btn.setEnabled(len(self._graph_stack) > 1)
+        lens_title = self._lens_map.get(self._lens).title if self._lens in self._lens_map else self._lens
+        self.lens_label.setText(f"Lens: {lens_title}")
 
     def _jump_to_index(self, index: int) -> None:
         if index < 0 or index >= len(self._graph_stack):
@@ -253,6 +308,131 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _update_action_state(self) -> None:
         self.capture_btn.setEnabled(self._source in (SOURCE_DEMO, SOURCE_ATLAS))
 
+    def _build_layer_menu(self) -> None:
+        self._category_actions: Dict[str, QtGui.QAction] = {}
+        self.layers_menu.clear()
+        for category in _category_keys():
+            action = QtGui.QAction(category, self.layers_menu)
+            action.setCheckable(True)
+            action.toggled.connect(self._on_category_toggled)
+            self.layers_menu.addAction(action)
+            self._category_actions[category] = action
+
+    def _build_badge_menu(self) -> None:
+        self._badge_actions: Dict[str, QtGui.QAction] = {}
+        self.badges_menu.clear()
+        for layer_id, label in _badge_layer_labels().items():
+            action = QtGui.QAction(label, self.badges_menu)
+            action.setCheckable(True)
+            action.toggled.connect(self._on_badge_layer_toggled)
+            self.badges_menu.addAction(action)
+            self._badge_actions[layer_id] = action
+
+    def _sync_view_controls(self) -> None:
+        self._sync_lens_combo()
+        for category, action in self._category_actions.items():
+            action.blockSignals(True)
+            action.setChecked(self._view_config.show_categories.get(category, True))
+            action.blockSignals(False)
+        for layer_id, action in self._badge_actions.items():
+            action.blockSignals(True)
+            action.setChecked(self._view_config.show_badge_layers.get(layer_id, True))
+            action.blockSignals(False)
+        self._only_errors_btn.blockSignals(True)
+        self._only_errors_btn.setChecked(self._view_config.quick_filters.get("only_errors", False))
+        self._only_errors_btn.blockSignals(False)
+        self._only_failures_btn.blockSignals(True)
+        self._only_failures_btn.setChecked(self._view_config.quick_filters.get("only_failures", False))
+        self._only_failures_btn.blockSignals(False)
+        self._only_expecting_btn.blockSignals(True)
+        self._only_expecting_btn.setChecked(self._view_config.quick_filters.get("only_expecting", False))
+        self._only_expecting_btn.blockSignals(False)
+
+    def _sync_lens_combo(self) -> None:
+        for idx in range(self.lens_combo.count()):
+            lens_id = self.lens_combo.itemData(idx)
+            if lens_id == self._lens:
+                self.lens_combo.blockSignals(True)
+                self.lens_combo.setCurrentIndex(idx)
+                self.lens_combo.blockSignals(False)
+                return
+
+    def _on_lens_changed(self, index: int) -> None:
+        lens_id = self.lens_combo.itemData(index)
+        if not lens_id or lens_id == self._lens:
+            return
+        self._save_layout()
+        view_config.save_view_config(
+            self._workspace_id(),
+            self._view_config,
+            last_lens_id=str(lens_id),
+            icon_style=self._icon_style,
+        )
+        self._lens = str(lens_id)
+        self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
+        self._icon_style = self._view_config.icon_style
+        self._sync_style_combo()
+        self._sync_view_controls()
+        self._render_current_graph()
+        self._refresh_breadcrumb()
+
+    def _on_category_toggled(self, _checked: bool) -> None:
+        for category, action in self._category_actions.items():
+            self._view_config.show_categories[category] = action.isChecked()
+        self._persist_view_config()
+        self._render_current_graph()
+
+    def _on_badge_layer_toggled(self, _checked: bool) -> None:
+        for layer_id, action in self._badge_actions.items():
+            self._view_config.show_badge_layers[layer_id] = action.isChecked()
+        self._persist_view_config()
+        self.scene.set_badge_layers(self._view_config.show_badge_layers)
+        self.scene.update()
+
+    def _on_quick_filter_changed(self) -> None:
+        self._view_config.quick_filters["only_errors"] = self._only_errors_btn.isChecked()
+        self._view_config.quick_filters["only_failures"] = self._only_failures_btn.isChecked()
+        self._view_config.quick_filters["only_expecting"] = self._only_expecting_btn.isChecked()
+        self._persist_view_config()
+        self._render_current_graph()
+
+    def _persist_view_config(self) -> None:
+        view_config.save_view_config(
+            self._workspace_id(),
+            self._view_config,
+            last_lens_id=self._lens,
+            icon_style=self._icon_style,
+        )
+
+    def _filtered_graph(self, graph: ArchitectureGraph) -> ArchitectureGraph:
+        lens = get_lens(self._lens)
+        nodes = []
+        node_map: Dict[str, Node] = {}
+        for node in graph.nodes:
+            if not lens.node_predicate(node):
+                continue
+            if not _category_visible(node, self._view_config.show_categories):
+                continue
+            if not _passes_quick_filters(node, self._view_config.quick_filters):
+                continue
+            node_map[node.node_id] = node
+            nodes.append(node)
+        edges = []
+        for edge in graph.edges:
+            src = node_map.get(edge.src_node_id)
+            dst = node_map.get(edge.dst_node_id)
+            if not src or not dst:
+                continue
+            if not lens.edge_predicate(edge, src, dst):
+                continue
+            edges.append(edge)
+        return ArchitectureGraph(
+            graph_id=graph.graph_id,
+            title=graph.title,
+            nodes=nodes,
+            edges=edges,
+        )
+
     def _resolved_icon_style(self) -> str:
         return icon_pack.resolve_style(self._icon_style, self._reduced_motion)
 
@@ -265,7 +445,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _on_icon_style_changed(self, value: str) -> None:
         style = _style_from_label(value)
         self._icon_style = style
+        self._view_config.icon_style = style
         icon_pack.save_style(self._workspace_id(), style)
+        self._persist_view_config()
         self.scene.set_icon_style(self._resolved_icon_style())
 
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
@@ -344,6 +526,66 @@ def _style_from_label(label: str) -> str:
         if value == label:
             return style
     return icon_pack.ICON_STYLE_AUTO
+
+
+def _make_toggle_button(label: str, handler: Callable[[], None]) -> QtWidgets.QToolButton:
+    btn = QtWidgets.QToolButton()
+    btn.setText(label)
+    btn.setCheckable(True)
+    btn.toggled.connect(handler)
+    return btn
+
+
+def _category_keys() -> list[str]:
+    return ["Workspace", "Pack", "Block", "Topic", "Unit", "Lesson", "Activity", "System"]
+
+
+def _badge_layer_labels() -> Dict[str, str]:
+    return {
+        "health": "Health",
+        "correctness": "Correctness",
+        "connectivity": "Connectivity",
+        "policy": "Policy",
+        "perf": "Performance",
+        "activity": "Activity",
+    }
+
+
+def _category_visible(node: Node, categories: Dict[str, bool]) -> bool:
+    node_type = (node.node_type or "").strip()
+    if node_type in categories:
+        return categories.get(node_type, True)
+    return True
+
+
+def _passes_quick_filters(node: Node, quick_filters: Dict[str, bool]) -> bool:
+    if not any(quick_filters.values()):
+        return True
+    badges = node.badges or []
+    keys = {badge.key for badge in badges}
+    severity = node.effective_severity()
+    if quick_filters.get("only_errors"):
+        has_error = any(key.startswith("state.error") for key in keys) or severity == "error"
+        if not has_error:
+            return False
+    if quick_filters.get("only_failures"):
+        has_failure = "probe.fail" in keys or severity in ("probe.fail", "correctness", "failure")
+        if not has_failure:
+            return False
+    if quick_filters.get("only_expecting"):
+        if "expect.value" not in keys:
+            return False
+    return True
+
+
+def _bus_nodes_present(graph: ArchitectureGraph) -> bool:
+    for node in graph.nodes:
+        if node.node_type != "System":
+            continue
+        token = f"{node.node_id} {node.title}".lower()
+        if "bus" in token:
+            return True
+    return False
 
 
 class CodeSeeInspectorDialog(QtWidgets.QDialog):

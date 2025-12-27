@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Optional, Tuple
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..graph_model import ArchitectureGraph
 from .items import EdgeItem, NodeItem, NODE_HEIGHT, NODE_WIDTH
@@ -22,6 +22,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self.on_layout_changed = on_layout_changed
         self.on_inspect = on_inspect
         self._icon_style = icon_style
+        self._badge_layers: Dict[str, bool] = {}
+        self._empty_message: Optional[str] = None
+        self._empty_item: Optional[QtWidgets.QGraphicsTextItem] = None
         self._nodes: Dict[str, NodeItem] = {}
         self._edges: list[EdgeItem] = []
         self.setSceneRect(-5000.0, -5000.0, 10000.0, 10000.0)
@@ -30,6 +33,15 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self.clear()
         self._nodes = {}
         self._edges = []
+        self._empty_item = None
+
+        if not graph.nodes and self._empty_message:
+            self._empty_item = QtWidgets.QGraphicsTextItem(self._empty_message)
+            self._empty_item.setDefaultTextColor(QtGui.QColor("#666"))
+            self._empty_item.setFont(QtGui.QFont("Segoe UI", 10))
+            self._empty_item.setPos(-220.0, -20.0)
+            self.addItem(self._empty_item)
+            return
 
         for idx, node in enumerate(graph.nodes):
             item = NodeItem(
@@ -38,6 +50,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 on_layout_changed=self.on_layout_changed,
                 on_inspect=self.on_inspect,
                 icon_style=self._icon_style,
+                show_badge_layers=self._badge_layers,
             )
             self.addItem(item)
             pos = positions.get(node.node_id)
@@ -68,6 +81,15 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for item in self._nodes.values():
             item.set_icon_style(style)
         self.update()
+
+    def set_badge_layers(self, layers: Dict[str, bool]) -> None:
+        self._badge_layers = layers or {}
+        for item in self._nodes.values():
+            item.set_badge_layers(self._badge_layers)
+        self.update()
+
+    def set_empty_message(self, message: Optional[str]) -> None:
+        self._empty_message = message
 
     def node_positions(self) -> Dict[str, Tuple[float, float]]:
         positions: Dict[str, Tuple[float, float]] = {}
