@@ -55,6 +55,35 @@ def default_view_config(lens_id: str, *, icon_style: str = ICON_STYLE_AUTO) -> V
     )
 
 
+def reset_to_defaults(lens_id: str, *, icon_style: str = ICON_STYLE_AUTO) -> ViewConfig:
+    return default_view_config(lens_id, icon_style=icon_style)
+
+
+def is_filtered(config: ViewConfig) -> bool:
+    if any(not value for value in config.show_categories.values()):
+        return True
+    if any(not value for value in config.show_badge_layers.values()):
+        return True
+    if any(config.quick_filters.values()):
+        return True
+    return False
+
+
+def build_active_filter_chips(config: ViewConfig) -> list[str]:
+    chips: list[str] = []
+    for key, value in config.quick_filters.items():
+        if value:
+            label = key.replace("_", " ").title()
+            chips.append(label)
+    for category, value in config.show_categories.items():
+        if not value:
+            chips.append(f"Hide {category}")
+    for layer, value in config.show_badge_layers.items():
+        if not value:
+            chips.append(f"Hide {layer.title()} Badges")
+    return chips
+
+
 def load_view_config(workspace_id: str, lens_id: str) -> ViewConfig:
     settings = _load_settings(workspace_id)
     icon_style = settings.get("icon_style") or ICON_STYLE_AUTO

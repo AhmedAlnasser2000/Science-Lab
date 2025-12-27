@@ -65,6 +65,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._diff_state = diff_state
         self._edges: List[EdgeItem] = []
         self._last_badge_key: Optional[str] = None
+        self._highlight_strength = 0.0
+        self._highlight_color = QtGui.QColor("#4c6ef5")
+        self._highlight_token = 0
 
         self.setFlags(
             QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -92,6 +95,32 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def set_diff_state(self, diff_state: Optional[str]) -> None:
         self._diff_state = diff_state
+        self.update()
+
+    def flash(self, color: Optional[QtGui.QColor], *, reduced_motion: bool) -> None:
+        if color is not None:
+            self._highlight_color = color
+        self._highlight_token += 1
+        token = self._highlight_token
+        if reduced_motion:
+            self._highlight_strength = 1.0
+            self.update()
+            QtCore.QTimer.singleShot(500, lambda: self._clear_highlight(token))
+            return
+        steps = [(0, 1.0), (200, 0.7), (400, 0.3), (650, 0.0)]
+        for delay, strength in steps:
+            QtCore.QTimer.singleShot(delay, lambda s=strength, t=token: self._set_highlight(t, s))
+
+    def _set_highlight(self, token: int, strength: float) -> None:
+        if token != self._highlight_token:
+            return
+        self._highlight_strength = strength
+        self.update()
+
+    def _clear_highlight(self, token: int) -> None:
+        if token != self._highlight_token:
+            return
+        self._highlight_strength = 0.0
         self.update()
 
     def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
@@ -143,6 +172,13 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
         if self._diff_state:
             _paint_diff_badge(painter, rect, self._diff_state)
+
+        if self._highlight_strength > 0.0:
+            color = QtGui.QColor(self._highlight_color)
+            color.setAlphaF(min(1.0, self._highlight_strength))
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.setPen(QtGui.QPen(color, 3.0))
+            painter.drawRoundedRect(rect.adjusted(1.0, 1.0, -1.0, -1.0), NODE_RADIUS, NODE_RADIUS)
 
     def hoverMoveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
         badge = self._badge_at(event.pos())

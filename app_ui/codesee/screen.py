@@ -11,7 +11,7 @@ from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
 from . import icon_pack, layout_store, snapshot_index, snapshot_io, view_config
-from .badges import Badge, sort_by_priority
+from .badges import Badge, badge_from_key, sort_by_priority
 from .canvas.scene import GraphScene
 from .canvas.view import GraphView
 from .collectors.atlas_builder import build_atlas_graph
@@ -20,6 +20,8 @@ from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
 from .diff import DiffResult, NodeChange, diff_snapshots
 from .graph_model import ArchitectureGraph, Node
 from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, get_lens, get_lenses
+from .runtime.events import CodeSeeEvent, EVENT_APP_ACTIVITY, EVENT_APP_CRASH, EVENT_APP_ERROR, EVENT_JOB_UPDATE
+from .runtime.hub import CodeSeeRuntimeHub
 
 DEFAULT_LENS = LENS_ATLAS
 SOURCE_DEMO = "Demo"
@@ -41,12 +43,18 @@ class CodeSeeScreen(QtWidgets.QWidget):
         bus=None,
         content_adapter=None,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+        runtime_hub: Optional[CodeSeeRuntimeHub] = None,
+        on_open_window: Optional[Callable[[], None]] = None,
+        allow_detach: bool = True,
     ) -> None:
         super().__init__()
         self.on_back = on_back
         self._workspace_info_provider = workspace_info_provider
         self._bus = bus
         self._content_adapter = content_adapter
+        self._runtime_hub = runtime_hub
+        self._on_open_window = on_open_window
+        self._allow_detach = allow_detach
         self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
         self._reduced_motion = ui_config.get_reduced_motion()
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
@@ -70,6 +78,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diff_result: Optional[DiffResult] = None
         self._diff_baseline_graph: Optional[ArchitectureGraph] = None
         self._diff_compare_graph: Optional[ArchitectureGraph] = None
+        self._live_enabled = False
+        self._events_by_node: Dict[str, list[CodeSeeEvent]] = {}
+        self._overlay_badges: Dict[str, list[Badge]] = {}
+        self._overlay_limit = 8
+        self._runtime_connected = False
 
         layout = QtWidgets.QVBoxLayout(self)
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -141,10 +154,27 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.diff_toggle.setCheckable(True)
         self.diff_toggle.toggled.connect(self._on_diff_toggled)
         source_row.addWidget(self.diff_toggle)
+        self.live_toggle = QtWidgets.QToolButton()
+        self.live_toggle.setText("Live")
+        self.live_toggle.setCheckable(True)
+        self.live_toggle.toggled.connect(self._on_live_toggled)
+        source_row.addWidget(self.live_toggle)
+        toggle_style = _toggle_style()
+        self._only_errors_btn.setStyleSheet(toggle_style)
+        self._only_failures_btn.setStyleSheet(toggle_style)
+        self._only_expecting_btn.setStyleSheet(toggle_style)
+        self.diff_toggle.setStyleSheet(toggle_style)
+        self.live_toggle.setStyleSheet(toggle_style)
         self.removed_button = QtWidgets.QToolButton()
         self.removed_button.setText("Removed")
         self.removed_button.clicked.connect(self._open_removed_dialog)
         source_row.addWidget(self.removed_button)
+        self.open_window_btn = QtWidgets.QToolButton()
+        self.open_window_btn.setText("Open in Window")
+        self.open_window_btn.clicked.connect(self._open_in_window)
+        if not self._allow_detach or not self._on_open_window:
+            self.open_window_btn.setVisible(False)
+        source_row.addWidget(self.open_window_btn)
         source_row.addWidget(QtWidgets.QLabel("Icon Style:"))
         self.style_combo = QtWidgets.QComboBox()
         self.style_combo.addItems(list(ICON_STYLE_LABELS.values()))
@@ -152,6 +182,23 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addWidget(self.style_combo)
         source_row.addStretch()
         layout.addLayout(source_row)
+
+        self.filter_status_row = QtWidgets.QWidget()
+        status_layout = QtWidgets.QHBoxLayout(self.filter_status_row)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        self.filter_status_label = QtWidgets.QLabel("")
+        self.filter_status_label.setStyleSheet("color: #555;")
+        status_layout.addWidget(self.filter_status_label)
+        self.filter_chips_container = QtWidgets.QWidget()
+        self.filter_chips_layout = QtWidgets.QHBoxLayout(self.filter_chips_container)
+        self.filter_chips_layout.setContentsMargins(0, 0, 0, 0)
+        self.filter_chips_layout.setSpacing(6)
+        status_layout.addWidget(self.filter_chips_container, stretch=1)
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear all")
+        self.clear_filters_btn.clicked.connect(self._clear_all_filters)
+        status_layout.addWidget(self.clear_filters_btn)
+        self.filter_status_row.setVisible(False)
+        layout.addWidget(self.filter_status_row)
 
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setStyleSheet("color: #555;")
@@ -163,6 +210,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             on_inspect=self._inspect_node,
             icon_style=self._resolved_icon_style(),
         )
+        self.scene.set_reduced_motion(self._reduced_motion)
         self.view = GraphView(self.scene)
         layout.addWidget(self.view, stretch=1)
 
@@ -188,6 +236,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diff_result = None
         self._diff_baseline_graph = None
         self._diff_compare_graph = None
+        self._live_enabled = False
+        self._events_by_node.clear()
+        self._overlay_badges.clear()
         self._sync_style_combo()
         self._sync_view_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
@@ -196,6 +247,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.diff_toggle.blockSignals(True)
         self.diff_toggle.setChecked(False)
         self.diff_toggle.blockSignals(False)
+        self.live_toggle.blockSignals(True)
+        self.live_toggle.setChecked(False)
+        self.live_toggle.blockSignals(False)
         self._update_action_state()
         if self._source == SOURCE_ATLAS:
             self._build_atlas()
@@ -214,6 +268,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def set_reduced_motion(self, value: bool) -> None:
         self._reduced_motion = bool(value)
         self.scene.set_icon_style(self._resolved_icon_style())
+        self.scene.set_reduced_motion(self._reduced_motion)
 
     def _handle_back(self) -> None:
         self._save_layout()
@@ -276,7 +331,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
             diff_result = self._diff_result
         self._render_graph_id = graph_to_render.graph_id
         positions = layout_store.load_positions(self._workspace_id(), self._lens, self._render_graph_id)
-        filtered = self._filtered_graph(graph_to_render)
+        total_nodes = len(graph_to_render.nodes)
+        overlay_graph = self._apply_runtime_overlay(graph_to_render)
+        filtered = self._filtered_graph(overlay_graph)
+        shown_nodes = len(filtered.nodes)
         empty_message = None
         if self._lens == LENS_BUS and not _bus_nodes_present(graph_to_render):
             empty_message = "No bus nodes found for this graph."
@@ -286,6 +344,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 nodes=[],
                 edges=[],
             )
+        if empty_message is None and shown_nodes == 0 and self._filters_active():
+            empty_message = "No nodes match the current filters."
+        self._update_filter_status(total_nodes, shown_nodes)
         self.scene.set_empty_message(empty_message)
         self.scene.build_graph(filtered, positions, diff_result=diff_result)
         self.scene.set_icon_style(self._resolved_icon_style())
@@ -348,6 +409,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _update_action_state(self) -> None:
         self.capture_btn.setEnabled(self._source in (SOURCE_DEMO, SOURCE_ATLAS))
         self.removed_button.setEnabled(self._diff_mode and self._diff_result is not None)
+        self.open_window_btn.setEnabled(bool(self._allow_detach and self._on_open_window))
 
     def _build_layer_menu(self) -> None:
         self._category_actions: Dict[str, QtGui.QAction] = {}
@@ -445,6 +507,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
             icon_style=self._icon_style,
         )
 
+    def _clear_all_filters(self) -> None:
+        self._view_config = view_config.reset_to_defaults(self._lens, icon_style=self._icon_style)
+        self._sync_view_controls()
+        self._persist_view_config()
+        self._render_current_graph()
+
     def _filtered_graph(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         lens = get_lens(self._lens)
         nodes = []
@@ -473,6 +541,69 @@ class CodeSeeScreen(QtWidgets.QWidget):
             nodes=nodes,
             edges=edges,
         )
+
+    def _apply_runtime_overlay(self, graph: ArchitectureGraph) -> ArchitectureGraph:
+        if not self._live_enabled or not self._overlay_badges:
+            return graph
+        nodes = []
+        for node in graph.nodes:
+            overlay = self._overlay_badges.get(node.node_id)
+            if overlay:
+                merged = list(node.badges) + list(overlay)
+                nodes.append(
+                    Node(
+                        node_id=node.node_id,
+                        title=node.title,
+                        node_type=node.node_type,
+                        subgraph_id=node.subgraph_id,
+                        badges=merged,
+                        severity_state=node.severity_state,
+                    )
+                )
+            else:
+                nodes.append(node)
+        return ArchitectureGraph(
+            graph_id=graph.graph_id,
+            title=graph.title,
+            nodes=nodes,
+            edges=graph.edges,
+        )
+
+    def _filters_active(self) -> bool:
+        if view_config.is_filtered(self._view_config):
+            return True
+        if self._lens != DEFAULT_LENS:
+            return True
+        if self._diff_mode:
+            return True
+        return False
+
+    def _update_filter_status(self, total: int, shown: int) -> None:
+        active = self._filters_active()
+        self.filter_status_row.setVisible(active)
+        if not active:
+            return
+        self.filter_status_label.setText(f"Showing {shown} / {total} nodes")
+        chips = view_config.build_active_filter_chips(self._view_config)
+        lens_title = self._lens_map.get(self._lens).title if self._lens in self._lens_map else self._lens
+        chips.insert(0, f"Lens: {lens_title}")
+        if self._diff_mode:
+            chips.append("Diff Mode")
+        self._set_filter_chips(chips)
+
+    def _set_filter_chips(self, chips: list[str]) -> None:
+        while self.filter_chips_layout.count():
+            item = self.filter_chips_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for chip in chips:
+            label = QtWidgets.QLabel(chip)
+            label.setStyleSheet(
+                "background: #f0f0f0; border: 1px solid #ddd; border-radius: 8px; padding: 2px 6px; color: #333;"
+            )
+            self.filter_chips_layout.addWidget(label)
+        self.filter_chips_layout.addStretch()
 
     def _refresh_snapshot_history(self) -> None:
         self._snapshot_entries = snapshot_index.list_snapshots_sorted(self._workspace_id())
@@ -518,6 +649,25 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_action_state()
         self._render_current_graph()
 
+    def _on_live_toggled(self, checked: bool) -> None:
+        self._live_enabled = checked
+        if self._runtime_hub:
+            if checked and not self._runtime_connected:
+                self._runtime_hub.event_emitted.connect(self._on_runtime_event)
+                self._runtime_connected = True
+            elif not checked and self._runtime_connected:
+                try:
+                    self._runtime_hub.event_emitted.disconnect(self._on_runtime_event)
+                except Exception:
+                    pass
+                self._runtime_connected = False
+        self._update_action_state()
+        self._render_current_graph()
+
+    def _open_in_window(self) -> None:
+        if self._on_open_window:
+            self._on_open_window()
+
     def _update_diff_result(self) -> None:
         baseline_path = self.baseline_combo.currentData()
         compare_path = self.compare_combo.currentData()
@@ -547,6 +697,33 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         self.status_label.setText(summary)
         self._update_action_state()
+
+    def _on_runtime_event(self, event: CodeSeeEvent) -> None:
+        for node_id in event.node_ids or []:
+            events = self._events_by_node.setdefault(node_id, [])
+            events.append(event)
+            if len(events) > self._overlay_limit:
+                self._events_by_node[node_id] = events[-self._overlay_limit :]
+            if self._live_enabled:
+                self._add_overlay_badge(node_id, event)
+        if self._live_enabled:
+            self._render_current_graph()
+            for node_id in event.node_ids or []:
+                self._flash_node(node_id, event)
+
+    def _add_overlay_badge(self, node_id: str, event: CodeSeeEvent) -> None:
+        key = _badge_key_for_event(event)
+        if not key:
+            return
+        badge = badge_from_key(key, detail=event.message, timestamp=event.ts)
+        overlay = self._overlay_badges.setdefault(node_id, [])
+        overlay.append(badge)
+        if len(overlay) > self._overlay_limit:
+            self._overlay_badges[node_id] = overlay[-self._overlay_limit :]
+
+    def _flash_node(self, node_id: str, event: CodeSeeEvent) -> None:
+        color = _event_color(event)
+        self.scene.flash_node(node_id, color)
 
     def _load_snapshot_by_path(self, path_value: str) -> Optional[ArchitectureGraph]:
         try:
@@ -591,7 +768,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
             elif node.node_id in self._diff_result.nodes_changed:
                 diff_state = "changed"
                 diff_change = self._diff_result.node_change_details.get(node.node_id)
-        dialog = CodeSeeInspectorDialog(node, graph, badge, diff_state, diff_change, parent=self)
+        events = []
+        if self._runtime_hub:
+            events = self._runtime_hub.query(node.node_id, limit=20)
+        elif node.node_id in self._events_by_node:
+            events = list(self._events_by_node[node.node_id])
+        dialog = CodeSeeInspectorDialog(node, graph, badge, diff_state, diff_change, events, parent=self)
         dialog.exec()
 
     def _build_atlas(self) -> None:
@@ -640,6 +822,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
         snapshot_io.write_snapshot(self._current_graph, path, metadata)
         self.status_label.setText(f"Snapshot saved: {path.name}")
         self._refresh_snapshot_history()
+        if self._runtime_hub:
+            event = CodeSeeEvent(
+                ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                kind=EVENT_APP_ACTIVITY,
+                severity="info",
+                message=f"Snapshot captured: {path.name}",
+                node_ids=["system:app_ui"],
+                detail=str(path),
+                source="codesee",
+            )
+            self._runtime_hub.publish(event)
 
     def _load_latest_snapshot_action(self) -> None:
         self._load_latest_snapshot(show_status=True)
@@ -669,6 +862,13 @@ def _style_from_label(label: str) -> str:
     return icon_pack.ICON_STYLE_AUTO
 
 
+def _toggle_style() -> str:
+    return (
+        "QToolButton { padding: 4px 6px; }"
+        "QToolButton:checked { background: #d8e7ff; border: 1px solid #8bb0da; border-radius: 4px; }"
+    )
+
+
 def _make_toggle_button(label: str, handler: Callable[[], None]) -> QtWidgets.QToolButton:
     btn = QtWidgets.QToolButton()
     btn.setText(label)
@@ -691,6 +891,30 @@ def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None
         if combo.itemData(idx) == value:
             combo.setCurrentIndex(idx)
             return
+
+
+def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:
+    if event.severity == "crash" or event.kind == EVENT_APP_CRASH:
+        return "state.crash"
+    if event.severity == "error" or event.kind == EVENT_APP_ERROR:
+        return "state.error"
+    if event.severity == "warn":
+        return "state.warn"
+    if event.kind == EVENT_JOB_UPDATE:
+        return "state.warn"
+    if event.kind == EVENT_APP_ACTIVITY:
+        return "activity.muted"
+    return None
+
+
+def _event_color(event: CodeSeeEvent) -> QtGui.QColor:
+    if event.severity == "crash":
+        return QtGui.QColor("#111")
+    if event.severity == "error":
+        return QtGui.QColor("#c0392b")
+    if event.severity == "warn":
+        return QtGui.QColor("#d68910")
+    return QtGui.QColor("#4c6ef5")
 
 
 def _category_keys() -> list[str]:
@@ -753,6 +977,7 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         selected_badge: Optional[Badge],
         diff_state: Optional[str],
         diff_change: Optional[NodeChange],
+        events: list[CodeSeeEvent],
         parent: Optional[QtWidgets.QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -798,6 +1023,14 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         edges_text.setReadOnly(True)
         edges_text.setPlainText(_format_edges(graph, node))
         layout.addWidget(edges_text)
+
+        events_label = QtWidgets.QLabel("Recent events")
+        events_label.setStyleSheet("color: #444;")
+        layout.addWidget(events_label)
+        events_text = QtWidgets.QPlainTextEdit()
+        events_text.setReadOnly(True)
+        events_text.setPlainText(_format_events(events))
+        layout.addWidget(events_text)
 
         close_row = QtWidgets.QHBoxLayout()
         close_row.addStretch()
@@ -908,4 +1141,16 @@ def _format_removed_edges(diff_result: DiffResult) -> str:
     lines = []
     for src, dst, kind in sorted(diff_result.edges_removed):
         lines.append(f"{kind}: {src} -> {dst}")
+    return "\n".join(lines)
+
+
+def _format_events(events: list[CodeSeeEvent]) -> str:
+    if not events:
+        return "No recent events."
+    lines = []
+    for event in events:
+        line = f"{event.ts} | {event.kind} | {event.severity}: {event.message}"
+        if event.detail:
+            line = f"{line}\n  {event.detail}"
+        lines.append(line)
     return "\n".join(lines)

@@ -26,6 +26,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._badge_layers: Dict[str, bool] = {}
         self._empty_message: Optional[str] = None
         self._empty_item: Optional[QtWidgets.QGraphicsTextItem] = None
+        self._reduced_motion = False
         self._nodes: Dict[str, NodeItem] = {}
         self._edges: list[EdgeItem] = []
         self.setSceneRect(-5000.0, -5000.0, 10000.0, 10000.0)
@@ -96,6 +97,15 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for item in self._nodes.values():
             item.set_badge_layers(self._badge_layers)
         self.update()
+
+    def set_reduced_motion(self, value: bool) -> None:
+        self._reduced_motion = bool(value)
+
+    def flash_node(self, node_id: str, color: Optional[QtGui.QColor] = None) -> None:
+        item = self._nodes.get(node_id)
+        if not item:
+            return
+        item.flash(color, reduced_motion=self._reduced_motion)
 
     def set_empty_message(self, message: Optional[str]) -> None:
         self._empty_message = message

@@ -41,7 +41,11 @@ from .labs.host import LabHost
 from .labs.host import DEFAULT_POLICY as LAB_DEFAULT_POLICY
 from .widgets.app_header import AppHeader
 from .widgets.workspace_selector import WorkspaceSelector
+from app_ui.codesee.runtime.events import CodeSeeEvent, EVENT_APP_ACTIVITY, EVENT_JOB_UPDATE
+from app_ui.codesee.runtime.hooks import install_exception_hooks
+from app_ui.codesee.runtime.hub import CodeSeeRuntimeHub, get_global_hub, set_global_hub
 from app_ui.codesee.screen import CodeSeeScreen
+from app_ui.codesee.window import CodeSeeWindow
 from app_ui.screens.component_management import ComponentManagementScreen
 from app_ui.screens.block_catalog import BlockCatalogScreen
 from app_ui.screens.block_host import BlockHostScreen
@@ -352,6 +356,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         on_open_component_sandbox,
         on_open_block_catalog,
         on_open_code_see,
+        on_open_code_see_window,
         on_quit,
         experience_profile: str,
         *,
@@ -369,6 +374,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         self.on_open_component_sandbox = on_open_component_sandbox
         self.on_open_block_catalog = on_open_block_catalog
         self.on_open_code_see = on_open_code_see
+        self.on_open_code_see_window = on_open_code_see_window
         self.on_quit = on_quit
         self.profile = experience_profile
 
@@ -450,6 +456,8 @@ class MainMenuScreen(QtWidgets.QWidget):
 
         if self.profile == "Explorer" and self.on_open_code_see:
             self._add_button("Code See", self.on_open_code_see)
+        if self.profile == "Explorer" and self.on_open_code_see_window:
+            self._add_button("Code See (Window)", self.on_open_code_see_window)
 
         self._add_button("Settings", self.on_open_settings)
         self._add_button("Quit", self.on_quit)
@@ -1328,6 +1336,17 @@ class ModuleManagementScreen(QtWidgets.QWidget):
         module_id = self.pending_module_id or terms.TOPIC.lower()
         action = self.pending_action or terms.TOPIC.lower()
         summary = "OK" if ok else error or "failed"
+        hub = get_global_hub()
+        if hub:
+            event = CodeSeeEvent(
+                ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                kind=EVENT_JOB_UPDATE,
+                severity="info" if ok else "error",
+                message=f"{action.title()} {module_id}: {summary}",
+                node_ids=["system:core_center"],
+                source="app_ui",
+            )
+            hub.publish(event)
         self._show_progress_panel(
             "Topic Result",
             f"{action.title()} {module_id}: {summary}",
@@ -2134,6 +2153,17 @@ class ContentManagementScreen(QtWidgets.QWidget):
         module_id = self.pending_module_id or terms.TOPIC.lower()
         action = self.pending_action or terms.TOPIC.lower()
         summary = "OK" if ok else error or "failed"
+        hub = get_global_hub()
+        if hub:
+            event = CodeSeeEvent(
+                ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                kind=EVENT_JOB_UPDATE,
+                severity="info" if ok else "error",
+                message=f"{action.title()} {module_id}: {summary}",
+                node_ids=["system:core_center"],
+                source="app_ui",
+            )
+            hub.publish(event)
         self._show_progress_panel(
             "Topic Result",
             f"{action.title()} {module_id}: {summary}",
@@ -2708,6 +2738,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(900, 600)
         self.adapter = ContentSystemAdapter()
         self.current_profile = initial_profile
+        self.codesee_hub = CodeSeeRuntimeHub()
+        set_global_hub(self.codesee_hub)
+        install_exception_hooks(self.codesee_hub)
+        self.codesee_window: Optional[CodeSeeWindow] = None
 
         self.stacked = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stacked)
@@ -2740,6 +2774,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_component_sandbox,
             self._open_block_catalog,
             self._open_code_see,
+            self._open_code_see_window,
             self._quit_app,
             self.current_profile,
             workspace_selector_factory=selector_factory,
@@ -2820,6 +2855,8 @@ class MainWindow(QtWidgets.QMainWindow):
             bus=APP_BUS,
             content_adapter=self.adapter,
             workspace_selector_factory=selector_factory,
+            runtime_hub=self.codesee_hub,
+            on_open_window=self._open_code_see_window,
         )
         self.component_host = ComponentHostScreen(
             self._show_content_browser, workspace_selector_factory=selector_factory
@@ -3148,11 +3185,30 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception:
                 pass
         self.stacked.setCurrentWidget(self.main_menu)
+        self._publish_codesee_event("Main Menu", node_ids=["system:app_ui"])
+
+    def _publish_codesee_event(self, message: str, *, node_ids: Optional[List[str]] = None) -> None:
+        if not self.codesee_hub:
+            return
+        event = CodeSeeEvent(
+            ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            kind=EVENT_APP_ACTIVITY,
+            severity="info",
+            message=message,
+            node_ids=node_ids or ["system:app_ui"],
+            source="app_ui",
+        )
+        self.codesee_hub.publish(event)
 
     def _on_workspace_changed(self, workspace: Dict[str, Any], *, notify_bus: bool = True) -> None:
         if self.codesee:
             try:
                 self.codesee.save_layout()
+            except Exception:
+                pass
+        if self.codesee_window:
+            try:
+                self.codesee_window.screen.save_layout()
             except Exception:
                 pass
         if isinstance(workspace, dict):
@@ -3184,6 +3240,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.codesee:
             try:
                 self.codesee.on_workspace_changed()
+            except Exception:
+                pass
+        if self.codesee_window:
+            try:
+                self.codesee_window.screen.on_workspace_changed()
             except Exception:
                 pass
         if self.content_browser:
@@ -3244,11 +3305,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if focus_part:
             selected = self.content_browser.select_part(focus_part)
         self.stacked.setCurrentWidget(self.content_browser)
+        self._publish_codesee_event("Content Browser", node_ids=["system:app_ui"])
         return selected
 
     def _show_content_browser(self):
         self._dispose_lab_widget()
         self.stacked.setCurrentWidget(self.content_browser)
+        self._publish_codesee_event("Content Browser", node_ids=["system:app_ui"])
 
     def _open_content_browser_from_management(self, part_id: str) -> None:
         self._open_content_browser(focus_part=part_id)
@@ -3305,18 +3368,21 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.content_management:
             self.content_management.refresh_tree()
             self.stacked.setCurrentWidget(self.content_management)
+            self._publish_codesee_event("Content Management", node_ids=["system:app_ui"])
 
     def _open_diagnostics(self):
         self._dispose_lab_widget()
         if self.system_health:
             self.system_health.prepare()
             self.stacked.setCurrentWidget(self.system_health)
+            self._publish_codesee_event("Diagnostics", node_ids=["system:app_ui"])
 
     def _open_component_management(self):
         self._dispose_lab_widget()
         if self.component_management:
             self.component_management.refresh()
             self.stacked.setCurrentWidget(self.component_management)
+            self._publish_codesee_event("Pack Management", node_ids=["system:app_ui"])
 
     def _open_component_sandbox(self):
         self._dispose_lab_widget()
@@ -3326,6 +3392,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.component_sandbox:
             self.component_sandbox.refresh_components()
             self.stacked.setCurrentWidget(self.component_sandbox)
+            self._publish_codesee_event("Block Sandbox", node_ids=["system:app_ui"])
 
     def _open_block_catalog(self):
         self._dispose_lab_widget()
@@ -3335,6 +3402,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.block_catalog:
             self.block_catalog.refresh_catalog()
             self.stacked.setCurrentWidget(self.block_catalog)
+            self._publish_codesee_event("Block Catalog", node_ids=["system:app_ui"])
 
     def _open_code_see(self) -> None:
         self._dispose_lab_widget()
@@ -3343,6 +3411,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.codesee:
             self.codesee.open_root()
             self.stacked.setCurrentWidget(self.codesee)
+            self._publish_codesee_event("Code See", node_ids=["system:app_ui"])
+
+    def _open_code_see_window(self) -> None:
+        if self.current_profile != "Explorer":
+            return
+        if self.codesee_window is not None:
+            self.codesee_window.raise_()
+            self.codesee_window.activateWindow()
+            return
+        self.codesee_window = CodeSeeWindow(
+            workspace_info_provider=self._get_workspace_info,
+            bus=APP_BUS,
+            content_adapter=self.adapter,
+            runtime_hub=self.codesee_hub,
+            workspace_selector_factory=self._make_workspace_selector,
+            on_close=self._on_codesee_window_closed,
+        )
+        self.codesee_window.show()
+        self._publish_codesee_event("Code See (Window)", node_ids=["system:app_ui"])
+
+    def _on_codesee_window_closed(self) -> None:
+        self.codesee_window = None
 
     def _open_component_by_id(self, component_id: str) -> None:
         self._dispose_lab_widget()
@@ -3538,6 +3628,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lab_host_widget = screen
         self.stacked.addWidget(screen)
         self.stacked.setCurrentWidget(screen)
+        self._publish_codesee_event(f"Lab Opened: {title}", node_ids=["system:app_ui"])
 
 def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> str:
         fallback = "Guide coming soon for this lab."
