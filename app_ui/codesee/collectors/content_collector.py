@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from ..badges import badges_from_keys
 from ..graph_model import ArchitectureGraph, Edge, Node
 from .base import CollectorContext, CollectorResult
 
@@ -19,9 +20,8 @@ def collect_content(ctx: CollectorContext) -> CollectorResult:
         node_id=topic_id,
         title=str(topic_title),
         node_type="Topic",
-        badges_top=["content"],
-        badges_bottom=["topic"],
         subgraph_id=topic_id,
+        badges=badges_from_keys(top=["content"], bottom=["topic"]),
     )
 
     subgraph_nodes: List[Node] = [topic_node]
@@ -37,7 +37,7 @@ def collect_content(ctx: CollectorContext) -> CollectorResult:
             node_id=unit_id,
             title=str(unit_title),
             node_type="Unit",
-            badges_bottom=["unit"],
+            badges=badges_from_keys(bottom=["unit"]),
         )
         subgraph_nodes.append(unit_node)
         subgraph_edges.append(Edge(f"edge:{topic_id}:{unit_id}", topic_id, unit_id, "contains"))
@@ -52,7 +52,7 @@ def collect_content(ctx: CollectorContext) -> CollectorResult:
                 node_id=lesson_id,
                 title=str(lesson_title),
                 node_type="Lesson",
-                badges_bottom=["lesson"],
+                badges=badges_from_keys(bottom=["lesson"]),
             )
             subgraph_nodes.append(lesson_node)
             subgraph_edges.append(Edge(f"edge:{unit_id}:{lesson_id}", unit_id, lesson_id, "contains"))
@@ -67,7 +67,7 @@ def collect_content(ctx: CollectorContext) -> CollectorResult:
                     node_id=activity_id,
                     title=str(activity_title),
                     node_type="Activity",
-                    badges_bottom=["activity"],
+                    badges=badges_from_keys(bottom=["activity"]),
                 )
                 subgraph_nodes.append(activity_node)
                 subgraph_edges.append(

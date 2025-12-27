@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtSvg, QtWidgets
 
+from ..badges import Badge
 from ..graph_model import Node
+from ..icon_pack import resolve_icon_path
 
 NODE_WIDTH = 180.0
 NODE_HEIGHT = 90.0
 NODE_RADIUS = 10.0
 RAIL_HEIGHT = 14.0
-BADGE_RADIUS = 4.0
-BADGE_SPACING = 6.0
+ICON_SIZE = 12.0
+ICON_SPACING = 6.0
 TITLE_PADDING = 8.0
+_ICON_CACHE: Dict[Tuple[str, float], QtGui.QPixmap] = {}
 
 
 class EdgeItem(QtWidgets.QGraphicsPathItem):
@@ -45,11 +48,15 @@ class NodeItem(QtWidgets.QGraphicsItem):
         *,
         on_open_subgraph: Optional[Callable[[str], None]] = None,
         on_layout_changed: Optional[Callable[[], None]] = None,
+        on_inspect: Optional[Callable[[Node, Optional[Badge]], None]] = None,
+        icon_style: str = "color",
     ) -> None:
         super().__init__()
         self.node = node
         self.on_open_subgraph = on_open_subgraph
         self.on_layout_changed = on_layout_changed
+        self.on_inspect = on_inspect
+        self._icon_style = icon_style
         self._edges: List[EdgeItem] = []
         self._last_badge_key: Optional[str] = None
 
@@ -69,11 +76,15 @@ class NodeItem(QtWidgets.QGraphicsItem):
     def add_edge(self, edge: EdgeItem) -> None:
         self._edges.append(edge)
 
+    def set_icon_style(self, style: str) -> None:
+        self._icon_style = style
+        self.update()
+
     def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
         rect = self.boundingRect()
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.setBrush(QtGui.QColor("#f7f7f7"))
-        painter.setPen(QtGui.QPen(_severity_color(self.node.severity_state), 2.0))
+        painter.setPen(QtGui.QPen(_severity_color(self.node.effective_severity()), 2.0))
         painter.drawRoundedRect(rect, NODE_RADIUS, NODE_RADIUS)
 
         rail_color = QtGui.QColor("#e9e9e9")
@@ -102,10 +113,14 @@ class NodeItem(QtWidgets.QGraphicsItem):
         painter.setFont(QtGui.QFont("Segoe UI", 9))
         painter.drawText(title_rect, QtCore.Qt.AlignmentFlag.AlignCenter, self.node.title)
 
-        painter.setBrush(QtGui.QColor("#666"))
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        for badge_rect, _key in self._badge_rects():
-            painter.drawEllipse(badge_rect)
+        for badge_rect, badge in self._badge_rects():
+            pixmap = _icon_pixmap(badge.key, self._icon_style, ICON_SIZE)
+            if pixmap is None:
+                painter.setBrush(QtGui.QColor("#666"))
+                painter.drawEllipse(badge_rect)
+            else:
+                painter.drawPixmap(badge_rect.toRect(), pixmap)
 
         if self.isSelected():
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
@@ -113,10 +128,14 @@ class NodeItem(QtWidgets.QGraphicsItem):
             painter.drawRoundedRect(rect.adjusted(2.0, 2.0, -2.0, -2.0), NODE_RADIUS - 2.0, NODE_RADIUS - 2.0)
 
     def hoverMoveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
-        key = self._badge_key_at(event.pos())
+        badge = self._badge_at(event.pos())
+        key = badge.key if badge else None
         if key != self._last_badge_key:
             if key:
+                summary = badge.summary if badge else ""
                 tooltip = f"{self.node.title} | {key}"
+                if summary:
+                    tooltip = f"{tooltip}: {summary}"
                 QtWidgets.QToolTip.showText(_screen_point(event), tooltip)
             else:
                 QtWidgets.QToolTip.hideText()
@@ -136,15 +155,30 @@ class NodeItem(QtWidgets.QGraphicsItem):
         super().mouseDoubleClickEvent(event)
 
     def contextMenuEvent(self, event: QtWidgets.QGraphicsSceneContextMenuEvent) -> None:
+        menu = QtWidgets.QMenu()
+        inspect_action = menu.addAction("Inspect")
+        open_action = None
         if self.node.subgraph_id and self.on_open_subgraph:
-            menu = QtWidgets.QMenu()
-            action = menu.addAction("Open Subgraph")
-            selected = menu.exec(_screen_point(event))
-            if selected == action:
-                self.on_open_subgraph(self.node.subgraph_id)
+            open_action = menu.addAction("Open Subgraph")
+        selected = menu.exec(_screen_point(event))
+        if selected == inspect_action and self.on_inspect:
+            self.on_inspect(self.node, None)
+            event.accept()
+            return
+        if selected == open_action and self.node.subgraph_id and self.on_open_subgraph:
+            self.on_open_subgraph(self.node.subgraph_id)
+            event.accept()
+            return
+        super().contextMenuEvent(event)
+
+    def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self.on_inspect:
+            badge = self._badge_at(event.pos())
+            if badge:
+                self.on_inspect(self.node, badge)
                 event.accept()
                 return
-        super().contextMenuEvent(event)
+        super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
@@ -157,35 +191,39 @@ class NodeItem(QtWidgets.QGraphicsItem):
                 edge.update_path()
         return super().itemChange(change, value)
 
-    def _badge_rects(self) -> List[Tuple[QtCore.QRectF, str]]:
-        rects: List[Tuple[QtCore.QRectF, str]] = []
-        rects.extend(self._rail_badges(self.node.badges_top, y_offset=4.0))
-        rects.extend(self._rail_badges(self.node.badges_bottom, y_offset=NODE_HEIGHT - RAIL_HEIGHT + 4.0))
+    def _badge_rects(self) -> List[Tuple[QtCore.QRectF, Badge]]:
+        rects: List[Tuple[QtCore.QRectF, Badge]] = []
+        rects.extend(self._rail_badges(self.node.badges_for_rail("top"), y_offset=_rail_y_offset(top=True)))
+        rects.extend(
+            self._rail_badges(self.node.badges_for_rail("bottom"), y_offset=_rail_y_offset(top=False))
+        )
         return rects
 
-    def _rail_badges(self, badges: List[str], *, y_offset: float) -> List[Tuple[QtCore.QRectF, str]]:
-        rects: List[Tuple[QtCore.QRectF, str]] = []
+    def _rail_badges(self, badges: List[Badge], *, y_offset: float) -> List[Tuple[QtCore.QRectF, Badge]]:
+        rects: List[Tuple[QtCore.QRectF, Badge]] = []
         if not badges:
             return rects
         x = 10.0
-        for key in badges:
-            badge_rect = QtCore.QRectF(x, y_offset, BADGE_RADIUS * 2.0, BADGE_RADIUS * 2.0)
-            rects.append((badge_rect, key))
-            x += BADGE_RADIUS * 2.0 + BADGE_SPACING
+        for badge in badges:
+            badge_rect = QtCore.QRectF(x, y_offset, ICON_SIZE, ICON_SIZE)
+            rects.append((badge_rect, badge))
+            x += ICON_SIZE + ICON_SPACING
         return rects
 
-    def _badge_key_at(self, pos: QtCore.QPointF) -> Optional[str]:
-        for rect, key in self._badge_rects():
+    def _badge_at(self, pos: QtCore.QPointF) -> Optional[Badge]:
+        for rect, badge in self._badge_rects():
             if rect.contains(pos):
-                return key
+                return badge
         return None
 
 
 def _severity_color(state: str) -> QtGui.QColor:
+    if state in ("probe.fail", "correctness"):
+        return QtGui.QColor("#7b3fb3")
     if state == "error":
         return QtGui.QColor("#c0392b")
-    if state == "correctness":
-        return QtGui.QColor("#7b3fb3")
+    if state == "warn":
+        return QtGui.QColor("#d68910")
     if state == "crash":
         return QtGui.QColor("#111")
     return QtGui.QColor("#444")
@@ -207,3 +245,30 @@ def _screen_point(event) -> QtCore.QPoint:
     if hasattr(pos, "toPoint"):
         return pos.toPoint()
     return pos
+
+
+def _rail_y_offset(*, top: bool) -> float:
+    if top:
+        rail_top = 1.0
+    else:
+        rail_top = NODE_HEIGHT - RAIL_HEIGHT - 1.0
+    return rail_top + (RAIL_HEIGHT - ICON_SIZE) / 2.0
+
+
+def _icon_pixmap(key: str, style: str, size: float) -> Optional[QtGui.QPixmap]:
+    path = resolve_icon_path(key, style)
+    if not path:
+        return None
+    cache_key = (str(path), size)
+    cached = _ICON_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    renderer = QtSvg.QSvgRenderer(str(path))
+    side = max(1, int(size))
+    pixmap = QtGui.QPixmap(side, side)
+    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    _ICON_CACHE[cache_key] = pixmap
+    return pixmap

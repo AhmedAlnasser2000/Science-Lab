@@ -11,6 +11,11 @@ __pycache__/
 .vscode/
 
 # Runtime outputs and local mirrors (not source of truth)
+/debug.log
+/root.json
+/atlas.json
+/data/
+/data/workspaces/**/codesee/**
 data/store/runs/
 data/store/runs_local/
 content_store/

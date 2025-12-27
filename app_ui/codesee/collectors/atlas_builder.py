@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from ..badges import badges_from_keys
 from ..graph_model import ArchitectureGraph, Edge, Node
 from .base import CollectorContext, CollectorResult
 from .content_collector import collect_content
@@ -14,7 +15,7 @@ def build_atlas_graph(ctx: CollectorContext) -> tuple[ArchitectureGraph, Dict[st
         node_id=f"workspace:{ctx.workspace_id}",
         title=f"Project: {ctx.workspace_id}",
         node_type="Workspace",
-        badges_bottom=["workspace"],
+        badges=badges_from_keys(bottom=["workspace"]),
     )
 
     results = [

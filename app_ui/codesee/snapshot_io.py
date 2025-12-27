@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from .badges import badge_from_dict, badge_from_key, badge_to_dict
 from .graph_model import ArchitectureGraph, Edge, Node
 
 FORMAT_VERSION = 1
@@ -49,8 +50,7 @@ def _node_to_dict(node: Node) -> Dict[str, Any]:
         "title": node.title,
         "type": node.node_type,
         "severity_state": node.severity_state,
-        "badges_top": list(node.badges_top),
-        "badges_bottom": list(node.badges_bottom),
+        "badges": [badge_to_dict(badge) for badge in node.badges],
         "subgraph_id": node.subgraph_id,
     }
 
@@ -74,14 +74,14 @@ def _graph_from_dict(graph: Dict[str, Any]) -> ArchitectureGraph:
         node_id = str(raw.get("id") or "")
         if not node_id:
             continue
+        badges = _badges_from_raw(raw)
         nodes.append(
             Node(
                 node_id=node_id,
                 title=str(raw.get("title") or node_id),
                 node_type=str(raw.get("type") or "System"),
-                severity_state=str(raw.get("severity_state") or "normal"),
-                badges_top=list(raw.get("badges_top") or []),
-                badges_bottom=list(raw.get("badges_bottom") or []),
+                badges=badges,
+                severity_state=_optional_str(raw.get("severity_state")),
                 subgraph_id=raw.get("subgraph_id"),
             )
         )
@@ -96,3 +96,34 @@ def _graph_from_dict(graph: Dict[str, Any]) -> ArchitectureGraph:
             continue
         edges.append(Edge(edge_id=edge_id, src_node_id=src, dst_node_id=dst, kind=str(raw.get("kind") or "contains")))
     return ArchitectureGraph(graph_id=graph_id, title=title, nodes=nodes, edges=edges)
+
+
+def _badges_from_raw(raw: Dict[str, Any]) -> list:
+    badges = []
+    raw_badges = raw.get("badges")
+    if isinstance(raw_badges, list):
+        for item in raw_badges:
+            if isinstance(item, dict):
+                badge = badge_from_dict(item)
+                if badge:
+                    badges.append(badge)
+            elif isinstance(item, str):
+                badges.append(badge_from_key(item))
+    top = raw.get("badges_top") or []
+    bottom = raw.get("badges_bottom") or []
+    if isinstance(top, list):
+        for key in top:
+            if isinstance(key, str):
+                badges.append(badge_from_key(key, rail="top"))
+    if isinstance(bottom, list):
+        for key in bottom:
+            if isinstance(key, str):
+                badges.append(badge_from_key(key, rail="bottom"))
+    return badges
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

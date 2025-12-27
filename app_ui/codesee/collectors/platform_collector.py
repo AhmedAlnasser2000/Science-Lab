@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from ..badges import badges_from_keys
 from ..graph_model import Edge, Node
 from .base import CollectorContext, CollectorResult
 
 
 def collect_platform(ctx: CollectorContext) -> CollectorResult:
     nodes = [
-        Node("system:app_ui", "app_ui", "System", badges_bottom=["ui"]),
-        Node("system:runtime_bus", "runtime_bus", "System", badges_bottom=["bus"]),
-        Node("system:content_system", "content_system", "System", badges_bottom=["content"]),
-        Node("system:component_runtime", "component_runtime", "System", badges_bottom=["blocks"]),
-        Node("system:ui_system", "ui_system", "System", badges_bottom=["themes"]),
+        Node("system:app_ui", "app_ui", "System", badges=badges_from_keys(bottom=["ui"])),
+        Node("system:runtime_bus", "runtime_bus", "System", badges=badges_from_keys(bottom=["bus"])),
+        Node("system:content_system", "content_system", "System", badges=badges_from_keys(bottom=["content"])),
+        Node("system:component_runtime", "component_runtime", "System", badges=badges_from_keys(bottom=["blocks"])),
+        Node("system:ui_system", "ui_system", "System", badges=badges_from_keys(bottom=["themes"])),
     ]
     edges = [
         Edge("edge:app_ui:bus", "system:app_ui", "system:runtime_bus", "depends"),
@@ -20,7 +21,9 @@ def collect_platform(ctx: CollectorContext) -> CollectorResult:
     ]
 
     if _core_center_available():
-        nodes.append(Node("system:core_center", "core_center", "System", badges_bottom=["optional"]))
+        nodes.append(
+            Node("system:core_center", "core_center", "System", badges=badges_from_keys(bottom=["optional"]))
+        )
         edges.append(Edge("edge:core:bus", "system:core_center", "system:runtime_bus", "depends"))
 
     return CollectorResult(nodes=nodes, edges=edges, subgraphs={})

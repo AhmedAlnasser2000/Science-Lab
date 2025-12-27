@@ -6,21 +6,28 @@ from typing import Any, Callable, Dict, Optional
 
 from PyQt6 import QtCore, QtWidgets
 
+from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
-from . import layout_store, snapshot_io
+from . import icon_pack, layout_store, snapshot_io
+from .badges import Badge, sort_by_priority
 from .canvas.scene import GraphScene
 from .canvas.view import GraphView
 from .collectors.atlas_builder import build_atlas_graph
 from .collectors.base import CollectorContext
 from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
-from .graph_model import ArchitectureGraph
+from .graph_model import ArchitectureGraph, Node
 
 DEFAULT_LENS = "atlas"
 SOURCE_DEMO = "Demo"
 SOURCE_ATLAS = "Atlas"
 SOURCE_SNAPSHOT = "Snapshot (Latest)"
+ICON_STYLE_LABELS = {
+    icon_pack.ICON_STYLE_AUTO: "Auto",
+    icon_pack.ICON_STYLE_COLOR: "Color",
+    icon_pack.ICON_STYLE_MONO: "Mono",
+}
 
 
 class CodeSeeScreen(QtWidgets.QWidget):
@@ -39,6 +46,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._bus = bus
         self._content_adapter = content_adapter
         self._lens = DEFAULT_LENS
+        self._reduced_motion = ui_config.get_reduced_motion()
+        self._icon_style = icon_pack.load_style(self._workspace_id())
 
         self._demo_root = build_demo_root_graph()
         self._demo_subgraphs = build_demo_subgraphs()
@@ -83,6 +92,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.load_btn = QtWidgets.QPushButton("Load Latest Snapshot")
         self.load_btn.clicked.connect(self._load_latest_snapshot_action)
         source_row.addWidget(self.load_btn)
+        source_row.addWidget(QtWidgets.QLabel("Icon Style:"))
+        self.style_combo = QtWidgets.QComboBox()
+        self.style_combo.addItems(list(ICON_STYLE_LABELS.values()))
+        self.style_combo.currentTextChanged.connect(self._on_icon_style_changed)
+        source_row.addWidget(self.style_combo)
         source_row.addStretch()
         layout.addLayout(source_row)
 
@@ -93,10 +107,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene = GraphScene(
             on_open_subgraph=self._enter_subgraph,
             on_layout_changed=self._save_layout,
+            on_inspect=self._inspect_node,
+            icon_style=self._resolved_icon_style(),
         )
         self.view = GraphView(self.scene)
         layout.addWidget(self.view, stretch=1)
 
+        self._sync_style_combo()
         self._update_action_state()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
 
@@ -107,6 +124,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._set_graph(self._active_root.graph_id)
 
     def on_workspace_changed(self) -> None:
+        self._icon_style = icon_pack.load_style(self._workspace_id())
+        self._sync_style_combo()
+        self.scene.set_icon_style(self._resolved_icon_style())
         if self._source == SOURCE_ATLAS:
             self._build_atlas()
             return
@@ -120,6 +140,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def save_layout(self) -> None:
         self._save_layout()
+
+    def set_reduced_motion(self, value: bool) -> None:
+        self._reduced_motion = bool(value)
+        self.scene.set_icon_style(self._resolved_icon_style())
 
     def _handle_back(self) -> None:
         self._save_layout()
@@ -163,6 +187,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         positions = layout_store.load_positions(self._workspace_id(), self._lens, graph_id)
         self.scene.build_graph(graph, positions)
+        self.scene.set_icon_style(self._resolved_icon_style())
         self._current_graph_id = graph_id
         self._current_graph = graph
         self._refresh_breadcrumb()
@@ -228,6 +253,27 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _update_action_state(self) -> None:
         self.capture_btn.setEnabled(self._source in (SOURCE_DEMO, SOURCE_ATLAS))
 
+    def _resolved_icon_style(self) -> str:
+        return icon_pack.resolve_style(self._icon_style, self._reduced_motion)
+
+    def _sync_style_combo(self) -> None:
+        label = ICON_STYLE_LABELS.get(self._icon_style, "Auto")
+        self.style_combo.blockSignals(True)
+        self.style_combo.setCurrentText(label)
+        self.style_combo.blockSignals(False)
+
+    def _on_icon_style_changed(self, value: str) -> None:
+        style = _style_from_label(value)
+        self._icon_style = style
+        icon_pack.save_style(self._workspace_id(), style)
+        self.scene.set_icon_style(self._resolved_icon_style())
+
+    def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
+        if not self._current_graph:
+            return
+        dialog = CodeSeeInspectorDialog(node, self._current_graph, badge, parent=self)
+        dialog.exec()
+
     def _build_atlas(self) -> None:
         ctx = CollectorContext(
             workspace_id=self._workspace_id(),
@@ -291,3 +337,103 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._set_active_graphs(graph, {})
         if show_status:
             self.status_label.setText(f"Snapshot loaded: {path.name}")
+
+
+def _style_from_label(label: str) -> str:
+    for style, value in ICON_STYLE_LABELS.items():
+        if value == label:
+            return style
+    return icon_pack.ICON_STYLE_AUTO
+
+
+class CodeSeeInspectorDialog(QtWidgets.QDialog):
+    def __init__(
+        self,
+        node: Node,
+        graph: ArchitectureGraph,
+        selected_badge: Optional[Badge],
+        parent: Optional[QtWidgets.QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Code See Inspector")
+        self.setMinimumWidth(480)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        title = QtWidgets.QLabel(node.title)
+        title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(title)
+
+        meta = QtWidgets.QLabel(f"ID: {node.node_id} | Type: {node.node_type}")
+        meta.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(meta)
+
+        if selected_badge:
+            selected = QtWidgets.QLabel(f"Selected badge: {_format_badge_line(selected_badge)}")
+            selected.setWordWrap(True)
+            layout.addWidget(selected)
+
+        badges_label = QtWidgets.QLabel("Badges")
+        badges_label.setStyleSheet("color: #444;")
+        layout.addWidget(badges_label)
+        badges_text = QtWidgets.QPlainTextEdit()
+        badges_text.setReadOnly(True)
+        badges_text.setPlainText(_format_badges(node.badges))
+        layout.addWidget(badges_text)
+
+        edges_label = QtWidgets.QLabel("Edges")
+        edges_label.setStyleSheet("color: #444;")
+        layout.addWidget(edges_label)
+        edges_text = QtWidgets.QPlainTextEdit()
+        edges_text.setReadOnly(True)
+        edges_text.setPlainText(_format_edges(graph, node))
+        layout.addWidget(edges_text)
+
+        close_row = QtWidgets.QHBoxLayout()
+        close_row.addStretch()
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        close_row.addWidget(close_btn)
+        layout.addLayout(close_row)
+
+
+def _format_badges(badges: list[Badge]) -> str:
+    if not badges:
+        return "No badges."
+    lines = []
+    for badge in sort_by_priority(badges):
+        lines.append(_format_badge_line(badge))
+        if badge.detail:
+            lines.append(f"  detail: {badge.detail}")
+        if badge.timestamp:
+            lines.append(f"  timestamp: {badge.timestamp}")
+    return "\n".join(lines)
+
+
+def _format_badge_line(badge: Badge) -> str:
+    line = f"{badge.key} ({badge.rail}) - {badge.title}: {badge.summary}"
+    return line.strip()
+
+
+def _format_edges(graph: ArchitectureGraph, node: Node) -> str:
+    node_map = graph.node_map()
+    outgoing = []
+    incoming = []
+    for edge in graph.edges:
+        if edge.src_node_id == node.node_id:
+            dst = node_map.get(edge.dst_node_id)
+            dst_label = dst.title if dst else edge.dst_node_id
+            outgoing.append(f"{edge.kind} -> {dst_label} ({edge.dst_node_id})")
+        if edge.dst_node_id == node.node_id:
+            src = node_map.get(edge.src_node_id)
+            src_label = src.title if src else edge.src_node_id
+            incoming.append(f"{edge.kind} <- {src_label} ({edge.src_node_id})")
+    if not outgoing and not incoming:
+        return "No edges."
+    lines = []
+    if outgoing:
+        lines.append("Outgoing:")
+        lines.extend(f"- {line}" for line in outgoing)
+    if incoming:
+        lines.append("Incoming:")
+        lines.extend(f"- {line}" for line in incoming)
+    return "\n".join(lines)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
+from .badges import badges_from_keys
 from .graph_model import ArchitectureGraph, Edge, Node
 
 
@@ -11,59 +12,49 @@ def build_demo_root_graph() -> ArchitectureGraph:
             node_id="module.ui",
             title="App UI",
             node_type="module",
-            badges_top=["nav.stack", "profile.explorer"],
-            badges_bottom=["qstacked", "screens"],
+            badges=badges_from_keys(top=["state.warn"]),
             subgraph_id="module.ui",
         ),
         Node(
             node_id="module.runtime_bus",
             title="Runtime Bus",
             node_type="module",
-            badges_top=["pubsub", "request.reply"],
-            badges_bottom=["in.process"],
+            badges=badges_from_keys(bottom=["probe.pass"]),
             subgraph_id="module.runtime_bus",
         ),
         Node(
             node_id="module.core_center",
             title="Management Core",
             node_type="module",
-            severity_state="correctness",
-            badges_top=["jobs", "inventory"],
-            badges_bottom=["policy"],
+            badges=badges_from_keys(bottom=["expect.value"]),
             subgraph_id="module.core_center",
         ),
         Node(
             node_id="module.component_runtime",
             title="Component Runtime",
             node_type="module",
-            severity_state="error",
-            badges_top=["blocks", "packs"],
-            badges_bottom=["host"],
+            badges=badges_from_keys(top=["state.error"]),
             subgraph_id="module.component_runtime",
         ),
         Node(
             node_id="module.content_system",
             title="Content System",
             node_type="module",
-            badges_top=["topics", "assets"],
-            badges_bottom=["status.ready"],
+            badges=badges_from_keys(top=["conn.offline"]),
             subgraph_id="module.content_system",
         ),
         Node(
             node_id="module.ui_system",
             title="UI System",
             node_type="module",
-            badges_top=["qss", "packs"],
-            badges_bottom=["themes"],
+            badges=badges_from_keys(top=["activity.muted"]),
             subgraph_id="module.ui_system",
         ),
         Node(
             node_id="module.kernel",
             title="Kernel",
             node_type="module",
-            severity_state="crash",
-            badges_top=["dll"],
-            badges_bottom=["gravity"],
+            badges=badges_from_keys(top=["state.crash"], bottom=["probe.fail"]),
             subgraph_id="module.kernel",
         ),
     ]
@@ -86,11 +77,11 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
         graph_id="module.ui",
         title="App UI",
         nodes=[
-            Node("ui.main", "Main Window", "component", badges_top=["qstacked"], badges_bottom=["routing"]),
-            Node("ui.menu", "Main Menu", "component", badges_top=["profile"], badges_bottom=["buttons"]),
-            Node("ui.block", "Block Host", "component", badges_top=["session"], badges_bottom=["persistence"]),
-            Node("ui.catalog", "Block Catalog", "component", badges_top=["packs"], badges_bottom=["details"]),
-            Node("ui.sandbox", "Block Sandbox", "component", badges_top=["templates"], badges_bottom=["start"]),
+            Node("ui.main", "Main Window", "component"),
+            Node("ui.menu", "Main Menu", "component"),
+            Node("ui.block", "Block Host", "component"),
+            Node("ui.catalog", "Block Catalog", "component"),
+            Node("ui.sandbox", "Block Sandbox", "component"),
         ],
         edges=[
             Edge("ui.edge.menu", "ui.main", "ui.menu", "nav"),
@@ -104,9 +95,9 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
         graph_id="module.runtime_bus",
         title="Runtime Bus",
         nodes=[
-            Node("bus.core", "RuntimeBus", "component", badges_top=["pubsub"], badges_bottom=["sticky"]),
-            Node("bus.topics", "Topics", "component", badges_top=["constants"], badges_bottom=["ids"]),
-            Node("bus.messages", "Message Envelope", "component", badges_top=["schema"], badges_bottom=["payloads"]),
+            Node("bus.core", "RuntimeBus", "component"),
+            Node("bus.topics", "Topics", "component"),
+            Node("bus.messages", "Message Envelope", "component"),
         ],
         edges=[
             Edge("bus.edge.topics", "bus.core", "bus.topics", "lookup"),
@@ -118,9 +109,9 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
         graph_id="module.core_center",
         title="Management Core",
         nodes=[
-            Node("core.jobs", "Job Manager", "component", badges_top=["jobs"], badges_bottom=["threads"]),
-            Node("core.inventory", "Inventory", "component", badges_top=["packs"], badges_bottom=["modules"]),
-            Node("core.storage", "Storage Manager", "component", badges_top=["runs"], badges_bottom=["retention"]),
+            Node("core.jobs", "Job Manager", "component"),
+            Node("core.inventory", "Inventory", "component"),
+            Node("core.storage", "Storage Manager", "component"),
         ],
         edges=[
             Edge("core.edge.jobs", "core.jobs", "core.storage", "request"),
@@ -132,9 +123,9 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
         graph_id="module.component_runtime",
         title="Component Runtime",
         nodes=[
-            Node("comp.registry", "Component Registry", "component", badges_top=["blocks"], badges_bottom=["factories"]),
-            Node("comp.host", "Component Host", "component", badges_top=["mount"], badges_bottom=["errors"]),
-            Node("comp.packs", "Pack Loader", "component", badges_top=["repo"], badges_bottom=["store"]),
+            Node("comp.registry", "Component Registry", "component"),
+            Node("comp.host", "Component Host", "component"),
+            Node("comp.packs", "Pack Loader", "component"),
         ],
         edges=[
             Edge("comp.edge.host", "comp.registry", "comp.host", "dependency"),
@@ -146,9 +137,9 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
         graph_id="module.content_system",
         title="Content System",
         nodes=[
-            Node("content.loader", "Content Loader", "component", badges_top=["status"], badges_bottom=["assets"]),
-            Node("content.repo", "Content Repo", "component", badges_top=["source"], badges_bottom=["physics_v1"]),
-            Node("content.store", "Content Store", "component", badges_top=["installed"], badges_bottom=["ready"]),
+            Node("content.loader", "Content Loader", "component"),
+            Node("content.repo", "Content Repo", "component"),
+            Node("content.store", "Content Store", "component"),
         ],
         edges=[
             Edge("content.edge.repo", "content.repo", "content.loader", "dependency"),
@@ -160,9 +151,9 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
         graph_id="module.ui_system",
         title="UI System",
         nodes=[
-            Node("ui.pack", "Pack Manager", "component", badges_top=["qss"], badges_bottom=["themes"]),
-            Node("ui.repo", "UI Repo", "component", badges_top=["source"], badges_bottom=["packs"]),
-            Node("ui.store", "UI Store", "component", badges_top=["installed"], badges_bottom=["packs"]),
+            Node("ui.pack", "Pack Manager", "component"),
+            Node("ui.repo", "UI Repo", "component"),
+            Node("ui.store", "UI Store", "component"),
         ],
         edges=[
             Edge("ui.edge.repo", "ui.repo", "ui.pack", "dependency"),
@@ -174,7 +165,7 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
         graph_id="module.kernel",
         title="Kernel",
         nodes=[
-            Node("kernel.dll", "physicslab_kernel.dll", "component", badges_top=["ffi"], badges_bottom=["gravity"]),
+            Node("kernel.dll", "physicslab_kernel.dll", "component"),
         ],
         edges=[],
     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from ..badges import badges_from_keys
 from ..graph_model import ArchitectureGraph, Edge, Node
 from .base import CollectorContext, CollectorResult
 
@@ -37,9 +38,8 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
             node_id=graph_id,
             title=pack.get("name") or pack_id,
             node_type="Pack",
-            badges_top=["component"],
-            badges_bottom=["blocks"],
             subgraph_id=graph_id,
+            badges=badges_from_keys(top=["component"], bottom=["blocks"]),
         )
         pack_nodes.append(node)
         subgraph_nodes: List[Node] = [node]
@@ -54,7 +54,7 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
                 node_id=block_id,
                 title=component.get("display_name") or component_id,
                 node_type="Block",
-                badges_bottom=["block"],
+                badges=badges_from_keys(bottom=["block"]),
             )
             block_nodes.append(block_node)
             pack_edges.append(
@@ -78,9 +78,8 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
             node_id=built_in_id,
             title="Built-in Blocks",
             node_type="Pack",
-            badges_top=["builtin"],
-            badges_bottom=["blocks"],
             subgraph_id=built_in_id,
+            badges=badges_from_keys(top=["builtin"], bottom=["blocks"]),
         )
         pack_nodes.append(built_in_node)
         subgraph_nodes = [built_in_node]
@@ -91,7 +90,7 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
                 node_id=block_id,
                 title=block.get("display_name") or block["component_id"],
                 node_type="Block",
-                badges_bottom=["block"],
+                badges=badges_from_keys(bottom=["block"]),
             )
             block_nodes.append(block_node)
             pack_edges.append(
@@ -184,8 +183,7 @@ def _collect_ui_packs(inventory: Optional[Dict]) -> List[Node]:
                     node_id=node_id,
                     title=pack.name,
                     node_type="Pack",
-                    badges_top=["ui"],
-                    badges_bottom=["theme"],
+                    badges=badges_from_keys(top=["ui"], bottom=["theme"]),
                 )
             )
     else:
@@ -196,8 +194,7 @@ def _collect_ui_packs(inventory: Optional[Dict]) -> List[Node]:
                     node_id=node_id,
                     title=pack_id,
                     node_type="Pack",
-                    badges_top=["ui"],
-                    badges_bottom=["theme"],
+                    badges=badges_from_keys(top=["ui"], bottom=["theme"]),
                 )
             )
 

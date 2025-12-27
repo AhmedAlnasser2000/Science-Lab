@@ -3,16 +3,32 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from .badges import Badge, badge_from_dict, badge_from_key, sort_by_priority, severity_for_badge
+
 
 @dataclass(frozen=True)
 class Node:
     node_id: str
     title: str
     node_type: str
-    severity_state: str = "normal"
-    badges_top: List[str] = field(default_factory=list)
-    badges_bottom: List[str] = field(default_factory=list)
     subgraph_id: Optional[str] = None
+    badges: List[Badge] = field(default_factory=list)
+    severity_state: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        normalized: List[Badge] = []
+        for entry in self.badges or []:
+            if isinstance(entry, Badge):
+                normalized.append(entry)
+                continue
+            if isinstance(entry, str):
+                normalized.append(badge_from_key(entry))
+                continue
+            if isinstance(entry, dict):
+                badge = badge_from_dict(entry)
+                if badge:
+                    normalized.append(badge)
+        object.__setattr__(self, "badges", normalized)
 
     @property
     def id(self) -> str:
@@ -21,6 +37,20 @@ class Node:
     @property
     def type(self) -> str:
         return self.node_type
+
+    def badges_for_rail(self, rail: str) -> List[Badge]:
+        if rail not in ("top", "bottom"):
+            return []
+        return [badge for badge in sort_by_priority(self.badges) if badge.rail == rail]
+
+    def effective_severity(self) -> str:
+        if self.badges:
+            ordered = sort_by_priority(self.badges)
+            if ordered:
+                return severity_for_badge(ordered[0])
+        if self.severity_state:
+            return self.severity_state
+        return "normal"
 
 
 @dataclass(frozen=True)

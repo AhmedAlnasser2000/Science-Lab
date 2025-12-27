@@ -14,10 +14,14 @@ class GraphScene(QtWidgets.QGraphicsScene):
         *,
         on_open_subgraph: Optional[Callable[[str], None]] = None,
         on_layout_changed: Optional[Callable[[], None]] = None,
+        on_inspect: Optional[Callable] = None,
+        icon_style: str = "color",
     ) -> None:
         super().__init__()
         self.on_open_subgraph = on_open_subgraph
         self.on_layout_changed = on_layout_changed
+        self.on_inspect = on_inspect
+        self._icon_style = icon_style
         self._nodes: Dict[str, NodeItem] = {}
         self._edges: list[EdgeItem] = []
         self.setSceneRect(-5000.0, -5000.0, 10000.0, 10000.0)
@@ -32,6 +36,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 node,
                 on_open_subgraph=self.on_open_subgraph,
                 on_layout_changed=self.on_layout_changed,
+                on_inspect=self.on_inspect,
+                icon_style=self._icon_style,
             )
             self.addItem(item)
             pos = positions.get(node.node_id)
@@ -56,6 +62,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
             edge_item.update_path()
             self.addItem(edge_item)
             self._edges.append(edge_item)
+
+    def set_icon_style(self, style: str) -> None:
+        self._icon_style = style
+        for item in self._nodes.values():
+            item.set_icon_style(style)
+        self.update()
 
     def node_positions(self) -> Dict[str, Tuple[float, float]]:
         positions: Dict[str, Tuple[float, float]] = {}
