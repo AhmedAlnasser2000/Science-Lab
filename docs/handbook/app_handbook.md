@@ -1,6 +1,6 @@
 # PhysicsLab Contributor Handbook
 
-This document explains how the app fits together, based strictly on the verified code checkpoint in `docs/app_summary.md`.
+This document explains how the app fits together, based strictly on the verified code checkpoint in `docs/app_summary_latest.md`.
 
 ## 1. Mental Model
 
@@ -227,5 +227,5 @@ python -m app_ui.main
 > **Anchor**: `app_ui/main.py:main`
 
 Verification footer:
-- Handbook content derived from checkpoint: `docs/app_summary.md`
+- Handbook content derived from checkpoint: `docs/app_summary_latest.md`
 - Commit: `089cb27`

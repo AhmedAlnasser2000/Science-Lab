@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+from typing import Callable, Dict, Optional, Tuple
+
+from PyQt6 import QtCore, QtWidgets
+
+from ..graph_model import ArchitectureGraph
+from .items import EdgeItem, NodeItem, NODE_HEIGHT, NODE_WIDTH
+
+
+class GraphScene(QtWidgets.QGraphicsScene):
+    def __init__(
+        self,
+        *,
+        on_open_subgraph: Optional[Callable[[str], None]] = None,
+        on_layout_changed: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__()
+        self.on_open_subgraph = on_open_subgraph
+        self.on_layout_changed = on_layout_changed
+        self._nodes: Dict[str, NodeItem] = {}
+        self._edges: list[EdgeItem] = []
+        self.setSceneRect(-5000.0, -5000.0, 10000.0, 10000.0)
+
+    def build_graph(self, graph: ArchitectureGraph, positions: Dict[str, Tuple[float, float]]) -> None:
+        self.clear()
+        self._nodes = {}
+        self._edges = []
+
+        for idx, node in enumerate(graph.nodes):
+            item = NodeItem(
+                node,
+                on_open_subgraph=self.on_open_subgraph,
+                on_layout_changed=self.on_layout_changed,
+            )
+            self.addItem(item)
+            pos = positions.get(node.node_id)
+            if pos:
+                item.setPos(pos[0], pos[1])
+            else:
+                col = idx % 3
+                row = idx // 3
+                x = col * (NODE_WIDTH + 80.0)
+                y = row * (NODE_HEIGHT + 60.0)
+                item.setPos(x, y)
+            self._nodes[node.node_id] = item
+
+        for edge in graph.edges:
+            src = self._nodes.get(edge.src_node_id)
+            dst = self._nodes.get(edge.dst_node_id)
+            if not src or not dst:
+                continue
+            edge_item = EdgeItem(src, dst, edge.kind)
+            src.add_edge(edge_item)
+            dst.add_edge(edge_item)
+            edge_item.update_path()
+            self.addItem(edge_item)
+            self._edges.append(edge_item)
+
+    def node_positions(self) -> Dict[str, Tuple[float, float]]:
+        positions: Dict[str, Tuple[float, float]] = {}
+        for node_id, item in self._nodes.items():
+            pos = item.pos()
+            positions[node_id] = (pos.x(), pos.y())
+        return positions

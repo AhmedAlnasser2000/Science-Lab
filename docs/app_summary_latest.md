@@ -99,11 +99,11 @@
 - Component packs support only builtin implementations; no arbitrary code loading (Anchor: `component_runtime/registry.py:register_pack_components`).
 
 ## Verification Appendix
-Timestamp: 2025-12-26T19:15:00.872794Z
-Commit: a664cc3
+Timestamp: 2025-12-27T09:42:38.213677+00:00
+Commit: 6c8ecc8
 
 Commands run:
-- `git rev-parse --short HEAD` -> `a664cc3`
+- `git rev-parse --short HEAD` -> `6c8ecc8`
 - `git log --oneline -n 10`
 - `python -m compileall app_ui content_system core_center component_runtime runtime_bus ui_system schemas diagnostics` -> OK
 

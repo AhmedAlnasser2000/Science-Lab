@@ -3,7 +3,7 @@
 A checkpoint is a code-verified snapshot of the app's documented behavior at a specific commit.
 
 ## Canonical summary
-- Current summary: `docs/app_summary.md`.
+- Current summary: `docs/app_summary_latest.md`.
 - Previous summary pointer: `docs/checkpoints/app_summary_previous.md`.
 
 ## History naming
@@ -15,7 +15,7 @@ A checkpoint is a code-verified snapshot of the app's documented behavior at a s
 - Inputs are raw artifacts used during reconciliation, not canonical checkpoints.
 
 ## Create the next checkpoint
-1) Update `docs/app_summary.md` with the new verified state and appendix.
-2) Move the previous `docs/app_summary.md` into `docs/checkpoints/history/` using the naming format above.
+1) Update `docs/app_summary_latest.md` with the new verified state and appendix.
+2) Move the previous `docs/app_summary_latest.md` into `docs/checkpoints/history/` using the naming format above.
 3) Update `docs/checkpoints/app_summary_previous.md` to point at the new history entry.
 4) Record the verification commands and manual checks in the appendix.

@@ -3,7 +3,7 @@
 This folder holds checkpoint summaries, plans, prompts, and overview notes for PhysicsLab.
 
 ## Canonical checkpoint
-- `docs/app_summary.md`: current, code-verified checkpoint summary.
+- `docs/app_summary_latest.md`: current, code-verified checkpoint summary.
 
 ## Checkpoints and inputs
 - `docs/checkpoints/README.md`: checkpoint conventions and workflow.
@@ -18,6 +18,6 @@ This folder holds checkpoint summaries, plans, prompts, and overview notes for P
 - `docs/snapshots/`: captured repo trees or other snapshots.
 
 ## Adding a new checkpoint
-1) Update `docs/app_summary.md`.
-2) Copy the previous `docs/app_summary.md` into `docs/checkpoints/history/` using date + git hash.
+1) Update `docs/app_summary_latest.md`.
+2) Copy the previous `docs/app_summary_latest.md` into `docs/checkpoints/history/` using date + git hash.
 3) Record verification commands and manual checks in the summary appendix.

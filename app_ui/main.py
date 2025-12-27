@@ -41,6 +41,7 @@ from .labs.host import LabHost
 from .labs.host import DEFAULT_POLICY as LAB_DEFAULT_POLICY
 from .widgets.app_header import AppHeader
 from .widgets.workspace_selector import WorkspaceSelector
+from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.screens.component_management import ComponentManagementScreen
 from app_ui.screens.block_catalog import BlockCatalogScreen
 from app_ui.screens.block_host import BlockHostScreen
@@ -350,6 +351,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         on_open_component_mgmt,
         on_open_component_sandbox,
         on_open_block_catalog,
+        on_open_code_see,
         on_quit,
         experience_profile: str,
         *,
@@ -366,6 +368,7 @@ class MainMenuScreen(QtWidgets.QWidget):
         self.on_open_component_mgmt = on_open_component_mgmt
         self.on_open_component_sandbox = on_open_component_sandbox
         self.on_open_block_catalog = on_open_block_catalog
+        self.on_open_code_see = on_open_code_see
         self.on_quit = on_quit
         self.profile = experience_profile
 
@@ -444,6 +447,9 @@ class MainMenuScreen(QtWidgets.QWidget):
 
         if self.profile == "Explorer" and self.on_open_component_sandbox and COMPONENT_RUNTIME_AVAILABLE:
             self._add_button(f"{terms.BLOCK} Sandbox", self.on_open_component_sandbox)
+
+        if self.profile == "Explorer" and self.on_open_code_see:
+            self._add_button("Code See", self.on_open_code_see)
 
         self._add_button("Settings", self.on_open_settings)
         self._add_button("Quit", self.on_quit)
@@ -2733,6 +2739,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._open_component_management,
             self._open_component_sandbox,
             self._open_block_catalog,
+            self._open_code_see,
             self._quit_app,
             self.current_profile,
             workspace_selector_factory=selector_factory,
@@ -2807,6 +2814,11 @@ class MainWindow(QtWidgets.QMainWindow):
             component_policy_provider=self._get_component_policy,
             bus=APP_BUS,
         )
+        self.codesee = CodeSeeScreen(
+            on_back=self._show_main_menu,
+            workspace_info_provider=self._get_workspace_info,
+            workspace_selector_factory=selector_factory,
+        )
         self.component_host = ComponentHostScreen(
             self._show_content_browser, workspace_selector_factory=selector_factory
         )
@@ -2821,6 +2833,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.component_sandbox)
         self.stacked.addWidget(self.block_host)
         self.stacked.addWidget(self.block_catalog)
+        self.stacked.addWidget(self.codesee)
         self.stacked.addWidget(self.component_host)
         self._refresh_workspace_selectors()
 
@@ -2912,6 +2925,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _get_component_policy(self) -> WorkspaceComponentPolicy:
         return self.workspace_component_policy
+
+    def _get_workspace_info(self) -> Dict[str, Any]:
+        return self.workspace_info if isinstance(self.workspace_info, dict) else {}
 
     def _active_workspace_prefs_root(self) -> Path:
         paths = self.workspace_info.get("paths") if isinstance(self.workspace_info, dict) else None
@@ -3124,9 +3140,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _show_main_menu(self):
         self._dispose_lab_widget()
+        if self.codesee and self.stacked.currentWidget() == self.codesee:
+            try:
+                self.codesee.save_layout()
+            except Exception:
+                pass
         self.stacked.setCurrentWidget(self.main_menu)
 
     def _on_workspace_changed(self, workspace: Dict[str, Any], *, notify_bus: bool = True) -> None:
+        if self.codesee:
+            try:
+                self.codesee.save_layout()
+            except Exception:
+                pass
         if isinstance(workspace, dict):
             self.workspace_info = workspace
         self._load_active_workspace_config()
@@ -3151,6 +3177,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.block_catalog:
             try:
                 self.block_catalog.on_workspace_changed()
+            except Exception:
+                pass
+        if self.codesee:
+            try:
+                self.codesee.on_workspace_changed()
             except Exception:
                 pass
         if self.content_browser:
@@ -3302,6 +3333,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.block_catalog:
             self.block_catalog.refresh_catalog()
             self.stacked.setCurrentWidget(self.block_catalog)
+
+    def _open_code_see(self) -> None:
+        self._dispose_lab_widget()
+        if self.current_profile != "Explorer":
+            return
+        if self.codesee:
+            self.codesee.open_root()
+            self.stacked.setCurrentWidget(self.codesee)
 
     def _open_component_by_id(self, component_id: str) -> None:
         self._dispose_lab_widget()
