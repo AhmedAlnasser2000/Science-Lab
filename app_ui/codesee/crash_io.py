@@ -15,6 +15,10 @@ def _crash_root(workspace_id: Optional[str]) -> Path:
     return Path("data") / "workspaces" / safe_id / "codesee" / "crash"
 
 
+def crash_dir(workspace_id: Optional[str]) -> Path:
+    return _crash_root(workspace_id)
+
+
 def write_latest_crash(workspace_id: Optional[str], record: Dict[str, Any]) -> Path:
     root = _crash_root(workspace_id)
     root.mkdir(parents=True, exist_ok=True)
@@ -54,6 +58,17 @@ def read_latest_crash(workspace_id: Optional[str]) -> Optional[Dict[str, Any]]:
     if not isinstance(data, dict) or data.get("format_version") != 1:
         return None
     return data
+
+
+def clear_latest_crash(workspace_id: Optional[str]) -> bool:
+    path = _crash_root(workspace_id) / "latest.json"
+    if not path.exists():
+        return False
+    try:
+        path.unlink()
+        return True
+    except Exception:
+        return False
 
 
 def best_effort_workspace_id() -> str:

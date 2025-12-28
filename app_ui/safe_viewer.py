@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -136,6 +137,10 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
         self.crash_btn.setEnabled(False)
         self.crash_btn.clicked.connect(self._open_crash_view)
         crash_row.addWidget(self.crash_btn)
+        self.clear_crash_btn = QtWidgets.QPushButton("Clear Crash")
+        self.clear_crash_btn.setEnabled(False)
+        self.clear_crash_btn.clicked.connect(self._clear_crash_record)
+        crash_row.addWidget(self.clear_crash_btn)
         layout.addLayout(crash_row)
 
         button_row = QtWidgets.QHBoxLayout()
@@ -230,8 +235,23 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
         record = crash_io.read_latest_crash(self._active_workspace_id)
         if record:
             exc_type = record.get("exception_type") or "Crash"
-            self.crash_label.setText(f"Last crash detected: {exc_type}")
+            stamp = _format_crash_timestamp(record.get("ts"))
+            self.crash_label.setText(f"Last crash: {exc_type} at {stamp}")
             self.crash_btn.setEnabled(True)
+            self.clear_crash_btn.setEnabled(True)
         else:
             self.crash_label.setText("No recent crash detected.")
             self.crash_btn.setEnabled(False)
+            self.clear_crash_btn.setEnabled(False)
+
+    def _clear_crash_record(self) -> None:
+        crash_io.clear_latest_crash(self._active_workspace_id)
+        self._refresh_crash_state()
+        if self._codesee_window:
+            self._codesee_window.screen.set_crash_view(True)
+
+
+def _format_crash_timestamp(ts: object) -> str:
+    if isinstance(ts, (int, float)):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    return "unknown"

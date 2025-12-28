@@ -214,6 +214,24 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addStretch()
         layout.addLayout(source_row)
 
+        self.mode_status_row = QtWidgets.QWidget()
+        mode_layout = QtWidgets.QHBoxLayout(self.mode_status_row)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(8)
+        self._mode_status_layout = mode_layout
+        self.mode_status_label = QtWidgets.QLabel("")
+        self.mode_status_label.setStyleSheet("color: #555;")
+        mode_layout.addWidget(self.mode_status_label, stretch=1)
+        self.crash_open_btn = QtWidgets.QToolButton()
+        self.crash_open_btn.setText("Open Crash Folder")
+        self.crash_open_btn.clicked.connect(self._open_crash_folder)
+        mode_layout.addWidget(self.crash_open_btn)
+        self.crash_clear_btn = QtWidgets.QToolButton()
+        self.crash_clear_btn.setText("Clear Crash")
+        self.crash_clear_btn.clicked.connect(self._clear_crash_record)
+        mode_layout.addWidget(self.crash_clear_btn)
+        layout.addWidget(self.mode_status_row)
+
         self.filter_status_row = QtWidgets.QWidget()
         status_layout = QtWidgets.QHBoxLayout(self.filter_status_row)
         self._filter_status_layout = status_layout
@@ -269,6 +287,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._load_latest_snapshot(show_status=True)
         elif self._crash_view:
             self._load_crash_record()
+        self._update_mode_status(0, 0)
 
     def open_root(self) -> None:
         if not self._active_root:
@@ -400,6 +419,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if empty_message is None and shown_nodes == 0 and self._filters_active():
             empty_message = "No nodes match the current filters."
         self._update_filter_status(total_nodes, shown_nodes)
+        self._update_mode_status(total_nodes, shown_nodes)
         self.scene.set_empty_message(empty_message)
         self.scene.build_graph(filtered, positions, diff_result=diff_result)
         self.scene.set_icon_style(self._resolved_icon_style())
@@ -463,6 +483,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.capture_btn.setEnabled(self._source in (SOURCE_DEMO, SOURCE_ATLAS))
         self.removed_button.setEnabled(self._diff_mode and self._diff_result is not None)
         self.open_window_btn.setEnabled(bool(self._allow_detach and self._on_open_window))
+        self._update_mode_status(0, 0)
 
     def _build_layer_menu(self) -> None:
         self._category_actions: Dict[str, QtGui.QAction] = {}
@@ -547,6 +568,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._persist_view_config()
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
         self.scene.update()
+        self._update_mode_status(0, 0)
 
     def _on_quick_filter_changed(self) -> None:
         self._view_config.quick_filters["only_errors"] = self._only_errors_btn.isChecked()
@@ -555,6 +577,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.quick_filters["only_mismatches"] = self._only_mismatches_btn.isChecked()
         self._persist_view_config()
         self._render_current_graph()
+        self._update_mode_status(0, 0)
 
     def _persist_view_config(self) -> None:
         view_config.save_view_config(
@@ -569,6 +592,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._sync_view_controls()
         self._persist_view_config()
         self._render_current_graph()
+        self._update_mode_status(0, 0)
 
     def _filtered_graph(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         lens = get_lens(self._lens)
@@ -674,6 +698,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._breadcrumb_row.setSpacing(spacing)
         if self._source_row:
             self._source_row.setSpacing(spacing)
+        if self._mode_status_layout:
+            self._mode_status_layout.setSpacing(spacing)
         if self._filter_status_layout:
             self._filter_status_layout.setSpacing(spacing)
 
@@ -998,6 +1024,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._set_active_graphs(graph, {})
         if show_status:
             self.status_label.setText(f"Snapshot loaded: {path.name}")
+        self._update_mode_status(0, 0)
 
     def set_crash_view(self, enabled: bool) -> None:
         self._crash_view = bool(enabled)
@@ -1011,11 +1038,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         else:
             self._crash_record = None
             self._crash_node_id = None
+            self._update_crash_actions()
+        self._update_mode_status(0, 0)
         self._render_current_graph()
 
     def _load_crash_record(self) -> None:
         self._crash_record = crash_io.read_latest_crash(self._workspace_id())
         self._crash_node_id = None
+        self._update_crash_actions()
 
     def _apply_crash_badge(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         if not self._crash_view or not self._crash_record:
@@ -1061,6 +1091,48 @@ class CodeSeeScreen(QtWidgets.QWidget):
             edges=graph.edges,
         )
 
+    def _update_mode_status(self, total_nodes: int, shown_nodes: int) -> None:
+        lens_title = self._lens_map.get(self._lens).title if self._lens in self._lens_map else self._lens
+        live_state = "On" if self._live_enabled else "Off"
+        diff_state = "On" if self._diff_mode else "Off"
+        filter_count = len(view_config.build_active_filter_chips(self._view_config))
+        parts = [
+            f"Source: {self._source}",
+            f"Lens: {lens_title}",
+            f"Live: {live_state}",
+            f"Diff: {diff_state}",
+            f"Filters: {filter_count}",
+        ]
+        if total_nodes > 0:
+            parts.append(f"Showing: {shown_nodes}/{total_nodes}")
+        if self._crash_view:
+            parts.append(f"Crash View: {_format_crash_timestamp(self._crash_record)}")
+        self.mode_status_label.setText(" | ".join(parts))
+        self._update_crash_actions()
+
+    def _update_crash_actions(self) -> None:
+        has_crash = bool(self._crash_record)
+        self.crash_open_btn.setVisible(has_crash)
+        self.crash_open_btn.setEnabled(has_crash)
+        self.crash_clear_btn.setVisible(has_crash)
+        self.crash_clear_btn.setEnabled(has_crash)
+
+    def _open_crash_folder(self) -> None:
+        path = crash_io.crash_dir(self._workspace_id())
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            url = QtCore.QUrl.fromLocalFile(str(path.resolve()))
+            QtGui.QDesktopServices.openUrl(url)
+        except Exception:
+            return
+
+    def _clear_crash_record(self) -> None:
+        crash_io.clear_latest_crash(self._workspace_id())
+        self._crash_record = None
+        self._crash_node_id = None
+        self._update_mode_status(0, 0)
+        self._render_current_graph()
+
 
 def _style_from_label(label: str) -> str:
     for style, value in ICON_STYLE_LABELS.items():
@@ -1072,11 +1144,11 @@ def _style_from_label(label: str) -> str:
 def _toggle_style() -> str:
     return (
         "QToolButton[codesee_toggle=\"true\"] {"
-        " padding: 4px 8px; color: #f2f2f2; background: #3a3a3a;"
+        " padding: 4px 8px; color: #e6e6e6; background: #323232;"
         " border: 1px solid #2b2b2b; border-radius: 4px; }"
-        "QToolButton[codesee_toggle=\"true\"]:hover { background: #454545; }"
+        "QToolButton[codesee_toggle=\"true\"]:hover { background: #3a3a3a; }"
         "QToolButton[codesee_toggle=\"true\"]:checked {"
-        " background: #4a4a4a; border: 1px solid #6b6b6b; color: #fff; }"
+        " background: #3f3f3f; border: 1px solid #5a5a5a; color: #f0f0f0; }"
     )
 
 
@@ -1474,3 +1546,12 @@ def _format_crash_record(record: dict, limit_lines: int = 12) -> str:
         f"Message: {message}\n"
         f"Traceback:\n{excerpt}"
     )
+
+
+def _format_crash_timestamp(record: Optional[dict]) -> str:
+    if not isinstance(record, dict):
+        return "n/a"
+    ts = record.get("ts")
+    if isinstance(ts, (int, float)):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    return "n/a"

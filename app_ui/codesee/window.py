@@ -38,6 +38,10 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
             runtime_hub=runtime_hub,
             allow_detach=False,
         )
+        self.screen.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         self.setCentralWidget(self.screen)
         central = self.centralWidget()
         if central:

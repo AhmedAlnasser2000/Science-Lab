@@ -12,9 +12,16 @@ __pycache__/
 
 # Runtime outputs and local mirrors (not source of truth)
 /debug.log
+/.cursor/debug.log
 /root.json
 /atlas.json
 /data/
+/data/roaming/
+/data/**/registry.json
+/data/**/jobs.json
+/data/workspaces/**/codesee/layouts/**
+/data/workspaces/**/codesee/snapshots/**
+/data/workspaces/**/codesee/crash/**
 /data/workspaces/**/codesee/**
 data/store/runs/
 data/store/runs_local/
