@@ -56,6 +56,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         runtime_hub: Optional[CodeSeeRuntimeHub] = None,
         on_open_window: Optional[Callable[[], None]] = None,
         allow_detach: bool = True,
+        safe_mode: bool = False,
     ) -> None:
         super().__init__()
         self.on_back = on_back
@@ -65,6 +66,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._runtime_hub = runtime_hub
         self._on_open_window = on_open_window
         self._allow_detach = allow_detach
+        self._safe_mode = bool(safe_mode)
         self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
         self._reduced_motion = ui_config.get_reduced_motion()
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
@@ -78,7 +80,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
         self._active_root: Optional[ArchitectureGraph] = self._demo_root
         self._active_subgraphs: Dict[str, ArchitectureGraph] = self._demo_subgraphs
-        self._source = SOURCE_DEMO
+        self._source = SOURCE_SNAPSHOT if self._safe_mode else SOURCE_DEMO
         self._graph_stack: list[str] = [self._demo_root.graph_id]
         self._current_graph_id: Optional[str] = None
         self._current_graph: Optional[ArchitectureGraph] = None
@@ -130,6 +132,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.source_combo = QtWidgets.QComboBox()
         self.source_combo.addItems([SOURCE_DEMO, SOURCE_ATLAS, SOURCE_SNAPSHOT])
         self.source_combo.currentTextChanged.connect(self._on_source_changed)
+        self.source_combo.blockSignals(True)
+        self.source_combo.setCurrentText(self._source)
+        self.source_combo.blockSignals(False)
         source_row.addWidget(self.source_combo)
         self.layers_button = QtWidgets.QToolButton()
         self.layers_button.setText("Layers")
@@ -250,6 +255,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._sync_view_controls()
         self._update_action_state()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
+        if self._safe_mode:
+            self.live_toggle.setChecked(False)
+            self.live_toggle.setEnabled(False)
+            self.live_toggle.setVisible(False)
+            self._update_action_state()
+            self._load_latest_snapshot(show_status=True)
 
     def open_root(self) -> None:
         if not self._active_root:
@@ -736,6 +747,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
 
     def _on_live_toggled(self, checked: bool) -> None:
+        if self._safe_mode:
+            self._live_enabled = False
+            self.live_toggle.blockSignals(True)
+            self.live_toggle.setChecked(False)
+            self.live_toggle.blockSignals(False)
+            return
         self._live_enabled = checked
         if self._runtime_hub:
             if checked and not self._runtime_connected:
@@ -881,7 +898,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
             bus=self._bus,
             content_adapter=self._content_adapter,
         )
-        root, subgraphs = build_atlas_graph(ctx)
+        if self._safe_mode:
+            try:
+                root, subgraphs = build_atlas_graph(ctx)
+            except Exception as exc:
+                self.status_label.setText(f"Atlas build failed: {exc}")
+                return
+        else:
+            root, subgraphs = build_atlas_graph(ctx)
         self._atlas_root = root
         self._atlas_subgraphs = subgraphs
         self._set_active_graphs(root, subgraphs)

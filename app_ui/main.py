@@ -3686,17 +3686,35 @@ def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> st
 
 # === [NAV-99] main() entrypoint =============================================
 # region NAV-99 main()
-def main():
-    profile = ui_config.load_experience_profile()
-    print(f"Experience profile: {profile}")
-    app = QtWidgets.QApplication(sys.argv)
+def _run_app(argv: List[str], *, safe_viewer: bool) -> int:
+    app = QtWidgets.QApplication(argv)
     _install_qt_message_filter()
     apply_ui_config_styles(app)
     scale_cfg = ui_scale.load_config()
     ui_scale.apply_to_app(app, scale_cfg)
-    window = MainWindow(profile)
+    if safe_viewer:
+        from app_ui.safe_viewer import SafeViewerWindow
+
+        window = SafeViewerWindow()
+    else:
+        profile = ui_config.load_experience_profile()
+        print(f"Experience profile: {profile}")
+        window = MainWindow(profile)
     window.show()
-    sys.exit(app.exec())
+    return app.exec()
+
+
+def main():
+    safe_viewer = "--safe-viewer" in sys.argv
+    argv = [arg for arg in sys.argv if arg != "--safe-viewer"]
+    if safe_viewer:
+        sys.exit(_run_app(argv, safe_viewer=True))
+    try:
+        sys.exit(_run_app(argv, safe_viewer=False))
+    except Exception as exc:
+        print("Startup failed during normal boot.")
+        print("Tip: python -m app_ui.main --safe-viewer")
+        raise
 
 
 if __name__ == "__main__":
