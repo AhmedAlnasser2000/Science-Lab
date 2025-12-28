@@ -3713,6 +3713,31 @@ def main():
         sys.exit(_run_app(argv, safe_viewer=False))
     except Exception as exc:
         print("Startup failed during normal boot.")
+        try:
+            import platform
+            import traceback
+            from app_ui.codesee import crash_io
+
+            workspace_id = crash_io.best_effort_workspace_id()
+            record = {
+                "format_version": 1,
+                "ts": time.time(),
+                "workspace_id": workspace_id,
+                "where": "startup",
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+                "traceback": traceback.format_exc(),
+                "app": {
+                    "python": sys.version,
+                    "platform": platform.platform(),
+                    "pid": os.getpid(),
+                },
+            }
+            path = crash_io.write_latest_crash(workspace_id, record)
+            crash_io.write_history_crash(workspace_id, record)
+            print(f"Crash record written: {path}")
+        except Exception as write_exc:
+            print(f"Crash record write failed: {write_exc}")
         print("Tip: python -m app_ui.main --safe-viewer")
         raise
 

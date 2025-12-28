@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
 
+from app_ui.codesee import crash_io
 from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
@@ -64,6 +65,7 @@ class CodeSeeViewerWindow(QtWidgets.QMainWindow):
         workspace_info_provider,
         workspace_selector_factory,
         on_close,
+        crash_view: bool = False,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Code See (Safe Viewer)")
@@ -77,6 +79,7 @@ class CodeSeeViewerWindow(QtWidgets.QMainWindow):
             runtime_hub=None,
             allow_detach=False,
             safe_mode=True,
+            crash_view=crash_view,
         )
         self.setCentralWidget(self.screen)
 
@@ -125,13 +128,27 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
         self._workspace_path.setStyleSheet("color: #666;")
         layout.addWidget(self._workspace_path)
 
+        crash_row = QtWidgets.QHBoxLayout()
+        self.crash_label = QtWidgets.QLabel("No recent crash detected.")
+        self.crash_label.setStyleSheet("color: #555;")
+        crash_row.addWidget(self.crash_label, stretch=1)
+        self.crash_btn = QtWidgets.QPushButton("Open Crash View")
+        self.crash_btn.setEnabled(False)
+        self.crash_btn.clicked.connect(self._open_crash_view)
+        crash_row.addWidget(self.crash_btn)
+        layout.addLayout(crash_row)
+
+        button_row = QtWidgets.QHBoxLayout()
         self.open_btn = QtWidgets.QPushButton("Open Code See")
         self.open_btn.clicked.connect(self._open_codesee)
-        layout.addWidget(self.open_btn)
+        button_row.addWidget(self.open_btn)
+        button_row.addStretch()
+        layout.addLayout(button_row)
 
         layout.addStretch()
         self.setCentralWidget(central)
         self._refresh_workspace_path()
+        self._refresh_crash_state()
 
     def _list_workspaces(self) -> List[Dict[str, Any]]:
         workspaces = discover_workspaces()
@@ -173,6 +190,7 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
 
     def _on_workspace_activated(self, _workspace_id: str) -> None:
         self._refresh_workspace_path()
+        self._refresh_crash_state()
         if self._codesee_window:
             self._codesee_window.screen.on_workspace_changed()
 
@@ -185,9 +203,35 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
             workspace_info_provider=self._workspace_info,
             workspace_selector_factory=self._workspace_selector_factory,
             on_close=self._on_codesee_closed,
+            crash_view=False,
+        )
+        self._codesee_window = window
+        window.show()
+
+    def _open_crash_view(self) -> None:
+        if self._codesee_window:
+            self._codesee_window.screen.set_crash_view(True)
+            self._codesee_window.raise_()
+            self._codesee_window.activateWindow()
+            return
+        window = CodeSeeViewerWindow(
+            workspace_info_provider=self._workspace_info,
+            workspace_selector_factory=self._workspace_selector_factory,
+            on_close=self._on_codesee_closed,
+            crash_view=True,
         )
         self._codesee_window = window
         window.show()
 
     def _on_codesee_closed(self) -> None:
         self._codesee_window = None
+
+    def _refresh_crash_state(self) -> None:
+        record = crash_io.read_latest_crash(self._active_workspace_id)
+        if record:
+            exc_type = record.get("exception_type") or "Crash"
+            self.crash_label.setText(f"Last crash detected: {exc_type}")
+            self.crash_btn.setEnabled(True)
+        else:
+            self.crash_label.setText("No recent crash detected.")
+            self.crash_btn.setEnabled(False)

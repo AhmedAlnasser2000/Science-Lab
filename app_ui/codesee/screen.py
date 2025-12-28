@@ -10,7 +10,7 @@ from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
-from . import icon_pack, layout_store, snapshot_index, snapshot_io, view_config
+from . import crash_io, icon_pack, layout_store, snapshot_index, snapshot_io, view_config
 from .badges import Badge, badge_from_key, sort_by_priority
 from .canvas.items import clear_icon_cache
 from .canvas.scene import GraphScene
@@ -57,6 +57,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         on_open_window: Optional[Callable[[], None]] = None,
         allow_detach: bool = True,
         safe_mode: bool = False,
+        crash_view: bool = False,
     ) -> None:
         super().__init__()
         self.on_back = on_back
@@ -67,6 +68,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._on_open_window = on_open_window
         self._allow_detach = allow_detach
         self._safe_mode = bool(safe_mode)
+        self._crash_view = bool(crash_view)
+        self._crash_record: Optional[dict] = None
+        self._crash_node_id: Optional[str] = None
         self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
         self._reduced_motion = ui_config.get_reduced_motion()
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
@@ -260,7 +264,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.live_toggle.setEnabled(False)
             self.live_toggle.setVisible(False)
             self._update_action_state()
+            if self._crash_view:
+                self._load_crash_record()
             self._load_latest_snapshot(show_status=True)
+        elif self._crash_view:
+            self._load_crash_record()
 
     def open_root(self) -> None:
         if not self._active_root:
@@ -280,6 +288,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._events_by_node.clear()
         self._overlay_badges.clear()
         self._overlay_checks.clear()
+        if self._crash_view:
+            self._load_crash_record()
         self._sync_style_combo()
         self._sync_view_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
@@ -375,6 +385,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         total_nodes = len(graph_to_render.nodes)
         overlay_graph = self._apply_runtime_overlay(graph_to_render)
         overlay_graph = self._apply_expectation_badges(overlay_graph)
+        overlay_graph = self._apply_crash_badge(overlay_graph)
         filtered = self._filtered_graph(overlay_graph)
         shown_nodes = len(filtered.nodes)
         empty_message = None
@@ -888,7 +899,19 @@ class CodeSeeScreen(QtWidgets.QWidget):
             events = self._runtime_hub.query(node.node_id, limit=20)
         elif node.node_id in self._events_by_node:
             events = list(self._events_by_node[node.node_id])
-        dialog = CodeSeeInspectorDialog(node, graph, badge, diff_state, diff_change, events, parent=self)
+        crash_record = None
+        if self._crash_view and self._crash_record and node.node_id == self._crash_node_id:
+            crash_record = self._crash_record
+        dialog = CodeSeeInspectorDialog(
+            node,
+            graph,
+            badge,
+            diff_state,
+            diff_change,
+            events,
+            crash_record,
+            parent=self,
+        )
         dialog.exec()
 
     def _build_atlas(self) -> None:
@@ -975,6 +998,68 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._set_active_graphs(graph, {})
         if show_status:
             self.status_label.setText(f"Snapshot loaded: {path.name}")
+
+    def set_crash_view(self, enabled: bool) -> None:
+        self._crash_view = bool(enabled)
+        if self._crash_view:
+            self._source = SOURCE_SNAPSHOT
+            self.source_combo.blockSignals(True)
+            self.source_combo.setCurrentText(SOURCE_SNAPSHOT)
+            self.source_combo.blockSignals(False)
+            self._load_crash_record()
+            self._load_latest_snapshot(show_status=True)
+        else:
+            self._crash_record = None
+            self._crash_node_id = None
+        self._render_current_graph()
+
+    def _load_crash_record(self) -> None:
+        self._crash_record = crash_io.read_latest_crash(self._workspace_id())
+        self._crash_node_id = None
+
+    def _apply_crash_badge(self, graph: ArchitectureGraph) -> ArchitectureGraph:
+        if not self._crash_view or not self._crash_record:
+            return graph
+        node_map = {node.node_id: node for node in graph.nodes}
+        target_id = "system:app_ui"
+        if target_id not in node_map:
+            workspace_node = f"workspace:{self._workspace_id()}"
+            if workspace_node in node_map:
+                target_id = workspace_node
+            elif graph.nodes:
+                target_id = graph.nodes[0].node_id
+            else:
+                target_id = "system:app_ui"
+        self._crash_node_id = target_id
+        badge = _crash_badge_from_record(self._crash_record)
+        if target_id in node_map:
+            node = node_map[target_id]
+            node_map[target_id] = Node(
+                node_id=node.node_id,
+                title=node.title,
+                node_type=node.node_type,
+                subgraph_id=node.subgraph_id,
+                badges=list(node.badges) + [badge],
+                severity_state=node.severity_state,
+                checks=node.checks,
+            )
+            nodes = list(node_map.values())
+        else:
+            nodes = list(node_map.values())
+            nodes.append(
+                Node(
+                    node_id=target_id,
+                    title="app_ui",
+                    node_type="System",
+                    badges=[badge],
+                )
+            )
+        return ArchitectureGraph(
+            graph_id=graph.graph_id,
+            title=graph.title,
+            nodes=nodes,
+            edges=graph.edges,
+        )
 
 
 def _style_from_label(label: str) -> str:
@@ -1126,6 +1211,7 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         diff_state: Optional[str],
         diff_change: Optional[NodeChange],
         events: list[CodeSeeEvent],
+        crash_record: Optional[dict],
         parent: Optional[QtWidgets.QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -1179,6 +1265,15 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         events_text.setReadOnly(True)
         events_text.setPlainText(_format_events(events))
         layout.addWidget(events_text)
+
+        if crash_record:
+            crash_label = QtWidgets.QLabel("Crash")
+            crash_label.setStyleSheet("color: #444;")
+            layout.addWidget(crash_label)
+            crash_text = QtWidgets.QPlainTextEdit()
+            crash_text.setReadOnly(True)
+            crash_text.setPlainText(_format_crash_record(crash_record))
+            layout.addWidget(crash_text)
 
         checks_label = QtWidgets.QLabel("Expected vs Actual")
         checks_label.setStyleSheet("color: #444;")
@@ -1340,4 +1435,42 @@ def _badge_for_check(check: EVACheck) -> Badge:
         detail=str(check.context) if check.context else None,
         severity="failure",
         timestamp=str(check.ts),
+    )
+
+
+def _crash_badge_from_record(record: dict) -> Badge:
+    message = str(record.get("message") or "Crash detected.")
+    exc_type = str(record.get("exception_type") or "Crash")
+    summary = f"{exc_type}: {message}"
+    timestamp = str(record.get("ts") or "")
+    return Badge(
+        key="state.crash",
+        rail="top",
+        title="Crash",
+        summary=summary,
+        detail=str(record.get("where") or "startup"),
+        severity="crash",
+        timestamp=timestamp,
+    )
+
+
+def _format_crash_record(record: dict, limit_lines: int = 12) -> str:
+    ts = record.get("ts")
+    stamp = "n/a"
+    if isinstance(ts, (int, float)):
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    exc_type = record.get("exception_type") or "Crash"
+    message = record.get("message") or ""
+    where = record.get("where") or "startup"
+    traceback_text = record.get("traceback") or ""
+    lines = traceback_text.splitlines()
+    if limit_lines and len(lines) > limit_lines:
+        lines = lines[-limit_lines:]
+    excerpt = "\n".join(lines).strip() or "(traceback unavailable)"
+    return (
+        f"Time: {stamp}\n"
+        f"Where: {where}\n"
+        f"Type: {exc_type}\n"
+        f"Message: {message}\n"
+        f"Traceback:\n{excerpt}"
     )
