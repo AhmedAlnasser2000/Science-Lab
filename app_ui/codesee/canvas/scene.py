@@ -33,6 +33,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._nodes: Dict[str, NodeItem] = {}
         self._edges: list[EdgeItem] = []
         self._signals: list[dict] = []
+        self._pulses: Dict[str, dict] = {}
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -49,6 +50,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._edges = []
         self._empty_item = None
         self._signals = []
+        self._pulses = {}
         if self._signal_timer.isActive():
             self._signal_timer.stop()
 
@@ -119,10 +121,21 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._reduced_motion = bool(value)
 
     def flash_node(self, node_id: str, color: Optional[QtGui.QColor] = None) -> None:
-        item = self._nodes.get(node_id)
-        if not item:
+        if self._reduced_motion:
+            self._queue_pulse(
+                node_id,
+                color=color,
+                mode="arrival",
+                linger_ms=200,
+                fade_ms=300,
+            )
             return
-        item.flash(color, reduced_motion=self._reduced_motion)
+        self._queue_pulse(
+            node_id,
+            color=color,
+            mode="flash",
+            duration_ms=500,
+        )
 
     def pulse_node(
         self,
@@ -132,10 +145,21 @@ class GraphScene(QtWidgets.QGraphicsScene):
         color: Optional[QtGui.QColor] = None,
         duration_ms: int = 800,
     ) -> None:
-        item = self._nodes.get(node_id)
-        if not item:
+        if self._reduced_motion:
+            self._queue_pulse(
+                node_id,
+                color=color,
+                mode="arrival",
+                linger_ms=200,
+                fade_ms=300,
+            )
             return
-        item.pulse(color, duration_ms=duration_ms, reduced_motion=self._reduced_motion)
+        self._queue_pulse(
+            node_id,
+            color=color,
+            mode="pulse",
+            duration_ms=duration_ms,
+        )
 
     def emit_signal(
         self,
@@ -156,30 +180,33 @@ class GraphScene(QtWidgets.QGraphicsScene):
         alpha = _setting_value(settings, "pulse_alpha", 0.6)
         max_signals = _setting_value(settings, "max_concurrent_signals", 6)
         if self._reduced_motion:
-            target_item.arrival_pulse(
-                color,
+            self._queue_pulse(
+                target_id,
+                color=color,
+                mode="arrival",
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
-                reduced_motion=True,
             )
             return
         if not source_id or not self._edge_exists(source_id, target_id):
-            target_item.arrival_pulse(
-                color,
+            self._queue_pulse(
+                target_id,
+                color=color,
+                mode="arrival",
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
-                reduced_motion=False,
             )
             return
         if len(self._signals) >= int(max_signals):
             self._drop_oldest_signal()
         src_item = self._nodes.get(source_id)
         if not src_item:
-            target_item.arrival_pulse(
-                color,
+            self._queue_pulse(
+                target_id,
+                color=color,
+                mode="arrival",
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
-                reduced_motion=False,
             )
             return
         start = src_item.center_pos()
@@ -211,6 +238,21 @@ class GraphScene(QtWidgets.QGraphicsScene):
     def signals_active_count(self) -> int:
         return len(self._signals)
 
+    def pulse_state_count(self) -> int:
+        return len(self._pulses)
+
+    def clear_pulses(self) -> None:
+        if not self._pulses:
+            return
+        for node_id, item in list(self._nodes.items()):
+            try:
+                item.set_highlight(0.0, None)
+            except RuntimeError:
+                pass
+        self._pulses = {}
+        if not self._signals and self._signal_timer.isActive():
+            self._signal_timer.stop()
+
     def node_positions(self) -> Dict[str, Tuple[float, float]]:
         positions: Dict[str, Tuple[float, float]] = {}
         for node_id, item in self._nodes.items():
@@ -219,10 +261,6 @@ class GraphScene(QtWidgets.QGraphicsScene):
         return positions
 
     def _tick_signals(self) -> None:
-        if not self._signals:
-            if self._signal_timer.isActive():
-                self._signal_timer.stop()
-            return
         now = time.monotonic()
         remaining = []
         for state in list(self._signals):
@@ -235,14 +273,13 @@ class GraphScene(QtWidgets.QGraphicsScene):
             if progress >= 1.0:
                 self.removeItem(dot)
                 target_id = str(state.get("target"))
-                item = self._nodes.get(target_id)
-                if item:
-                    item.arrival_pulse(
-                        state.get("color"),
-                        linger_ms=int(state.get("linger_ms", 300)),
-                        fade_ms=int(state.get("fade_ms", 500)),
-                        reduced_motion=False,
-                    )
+                self._queue_pulse(
+                    target_id,
+                    color=state.get("color"),
+                    mode="arrival",
+                    linger_ms=int(state.get("linger_ms", 300)),
+                    fade_ms=int(state.get("fade_ms", 500)),
+                )
                 continue
             start = state.get("start")
             end = state.get("end")
@@ -251,8 +288,10 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 dot.setPos(pos)
             remaining.append(state)
         self._signals = remaining
-        if not self._signals:
-            self._signal_timer.stop()
+        self._tick_pulses(now)
+        if not self._signals and not self._pulses:
+            if self._signal_timer.isActive():
+                self._signal_timer.stop()
 
     def _edge_exists(self, source_id: str, target_id: str) -> bool:
         for edge in self._edges:
@@ -261,6 +300,57 @@ class GraphScene(QtWidgets.QGraphicsScene):
             if edge.src.node.node_id == target_id and edge.dst.node.node_id == source_id:
                 return True
         return False
+
+    def _queue_pulse(
+        self,
+        node_id: str,
+        *,
+        color: Optional[QtGui.QColor],
+        mode: str,
+        duration_ms: int = 500,
+        linger_ms: int = 0,
+        fade_ms: int = 0,
+    ) -> None:
+        if node_id not in self._nodes:
+            return
+        self._pulses[node_id] = {
+            "t0": time.monotonic(),
+            "color": color,
+            "mode": mode,
+            "duration": max(0.05, float(duration_ms) / 1000.0),
+            "linger": max(0.0, float(linger_ms) / 1000.0),
+            "fade": max(0.0, float(fade_ms) / 1000.0),
+        }
+        if not self._signal_timer.isActive():
+            self._signal_timer.start()
+
+    def _tick_pulses(self, now: float) -> None:
+        if not self._pulses:
+            return
+        to_remove = []
+        for node_id, state in list(self._pulses.items()):
+            item = self._nodes.get(node_id)
+            if not item:
+                to_remove.append(node_id)
+                continue
+            t0 = float(state.get("t0", now))
+            elapsed = max(0.0, now - t0)
+            strength, done = _pulse_strength(state, elapsed)
+            try:
+                item.set_highlight(strength, state.get("color"))
+            except RuntimeError:
+                to_remove.append(node_id)
+                continue
+            if done:
+                to_remove.append(node_id)
+        for node_id in to_remove:
+            item = self._nodes.get(node_id)
+            if item:
+                try:
+                    item.set_highlight(0.0, None)
+                except RuntimeError:
+                    pass
+            self._pulses.pop(node_id, None)
 
     def _drop_oldest_signal(self) -> None:
         if not self._signals:
@@ -285,6 +375,27 @@ def _distance(start: QtCore.QPointF, end: QtCore.QPointF) -> float:
     dx = start.x() - end.x()
     dy = start.y() - end.y()
     return (dx * dx + dy * dy) ** 0.5
+
+
+def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
+    mode = state.get("mode")
+    if mode == "arrival":
+        linger = float(state.get("linger", 0.0))
+        fade = float(state.get("fade", 0.0))
+        if elapsed <= linger:
+            return 1.0, False
+        if fade <= 0:
+            return 0.0, True
+        fade_elapsed = elapsed - linger
+        if fade_elapsed >= fade:
+            return 0.0, True
+        strength = 1.0 - (fade_elapsed / fade)
+        return max(0.0, strength), False
+    duration = float(state.get("duration", 0.5))
+    if elapsed >= duration:
+        return 0.0, True
+    strength = 1.0 - (elapsed / max(duration, 0.001))
+    return max(0.0, strength), False
 
 
 def _node_diff_state(node_id: str, diff_result: Optional[DiffResult]) -> Optional[str]:

@@ -52,6 +52,10 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
         self._restore_geometry()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[name-defined]
+        try:
+            self.screen.cleanup()
+        except Exception:
+            pass
         self._persist_geometry()
         if self._on_close:
             try:

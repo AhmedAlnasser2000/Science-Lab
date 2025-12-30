@@ -70,7 +70,6 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._last_badge_key: Optional[str] = None
         self._highlight_strength = 0.0
         self._highlight_color = QtGui.QColor("#4c6ef5")
-        self._highlight_token = 0
 
         self.setFlags(
             QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -105,18 +104,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.update()
 
     def flash(self, color: Optional[QtGui.QColor], *, reduced_motion: bool) -> None:
-        if color is not None:
-            self._highlight_color = color
-        self._highlight_token += 1
-        token = self._highlight_token
-        if reduced_motion:
-            self._highlight_strength = 1.0
-            self.update()
-            QtCore.QTimer.singleShot(500, lambda: self._clear_highlight(token))
-            return
-        steps = [(0, 1.0), (200, 0.7), (400, 0.3), (650, 0.0)]
-        for delay, strength in steps:
-            QtCore.QTimer.singleShot(delay, lambda s=strength, t=token: self._set_highlight(t, s))
+        self.set_highlight(1.0, color)
 
     def pulse(
         self,
@@ -125,19 +113,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         duration_ms: int = 800,
         reduced_motion: bool,
     ) -> None:
-        if reduced_motion:
-            self.flash(color, reduced_motion=True)
-            return
-        if color is not None:
-            self._highlight_color = color
-        self._highlight_token += 1
-        token = self._highlight_token
-        steps = 6
-        duration_ms = max(200, int(duration_ms))
-        for idx in range(steps + 1):
-            delay = int(duration_ms * (idx / steps))
-            strength = max(0.0, 1.0 - (idx / steps))
-            QtCore.QTimer.singleShot(delay, lambda s=strength, t=token: self._set_highlight(t, s))
+        self.set_highlight(1.0, color)
 
     def arrival_pulse(
         self,
@@ -147,40 +123,12 @@ class NodeItem(QtWidgets.QGraphicsItem):
         fade_ms: int,
         reduced_motion: bool,
     ) -> None:
+        self.set_highlight(1.0, color)
+
+    def set_highlight(self, strength: float, color: Optional[QtGui.QColor] = None) -> None:
         if color is not None:
             self._highlight_color = color
-        self._highlight_token += 1
-        token = self._highlight_token
-        self._highlight_strength = 1.0
-        self.update()
-        linger_ms = max(0, int(linger_ms))
-        fade_ms = max(0, int(fade_ms))
-
-        def _start_fade() -> None:
-            if fade_ms <= 0:
-                self._clear_highlight(token)
-                return
-            steps = 2 if reduced_motion else 6
-            for idx in range(steps):
-                delay = int(fade_ms * ((idx + 1) / steps))
-                strength = max(0.0, 1.0 - ((idx + 1) / steps))
-                QtCore.QTimer.singleShot(
-                    delay,
-                    lambda s=strength, t=token: self._set_highlight(t, s),
-                )
-
-        QtCore.QTimer.singleShot(linger_ms, _start_fade)
-
-    def _set_highlight(self, token: int, strength: float) -> None:
-        if token != self._highlight_token:
-            return
-        self._highlight_strength = strength
-        self.update()
-
-    def _clear_highlight(self, token: int) -> None:
-        if token != self._highlight_token:
-            return
-        self._highlight_strength = 0.0
+        self._highlight_strength = max(0.0, min(1.0, float(strength)))
         self.update()
 
     def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:

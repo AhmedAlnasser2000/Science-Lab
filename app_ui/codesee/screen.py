@@ -387,6 +387,18 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def save_layout(self) -> None:
         self._save_layout()
 
+    def cleanup(self) -> None:
+        if self._status_timer and self._status_timer.isActive():
+            self._status_timer.stop()
+        if self._runtime_hub and self._runtime_connected:
+            try:
+                self._runtime_hub.event_emitted.disconnect(self._on_runtime_event)
+            except Exception:
+                pass
+            self._runtime_connected = False
+        if self.scene:
+            self.scene.clear_pulses()
+
     def set_reduced_motion(self, value: bool) -> None:
         self._reduced_motion = bool(value)
         self.scene.set_icon_style(self._resolved_icon_style())
@@ -2088,10 +2100,18 @@ def run_pulse_smoke_test() -> None:
     )
     screen.live_toggle.setChecked(True)
     screen._pulse_settings.travel_speed_px_per_s = 200
-    result = {"events": 0, "signals": 0}
+    result = {"events": 0, "signals": 0, "activity_before": 0}
 
     def _emit() -> None:
         hub.publish_test_pulse(node_ids=["module.ui", "module.runtime_bus"])
+
+    def _check_before_rebuild() -> None:
+        result["activity_before"] = (
+            screen.scene.pulse_state_count() + screen.scene.signals_active_count()
+        )
+
+    def _rebuild() -> None:
+        screen._set_active_graphs(screen._demo_root, screen._demo_subgraphs)
 
     def _check() -> None:
         result["events"] = hub.event_count()
@@ -2099,10 +2119,12 @@ def run_pulse_smoke_test() -> None:
         app.quit()
 
     QtCore.QTimer.singleShot(80, _emit)
-    QtCore.QTimer.singleShot(250, _check)
+    QtCore.QTimer.singleShot(120, _check_before_rebuild)
+    QtCore.QTimer.singleShot(160, _rebuild)
+    QtCore.QTimer.singleShot(260, _check)
     QtCore.QTimer.singleShot(1500, app.quit)
     app.exec()
     if result["events"] <= 0:
         raise AssertionError("expected at least one event")
-    if result["signals"] <= 0:
-        raise AssertionError("expected active signals")
+    if result["activity_before"] <= 0:
+        raise AssertionError("expected signal activity before rebuild")
