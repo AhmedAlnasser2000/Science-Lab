@@ -208,6 +208,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
     def set_empty_message(self, message: Optional[str]) -> None:
         self._empty_message = message
 
+    def signals_active_count(self) -> int:
+        return len(self._signals)
+
     def node_positions(self) -> Dict[str, Tuple[float, float]]:
         positions: Dict[str, Tuple[float, float]] = {}
         for node_id, item in self._nodes.items():

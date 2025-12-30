@@ -18,6 +18,7 @@ class ViewConfig:
     icon_style: str = ICON_STYLE_AUTO
     node_theme: str = "neutral"
     pulse_settings: "PulseSettings" = field(default_factory=lambda: default_pulse_settings())
+    span_stuck_seconds: int = 10
 
 
 @dataclass
@@ -56,6 +57,8 @@ _QUICK_FILTER_DEFAULTS = {
     "only_failures": False,
     "only_expecting": False,
     "only_mismatches": False,
+    "only_active": False,
+    "only_stuck": False,
 }
 
 
@@ -68,6 +71,7 @@ def default_view_config(lens_id: str, *, icon_style: str = ICON_STYLE_AUTO) -> V
         icon_style=icon_style,
         node_theme="neutral",
         pulse_settings=default_pulse_settings(),
+        span_stuck_seconds=10,
     )
 
 
@@ -137,6 +141,7 @@ def load_view_config(workspace_id: str, lens_id: str) -> ViewConfig:
     if isinstance(raw_theme, str) and raw_theme.strip():
         config.node_theme = raw_theme.strip()
     config.pulse_settings = _merge_pulse_settings(config.pulse_settings, settings.get("pulse_settings"))
+    config.span_stuck_seconds = _merge_int_setting(settings.get("span_stuck_seconds"), config.span_stuck_seconds)
     return config
 
 
@@ -161,6 +166,7 @@ def save_view_config(
     if config.node_theme:
         settings["node_theme"] = config.node_theme
     settings["pulse_settings"] = _pulse_settings_to_dict(config.pulse_settings)
+    settings["span_stuck_seconds"] = int(config.span_stuck_seconds)
     lenses = settings.get("lenses")
     if not isinstance(lenses, dict):
         lenses = {}
@@ -201,6 +207,15 @@ def _merge_pulse_settings(defaults: PulseSettings, raw) -> PulseSettings:
             except Exception:
                 continue
     return merged
+
+
+def _merge_int_setting(raw, default: int) -> int:
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
 
 
 def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:

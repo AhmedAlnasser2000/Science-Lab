@@ -19,10 +19,22 @@ except Exception:  # pragma: no cover
 
 try:
     from app_ui.codesee.expectations import build_check
-    from app_ui.codesee.runtime.hub import publish_expect_check_global
+    from app_ui.codesee.runtime.events import SpanEnd, SpanStart, SpanUpdate
+    from app_ui.codesee.runtime.hub import (
+        publish_expect_check_global,
+        publish_span_end_global,
+        publish_span_start_global,
+        publish_span_update_global,
+    )
 except Exception:  # pragma: no cover - defensive
     build_check = None
     publish_expect_check_global = None
+    publish_span_start_global = None
+    publish_span_update_global = None
+    publish_span_end_global = None
+    SpanStart = None
+    SpanUpdate = None
+    SpanEnd = None
 
 BUS_WORKSPACE_GET_ACTIVE_REQUEST = (
     BUS_TOPICS.CORE_WORKSPACE_GET_ACTIVE_REQUEST
@@ -868,6 +880,19 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         target, include_files = export_info
         expected_files = 1 + len(include_files)
         written_files = 0
+        span_id = None
+        if callable(publish_span_start_global) and SpanStart:
+            span_id = f"content.export.{ws.get('id')}.{int(time.time() * 1000)}"
+            publish_span_start_global(
+                SpanStart(
+                    span_id=span_id,
+                    label="Export project",
+                    node_id="system:content_system",
+                    source_id="system:content_system",
+                    severity=None,
+                    ts=time.time(),
+                )
+            )
 
         def _emit_export_check(status: str, message: str, error: Optional[str] = None) -> None:
             if not callable(build_check) or not callable(publish_expect_check_global):
@@ -941,9 +966,37 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         except Exception as exc:
             self.io_status.setText(f"Export failed: {exc}")
             _emit_export_check("failed", "Export failed.", str(exc))
+            if span_id and callable(publish_span_end_global) and SpanEnd:
+                publish_span_end_global(
+                    SpanEnd(
+                        span_id=span_id,
+                        status="failed",
+                        ts=time.time(),
+                        message=f"Export failed: {exc}",
+                    )
+                )
             return
         self.io_status.setText(f"Exported project to {target}")
         _emit_export_check("ok", f"Export wrote {written_files}/{expected_files} file(s).")
+        if span_id and callable(publish_span_update_global) and SpanUpdate:
+            progress = written_files / expected_files if expected_files else 1.0
+            publish_span_update_global(
+                SpanUpdate(
+                    span_id=span_id,
+                    progress=progress,
+                    message=f"Export wrote {written_files}/{expected_files} file(s)",
+                    ts=time.time(),
+                )
+            )
+        if span_id and callable(publish_span_end_global) and SpanEnd:
+            publish_span_end_global(
+                SpanEnd(
+                    span_id=span_id,
+                    status="completed",
+                    ts=time.time(),
+                    message=f"Export complete: {written_files}/{expected_files} file(s)",
+                )
+            )
 
     def _prompt_export_settings(self, workspace: Dict[str, Any]) -> Optional[tuple[str, list[str]]]:
         dialog = QtWidgets.QDialog(self)
@@ -1022,6 +1075,19 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         expected_files = 0
         imported_files = 0
         workspace_info: Dict[str, Any] = {}
+        span_id = None
+        if callable(publish_span_start_global) and SpanStart:
+            span_id = f"content.import.{int(time.time() * 1000)}"
+            publish_span_start_global(
+                SpanStart(
+                    span_id=span_id,
+                    label="Import project",
+                    node_id="system:content_system",
+                    source_id="system:content_system",
+                    severity=None,
+                    ts=time.time(),
+                )
+            )
 
         def _emit_import_check(status: str, message: str, error: Optional[str] = None) -> None:
             if not callable(build_check) or not callable(publish_expect_check_global):
@@ -1049,12 +1115,30 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
                 if "manifest.json" not in zf.namelist():
                     self.io_status.setText("Import failed: manifest.json missing.")
                     _emit_import_check("failed", "Import failed: manifest.json missing.")
+                    if span_id and callable(publish_span_end_global) and SpanEnd:
+                        publish_span_end_global(
+                            SpanEnd(
+                                span_id=span_id,
+                                status="failed",
+                                ts=time.time(),
+                                message="Import failed: manifest.json missing.",
+                            )
+                        )
                     return
                 manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
                 fmt = manifest.get("format_version")
                 if fmt not in (1, "1"):
                     self.io_status.setText("Import failed: unsupported format_version.")
                     _emit_import_check("failed", "Import failed: unsupported format_version.")
+                    if span_id and callable(publish_span_end_global) and SpanEnd:
+                        publish_span_end_global(
+                            SpanEnd(
+                                span_id=span_id,
+                                status="failed",
+                                ts=time.time(),
+                                message="Import failed: unsupported format_version.",
+                            )
+                        )
                     return
                 expected_entries = manifest.get("included_files") or list(self.TEMPLATE_PREF_FILES)
                 expected_files = len(expected_entries)
@@ -1076,6 +1160,15 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
                         "Import failed: preference files missing.",
                         "missing: " + ", ".join(missing),
                     )
+                    if span_id and callable(publish_span_end_global) and SpanEnd:
+                        publish_span_end_global(
+                            SpanEnd(
+                                span_id=span_id,
+                                status="failed",
+                                ts=time.time(),
+                                message="Import failed: preference files missing.",
+                            )
+                        )
                     return
                 workspace_info = manifest.get("workspace") or {}
                 base_id = self._slugify(str(workspace_info.get("id") or "imported"))
@@ -1098,6 +1191,15 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
                     self.io_status.setText(
                         f"Import failed: {response.get('error') or 'create_failed'}"
                     )
+                    if span_id and callable(publish_span_end_global) and SpanEnd:
+                        publish_span_end_global(
+                            SpanEnd(
+                                span_id=span_id,
+                                status="failed",
+                                ts=time.time(),
+                                message=f"Import failed: {response.get('error') or 'create_failed'}",
+                            )
+                        )
                     return
                 workspace = response.get("workspace") or {}
                 prefs_root = _workspace_prefs_root_from_paths(workspace.get("paths") or {})
@@ -1109,12 +1211,40 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         except Exception as exc:
             self.io_status.setText(f"Import failed: {exc}")
             _emit_import_check("failed", "Import failed.", str(exc))
+            if span_id and callable(publish_span_end_global) and SpanEnd:
+                publish_span_end_global(
+                    SpanEnd(
+                        span_id=span_id,
+                        status="failed",
+                        ts=time.time(),
+                        message=f"Import failed: {exc}",
+                    )
+                )
             return
         self.io_status.setText(f"Imported project as {workspace_id}")
         _emit_import_check(
             "ok",
             f"Import applied {imported_files}/{expected_files} file(s).",
         )
+        if span_id and callable(publish_span_update_global) and SpanUpdate:
+            progress = imported_files / expected_files if expected_files else 1.0
+            publish_span_update_global(
+                SpanUpdate(
+                    span_id=span_id,
+                    progress=progress,
+                    message=f"Import applied {imported_files}/{expected_files} file(s)",
+                    ts=time.time(),
+                )
+            )
+        if span_id and callable(publish_span_end_global) and SpanEnd:
+            publish_span_end_global(
+                SpanEnd(
+                    span_id=span_id,
+                    status="completed",
+                    ts=time.time(),
+                    message=f"Import complete: {imported_files}/{expected_files} file(s)",
+                )
+            )
         self.refresh()
         missing = self._summarize_missing_requirements(manifest)
         self._show_import_summary(workspace_id, workspace_info, pref_entries, manifest, missing)

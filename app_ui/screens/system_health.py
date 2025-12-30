@@ -35,10 +35,22 @@ except Exception:  # pragma: no cover - defensive
 
 try:
     from app_ui.codesee.expectations import build_check
-    from app_ui.codesee.runtime.hub import publish_expect_check_global
+    from app_ui.codesee.runtime.events import SpanEnd, SpanStart, SpanUpdate
+    from app_ui.codesee.runtime.hub import (
+        publish_expect_check_global,
+        publish_span_end_global,
+        publish_span_start_global,
+        publish_span_update_global,
+    )
 except Exception:  # pragma: no cover - defensive
     build_check = None
     publish_expect_check_global = None
+    publish_span_start_global = None
+    publish_span_update_global = None
+    publish_span_end_global = None
+    SpanStart = None
+    SpanUpdate = None
+    SpanEnd = None
 
 BUS_REPORT_REQUEST = (
     BUS_TOPICS.CORE_STORAGE_REPORT_REQUEST if BUS_TOPICS else "core.storage.report.request"
@@ -1569,6 +1581,23 @@ class SystemHealthScreen(QtWidgets.QWidget):
             if hasattr(self, "content_diag_tree"):
                 self.content_diag_tree.clear()
             return
+        workspace_id = "default"
+        if self.bus and BUS_WORKSPACE_GET_ACTIVE_REQUEST:
+            try:
+                response = self.bus.request(
+                    BUS_WORKSPACE_GET_ACTIVE_REQUEST,
+                    {},
+                    source="app_ui",
+                    timeout_ms=1000,
+                )
+            except Exception:
+                response = {"ok": False}
+            if response.get("ok"):
+                workspace = response.get("workspace")
+                if isinstance(workspace, dict):
+                    workspace_id = workspace.get("id") or workspace_id
+                elif isinstance(response.get("id"), str):
+                    workspace_id = response.get("id")
         if force and callable(clear_validation_cache):
             clear_validation_cache()
             try:
@@ -1577,6 +1606,19 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 content_system.list_tree()
             except Exception:
                 pass
+        span_id = None
+        if callable(publish_span_start_global) and SpanStart:
+            span_id = f"content.validation.{workspace_id}.{int(time.time() * 1000)}"
+            publish_span_start_global(
+                SpanStart(
+                    span_id=span_id,
+                    label="Content validation",
+                    node_id="system:content_system",
+                    source_id="system:content_system",
+                    severity=None,
+                    ts=time.time(),
+                )
+            )
         report = get_validation_report(limit=100)
         self._content_diag_report = report
         ok_count = report.get("ok_count", 0)
@@ -1585,24 +1627,26 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.content_diag_status.setText(
             f"Validation summary: OK={ok_count} WARN={warn_count} FAIL={fail_count}"
         )
+        if span_id and callable(publish_span_update_global) and SpanUpdate:
+            publish_span_update_global(
+                SpanUpdate(
+                    span_id=span_id,
+                    progress=1.0,
+                    message=f"OK={ok_count} WARN={warn_count} FAIL={fail_count}",
+                    ts=time.time(),
+                )
+            )
+        if span_id and callable(publish_span_end_global) and SpanEnd:
+            status = "completed" if fail_count == 0 else "failed"
+            publish_span_end_global(
+                SpanEnd(
+                    span_id=span_id,
+                    status=status,
+                    ts=time.time(),
+                    message=f"Validation {status}: OK={ok_count} WARN={warn_count} FAIL={fail_count}",
+                )
+            )
         if callable(build_check) and callable(publish_expect_check_global):
-            workspace_id = "default"
-            if self.bus and BUS_WORKSPACE_GET_ACTIVE_REQUEST:
-                try:
-                    response = self.bus.request(
-                        BUS_WORKSPACE_GET_ACTIVE_REQUEST,
-                        {},
-                        source="app_ui",
-                        timeout_ms=1000,
-                    )
-                except Exception:
-                    response = {"ok": False}
-                if response.get("ok"):
-                    workspace = response.get("workspace")
-                    if isinstance(workspace, dict):
-                        workspace_id = workspace.get("id") or workspace_id
-                    elif isinstance(response.get("id"), str):
-                        workspace_id = response.get("id")
             expected = {"failures": 0, "warnings": 0}
             actual = {"failures": fail_count, "warnings": warn_count}
             message = (
@@ -1699,4 +1743,3 @@ class SystemHealthScreen(QtWidgets.QWidget):
                     f"[{item.get('schema_id') or 'no schema'}]"
                 )
         QtWidgets.QApplication.clipboard().setText("\n".join(lines))
-

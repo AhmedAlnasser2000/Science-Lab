@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from .badges import badge_from_dict, badge_from_key, badge_to_dict
 from .expectations import check_from_dict, check_to_dict
+from .runtime.events import span_from_dict, span_to_dict
 from . import snapshot_index
 from .graph_model import ArchitectureGraph, Edge, Node
 from app_ui import versioning
@@ -60,6 +61,7 @@ def _node_to_dict(node: Node) -> Dict[str, Any]:
         "severity_state": node.severity_state,
         "badges": [badge_to_dict(badge) for badge in node.badges],
         "checks": [_check_to_dict(check) for check in node.checks],
+        "spans": [_span_to_dict(span) for span in node.spans],
         "subgraph_id": node.subgraph_id,
     }
 
@@ -93,6 +95,7 @@ def _graph_from_dict(graph: Dict[str, Any]) -> ArchitectureGraph:
                 severity_state=_optional_str(raw.get("severity_state")),
                 subgraph_id=raw.get("subgraph_id"),
                 checks=_checks_from_raw(raw),
+                spans=_spans_from_raw(raw),
             )
         )
     edges = []
@@ -144,10 +147,28 @@ def _checks_from_raw(raw: Dict[str, Any]) -> list:
     return checks
 
 
+def _spans_from_raw(raw: Dict[str, Any]) -> list:
+    spans = []
+    raw_spans = raw.get("spans")
+    if isinstance(raw_spans, list):
+        for item in raw_spans:
+            if isinstance(item, dict):
+                span = span_from_dict(item)
+                if span:
+                    spans.append(span)
+    return spans
+
+
 def _check_to_dict(check) -> Dict[str, Any]:
     if isinstance(check, dict):
         return check
     return check_to_dict(check)
+
+
+def _span_to_dict(span) -> Dict[str, Any]:
+    if isinstance(span, dict):
+        return span
+    return span_to_dict(span)
 
 
 def _optional_str(value: Any) -> Optional[str]:

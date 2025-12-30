@@ -133,6 +133,8 @@ BADGE_DEFS: Dict[str, tuple[str, str, str, str]] = {
     "conn.offline": ("Offline", "Connection offline.", "warn", "top"),
     "perf.slow": ("Slow", "Performance degraded.", "warn", "top"),
     "activity.muted": ("Muted", "Muted activity detected.", "normal", "top"),
+    "activity.active": ("Active", "Work in progress.", "normal", "top"),
+    "activity.stuck": ("Stuck", "No recent updates; possible stall.", "warn", "top"),
     "expect.value": ("Expectation", "Expectation value tracked.", "expect.value", "bottom"),
     "expect.mismatch": ("Mismatch", "Expected vs actual mismatch.", "failure", "bottom"),
     "expect.pass": ("Expectation Pass", "Expectation satisfied.", "normal", "bottom"),

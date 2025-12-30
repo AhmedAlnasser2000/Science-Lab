@@ -223,8 +223,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         for badge_rect, badge in self._badge_rects():
             pixmap = _icon_pixmap(badge.key, self._icon_style, _icon_size())
             if pixmap is None:
-                painter.setBrush(QtGui.QColor("#666"))
-                painter.drawEllipse(badge_rect)
+                _paint_fallback_badge(painter, badge_rect, badge, self._icon_style)
             else:
                 painter.drawPixmap(badge_rect.toRect(), pixmap)
 
@@ -354,7 +353,7 @@ class SignalDotItem(QtWidgets.QGraphicsEllipseItem):
         tint = QtGui.QColor(color) if isinstance(color, QtGui.QColor) else QtGui.QColor("#4c6ef5")
         tint.setAlphaF(max(0.1, min(1.0, float(alpha))))
         self.setBrush(tint)
-        self.setPen(QtCore.Qt.PenStyle.NoPen)
+        self.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
         self.setZValue(2.0)
 
 
@@ -491,7 +490,7 @@ def _badge_layer(key: str) -> Optional[str]:
         return "connectivity"
     if key == "perf.slow":
         return "perf"
-    if key == "activity.muted":
+    if key in ("activity.muted", "activity.active", "activity.stuck"):
         return "activity"
     return None
 
@@ -533,3 +532,41 @@ def _diff_badge_size() -> float:
 
 def clear_icon_cache() -> None:
     _ICON_CACHE.clear()
+
+
+def _paint_fallback_badge(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRectF,
+    badge: Badge,
+    icon_style: str,
+) -> None:
+    color = _fallback_badge_color(badge)
+    painter.setBrush(color)
+    painter.setPen(QtCore.Qt.PenStyle.NoPen)
+    painter.drawEllipse(rect)
+    if badge.key == "activity.stuck":
+        pen_color = QtGui.QColor("#111") if icon_style == "mono" else QtGui.QColor("#fff")
+        painter.setPen(QtGui.QPen(pen_color, 1.2))
+        left = rect.left() + rect.width() * 0.32
+        right = rect.left() + rect.width() * 0.62
+        top = rect.top() + rect.height() * 0.25
+        bottom = rect.bottom() - rect.height() * 0.25
+        painter.drawLine(QtCore.QPointF(left, top), QtCore.QPointF(left, bottom))
+        painter.drawLine(QtCore.QPointF(right, top), QtCore.QPointF(right, bottom))
+
+
+def _fallback_badge_color(badge: Badge) -> QtGui.QColor:
+    if badge.key == "activity.active":
+        return QtGui.QColor("#4c6ef5")
+    if badge.key == "activity.stuck":
+        return QtGui.QColor("#d68910")
+    severity = badge.severity or ""
+    if severity == "crash":
+        return QtGui.QColor("#111")
+    if severity == "error":
+        return QtGui.QColor("#c0392b")
+    if severity in ("failure", "probe.fail"):
+        return QtGui.QColor("#7b3fb3")
+    if severity == "warn":
+        return QtGui.QColor("#d68910")
+    return QtGui.QColor("#666")

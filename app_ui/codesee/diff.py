@@ -6,6 +6,7 @@ from typing import Dict, List, Set, Tuple
 from .badges import Badge
 from .expectations import EVACheck
 from .graph_model import ArchitectureGraph, Edge, Node
+from .runtime.events import SpanRecord
 
 EdgeKey = Tuple[str, str, str]
 
@@ -90,6 +91,17 @@ def _check_signature(check: EVACheck) -> Tuple[str, bool, str, str, str, float]:
     )
 
 
+def _span_signature(span: SpanRecord) -> Tuple[str, str, str, str, str, str]:
+    return (
+        span.span_id,
+        span.status,
+        span.label,
+        str(span.progress),
+        str(span.message),
+        span.severity or "",
+    )
+
+
 def _node_changed_fields(before: Node, after: Node) -> List[str]:
     changed: List[str] = []
     if before.title != after.title:
@@ -106,4 +118,8 @@ def _node_changed_fields(before: Node, after: Node) -> List[str]:
     after_checks = sorted(_check_signature(check) for check in after.checks)
     if before_checks != after_checks:
         changed.append("checks")
+    before_spans = sorted(_span_signature(span) for span in before.spans)
+    after_spans = sorted(_span_signature(span) for span in after.spans)
+    if before_spans != after_spans:
+        changed.append("spans")
     return changed

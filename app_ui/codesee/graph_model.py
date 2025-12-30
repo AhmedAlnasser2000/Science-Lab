@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 
 from .badges import Badge, badge_from_dict, badge_from_key, sort_by_priority, severity_for_badge
 from .expectations import EVACheck, check_from_dict
+from .runtime.events import SpanRecord, span_from_dict
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class Node:
     badges: List[Badge] = field(default_factory=list)
     severity_state: Optional[str] = None
     checks: List[EVACheck] = field(default_factory=list)
+    spans: List[SpanRecord] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         normalized: List[Badge] = []
@@ -41,6 +43,16 @@ class Node:
                 if parsed:
                     checks.append(parsed)
         object.__setattr__(self, "checks", checks)
+
+        spans: List[SpanRecord] = []
+        for entry in self.spans or []:
+            if isinstance(entry, SpanRecord):
+                spans.append(entry)
+            elif isinstance(entry, dict):
+                parsed = span_from_dict(entry)
+                if parsed:
+                    spans.append(parsed)
+        object.__setattr__(self, "spans", spans)
 
     @property
     def id(self) -> str:

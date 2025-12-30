@@ -29,6 +29,11 @@ from .runtime.events import (
     EVENT_APP_ERROR,
     EVENT_EXPECT_CHECK,
     EVENT_JOB_UPDATE,
+    EVENT_SPAN_END,
+    EVENT_SPAN_START,
+    EVENT_SPAN_UPDATE,
+    EVENT_TEST_PULSE,
+    SpanRecord,
 )
 from .runtime.hub import CodeSeeRuntimeHub
 from app_ui import ui_scale
@@ -104,6 +109,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._overlay_limit = 8
         self._runtime_connected = False
         self._overlay_checks: Dict[str, list[EVACheck]] = {}
+        self._status_timer = QtCore.QTimer(self)
+        self._status_timer.setInterval(1000)
+        self._status_timer.timeout.connect(self._on_status_tick)
+        self._last_span_pulse = 0.0
 
         layout = QtWidgets.QVBoxLayout(self)
         self._root_layout = layout
@@ -160,10 +169,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._only_failures_btn = _make_toggle_button("Only failures", self._on_quick_filter_changed)
         self._only_expecting_btn = _make_toggle_button("Only expecting", self._on_quick_filter_changed)
         self._only_mismatches_btn = _make_toggle_button("Only mismatches", self._on_quick_filter_changed)
+        self._only_active_btn = _make_toggle_button("Only active", self._on_quick_filter_changed)
+        self._only_stuck_btn = _make_toggle_button("Only stuck", self._on_quick_filter_changed)
         source_row.addWidget(self._only_errors_btn)
         source_row.addWidget(self._only_failures_btn)
         source_row.addWidget(self._only_expecting_btn)
         source_row.addWidget(self._only_mismatches_btn)
+        source_row.addWidget(self._only_active_btn)
+        source_row.addWidget(self._only_stuck_btn)
         self.capture_btn = QtWidgets.QPushButton("Capture Snapshot")
         self.capture_btn.clicked.connect(self._capture_snapshot)
         source_row.addWidget(self.capture_btn)
@@ -188,6 +201,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.live_toggle.setCheckable(True)
         self.live_toggle.toggled.connect(self._on_live_toggled)
         source_row.addWidget(self.live_toggle)
+        self.test_pulse_btn = QtWidgets.QToolButton()
+        self.test_pulse_btn.setText("Emit Test Pulse")
+        self.test_pulse_btn.clicked.connect(self._emit_test_pulse)
+        source_row.addWidget(self.test_pulse_btn)
         toggle_style = _toggle_style()
         _apply_toggle_style(
             [
@@ -195,6 +212,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self._only_failures_btn,
                 self._only_expecting_btn,
                 self._only_mismatches_btn,
+                self._only_active_btn,
+                self._only_stuck_btn,
                 self.diff_toggle,
                 self.live_toggle,
             ],
@@ -264,6 +283,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.filter_status_row.setVisible(False)
         layout.addWidget(self.filter_status_row)
 
+        self.debug_status_row = QtWidgets.QWidget()
+        debug_layout = QtWidgets.QHBoxLayout(self.debug_status_row)
+        self._debug_status_layout = debug_layout
+        debug_layout.setContentsMargins(0, 0, 0, 0)
+        self.debug_status_label = QtWidgets.QLabel("")
+        self.debug_status_label.setStyleSheet("color: #666;")
+        debug_layout.addWidget(self.debug_status_label, stretch=1)
+        self.debug_status_row.setVisible(False)
+        layout.addWidget(self.debug_status_row)
+
         self.status_label = QtWidgets.QLabel("")
         self.status_label.setStyleSheet("color: #555;")
         layout.addWidget(self.status_label)
@@ -292,10 +321,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._sync_view_controls()
         self._update_action_state()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
+        if self._runtime_hub and not self._runtime_connected:
+            self._runtime_hub.event_emitted.connect(self._on_runtime_event)
+            self._runtime_connected = True
         if self._safe_mode:
             self.live_toggle.setChecked(False)
             self.live_toggle.setEnabled(False)
             self.live_toggle.setVisible(False)
+            self.test_pulse_btn.setVisible(False)
             self._update_action_state()
             if self._crash_view:
                 self._load_crash_record()
@@ -303,6 +336,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         elif self._crash_view:
             self._load_crash_record()
         self._update_mode_status(0, 0)
+        self._update_debug_status()
 
     def open_root(self) -> None:
         if not self._active_root:
@@ -422,6 +456,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         total_nodes = len(graph_to_render.nodes)
         overlay_graph = self._apply_runtime_overlay(graph_to_render)
         overlay_graph = self._apply_expectation_badges(overlay_graph)
+        overlay_graph = self._apply_span_overlay(overlay_graph)
         overlay_graph = self._apply_crash_badge(overlay_graph)
         filtered = self._filtered_graph(overlay_graph)
         shown_nodes = len(filtered.nodes)
@@ -442,6 +477,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.build_graph(filtered, positions, diff_result=diff_result)
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
+        self._update_debug_status()
+        self._ensure_status_timer()
 
     def _refresh_breadcrumb(self) -> None:
         while self.breadcrumb_layout.count():
@@ -550,6 +587,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._only_mismatches_btn.blockSignals(True)
         self._only_mismatches_btn.setChecked(self._view_config.quick_filters.get("only_mismatches", False))
         self._only_mismatches_btn.blockSignals(False)
+        self._only_active_btn.blockSignals(True)
+        self._only_active_btn.setChecked(self._view_config.quick_filters.get("only_active", False))
+        self._only_active_btn.blockSignals(False)
+        self._only_stuck_btn.blockSignals(True)
+        self._only_stuck_btn.setChecked(self._view_config.quick_filters.get("only_stuck", False))
+        self._only_stuck_btn.blockSignals(False)
 
     def _sync_lens_combo(self) -> None:
         for idx in range(self.lens_combo.count()):
@@ -602,6 +645,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.quick_filters["only_failures"] = self._only_failures_btn.isChecked()
         self._view_config.quick_filters["only_expecting"] = self._only_expecting_btn.isChecked()
         self._view_config.quick_filters["only_mismatches"] = self._only_mismatches_btn.isChecked()
+        self._view_config.quick_filters["only_active"] = self._only_active_btn.isChecked()
+        self._view_config.quick_filters["only_stuck"] = self._only_stuck_btn.isChecked()
         self._persist_view_config()
         self._render_current_graph()
         self._update_mode_status(0, 0)
@@ -617,9 +662,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _clear_all_filters(self) -> None:
         current_theme = self._node_theme
         current_pulse = self._pulse_settings
+        current_stuck = self._view_config.span_stuck_seconds
         self._view_config = view_config.reset_to_defaults(self._lens, icon_style=self._icon_style)
         self._view_config.node_theme = current_theme
         self._view_config.pulse_settings = current_pulse
+        self._view_config.span_stuck_seconds = current_stuck
         self._node_theme = current_theme
         self._pulse_settings = current_pulse
         self._sync_view_controls()
@@ -629,6 +676,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _filtered_graph(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         lens = get_lens(self._lens)
+        now = time.time()
+        stuck_threshold = max(1, int(self._view_config.span_stuck_seconds))
         nodes = []
         node_map: Dict[str, Node] = {}
         for node in graph.nodes:
@@ -636,7 +685,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 continue
             if not _category_visible(node, self._view_config.show_categories):
                 continue
-            if not _passes_quick_filters(node, self._view_config.quick_filters):
+            if not _passes_quick_filters(
+                node,
+                self._view_config.quick_filters,
+                now=now,
+                stuck_threshold=stuck_threshold,
+            ):
                 continue
             node_map[node.node_id] = node
             nodes.append(node)
@@ -672,6 +726,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
                         subgraph_id=node.subgraph_id,
                         badges=merged,
                         severity_state=node.severity_state,
+                        checks=node.checks,
+                        spans=node.spans,
                     )
                 )
             else:
@@ -707,10 +763,68 @@ class CodeSeeScreen(QtWidgets.QWidget):
                         badges=merged_badges,
                         severity_state=node.severity_state,
                         checks=checks,
+                        spans=node.spans,
                     )
                 )
             else:
                 nodes.append(node)
+        return ArchitectureGraph(
+            graph_id=graph.graph_id,
+            title=graph.title,
+            nodes=nodes,
+            edges=graph.edges,
+        )
+
+    def _apply_span_overlay(self, graph: ArchitectureGraph) -> ArchitectureGraph:
+        spans_by_node: Dict[str, list[SpanRecord]] = {}
+        for node in graph.nodes:
+            if node.spans:
+                spans_by_node[node.node_id] = list(node.spans)
+        runtime_spans: list[SpanRecord] = []
+        if self._runtime_hub:
+            runtime_spans.extend(self._runtime_hub.list_active_spans())
+            runtime_spans.extend(self._runtime_hub.list_recent_spans())
+        if runtime_spans:
+            graph_node_ids = {node.node_id for node in graph.nodes}
+            fallback_id = _span_fallback_node_id(graph, self._workspace_id())
+            for span in runtime_spans:
+                node_id = span.node_id
+                if not node_id or node_id not in graph_node_ids:
+                    node_id = fallback_id
+                if node_id:
+                    spans_by_node.setdefault(node_id, []).append(span)
+        if not spans_by_node:
+            return graph
+        now = time.time()
+        threshold = max(1, int(self._view_config.span_stuck_seconds))
+        nodes: list[Node] = []
+        for node in graph.nodes:
+            spans = spans_by_node.get(node.node_id)
+            if not spans:
+                nodes.append(node)
+                continue
+            deduped: list[SpanRecord] = []
+            seen = set()
+            for span in spans:
+                if span.span_id in seen:
+                    continue
+                deduped.append(span)
+                seen.add(span.span_id)
+            spans = deduped
+            merged_badges = list(node.badges)
+            merged_badges = _merge_span_badges(merged_badges, spans, now, threshold)
+            nodes.append(
+                Node(
+                    node_id=node.node_id,
+                    title=node.title,
+                    node_type=node.node_type,
+                    subgraph_id=node.subgraph_id,
+                    badges=merged_badges,
+                    severity_state=node.severity_state,
+                    checks=node.checks,
+                    spans=spans,
+                )
+            )
         return ArchitectureGraph(
             graph_id=graph.graph_id,
             title=graph.title,
@@ -735,6 +849,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._mode_status_layout.setSpacing(spacing)
         if self._filter_status_layout:
             self._filter_status_layout.setSpacing(spacing)
+        if getattr(self, "_debug_status_layout", None):
+            self._debug_status_layout.setSpacing(spacing)
 
     def _filters_active(self) -> bool:
         if view_config.is_filtered(self._view_config):
@@ -771,6 +887,55 @@ class CodeSeeScreen(QtWidgets.QWidget):
             )
             self.filter_chips_layout.addWidget(label)
         self.filter_chips_layout.addStretch()
+
+    def _update_debug_status(self) -> None:
+        if not hasattr(self, "debug_status_row"):
+            return
+        if not self._runtime_hub:
+            self.debug_status_row.setVisible(False)
+            return
+        event_count = self._runtime_hub.event_count()
+        last_ts = self._runtime_hub.last_event_ts() or "n/a"
+        signals = self.scene.signals_active_count() if self.scene else 0
+        spans = self._runtime_hub.active_span_count()
+        self.debug_status_label.setText(
+            f"Events: {event_count} (last {last_ts}) | Signals active: {signals} | Spans active: {spans}"
+        )
+        self.debug_status_row.setVisible(True)
+
+    def _ensure_status_timer(self) -> None:
+        if not self._status_timer:
+            return
+        active_signals = self.scene.signals_active_count() if self.scene else 0
+        active_spans = self._runtime_hub.active_span_count() if self._runtime_hub else 0
+        if active_signals or active_spans:
+            if not self._status_timer.isActive():
+                self._status_timer.start()
+
+    def _on_status_tick(self) -> None:
+        self._update_debug_status()
+        self._refresh_span_activity()
+        active_signals = self.scene.signals_active_count() if self.scene else 0
+        active_spans = self._runtime_hub.active_span_count() if self._runtime_hub else 0
+        if not active_signals and not active_spans:
+            self._status_timer.stop()
+
+    def _refresh_span_activity(self) -> None:
+        if not self._runtime_hub:
+            return
+        active_spans = self._runtime_hub.list_active_spans()
+        if not active_spans:
+            return
+        self._render_current_graph()
+        if self._reduced_motion:
+            return
+        now = time.monotonic()
+        if now - self._last_span_pulse < 2.5:
+            return
+        self._last_span_pulse = now
+        nodes = _active_span_node_ids(active_spans, limit=4)
+        for node_id in nodes:
+            self.scene.flash_node(node_id, QtGui.QColor("#4c6ef5"))
 
     def _refresh_snapshot_history(self) -> None:
         self._snapshot_entries = snapshot_index.list_snapshots_sorted(self._workspace_id())
@@ -823,23 +988,63 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.live_toggle.setChecked(False)
             self.live_toggle.blockSignals(False)
             return
+        if not self._runtime_hub:
+            self._live_enabled = False
+            self.live_toggle.blockSignals(True)
+            self.live_toggle.setChecked(False)
+            self.live_toggle.blockSignals(False)
+            return
         self._live_enabled = checked
-        if self._runtime_hub:
-            if checked and not self._runtime_connected:
-                self._runtime_hub.event_emitted.connect(self._on_runtime_event)
-                self._runtime_connected = True
-            elif not checked and self._runtime_connected:
-                try:
-                    self._runtime_hub.event_emitted.disconnect(self._on_runtime_event)
-                except Exception:
-                    pass
-                self._runtime_connected = False
         self._update_action_state()
         self._render_current_graph()
+        self._update_debug_status()
 
     def _open_in_window(self) -> None:
         if self._on_open_window:
             self._on_open_window()
+
+    def _emit_test_pulse(self) -> None:
+        target_id, source_id = self._select_pulse_nodes()
+        if not target_id:
+            return
+        node_ids = [target_id]
+        if source_id and source_id != target_id:
+            node_ids = [source_id, target_id]
+        event = CodeSeeEvent(
+            ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            kind=EVENT_TEST_PULSE,
+            severity="info",
+            message="Test pulse",
+            node_ids=node_ids,
+            source="codesee",
+            source_node_id=source_id,
+            target_node_id=target_id,
+        )
+        if self._runtime_hub:
+            self._runtime_hub.publish(event)
+        self._emit_live_signal(event)
+        self._update_debug_status()
+        self._ensure_status_timer()
+
+    def _select_pulse_nodes(self) -> tuple[Optional[str], Optional[str]]:
+        graph = self._current_graph
+        if self._diff_mode and self._diff_compare_graph:
+            graph = self._diff_compare_graph
+        if not graph or not graph.nodes:
+            return None, None
+        target_id = None
+        for node in graph.nodes:
+            if node.node_id.startswith("workspace:") or node.node_id == "system:app_ui":
+                target_id = node.node_id
+                break
+        if not target_id:
+            target_id = graph.nodes[0].node_id
+        source_id = None
+        for node in graph.nodes:
+            if node.node_id != target_id:
+                source_id = node.node_id
+                break
+        return target_id, source_id or target_id
 
     def _update_diff_result(self) -> None:
         baseline_path = self.baseline_combo.currentData()
@@ -866,7 +1071,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         summary = (
             f"Diff: +{len(self._diff_result.nodes_added)} "
             f"-{len(self._diff_result.nodes_removed)} "
-            f"Δ{len(self._diff_result.nodes_changed)}"
+            f"I{len(self._diff_result.nodes_changed)}"
         )
         self.status_label.setText(summary)
         self._update_action_state()
@@ -883,6 +1088,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._live_enabled:
             self._render_current_graph()
             self._emit_live_signal(event)
+        if event.kind in (EVENT_SPAN_START, EVENT_SPAN_UPDATE, EVENT_SPAN_END) and not self._live_enabled:
+            self._render_current_graph()
+        self._update_debug_status()
+        self._ensure_status_timer()
 
     def _add_overlay_badge(self, node_id: str, event: CodeSeeEvent) -> None:
         key = _badge_key_for_event(event)
@@ -1059,6 +1268,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             crash_record,
             self._build_info,
             crash_build,
+            self._view_config.span_stuck_seconds,
             parent=self,
         )
         dialog.exec()
@@ -1113,7 +1323,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
             "lens_id": self._lens,
             "timestamp": timestamp,
         }
-        snapshot_io.write_snapshot(self._current_graph, path, metadata)
+        graph_to_save = self._apply_runtime_overlay(self._current_graph)
+        graph_to_save = self._apply_expectation_badges(graph_to_save)
+        graph_to_save = self._apply_span_overlay(graph_to_save)
+        graph_to_save = self._apply_crash_badge(graph_to_save)
+        snapshot_io.write_snapshot(graph_to_save, path, metadata)
         self.status_label.setText(f"Snapshot saved: {path.name}")
         self._refresh_snapshot_history()
         if self._runtime_hub:
@@ -1195,6 +1409,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 badges=list(node.badges) + [badge],
                 severity_state=node.severity_state,
                 checks=node.checks,
+                spans=node.spans,
             )
             nodes = list(node_map.values())
         else:
@@ -1357,7 +1572,13 @@ def _category_visible(node: Node, categories: Dict[str, bool]) -> bool:
     return True
 
 
-def _passes_quick_filters(node: Node, quick_filters: Dict[str, bool]) -> bool:
+def _passes_quick_filters(
+    node: Node,
+    quick_filters: Dict[str, bool],
+    *,
+    now: float,
+    stuck_threshold: int,
+) -> bool:
     if not any(quick_filters.values()):
         return True
     badges = node.badges or []
@@ -1376,6 +1597,12 @@ def _passes_quick_filters(node: Node, quick_filters: Dict[str, bool]) -> bool:
             return False
     if quick_filters.get("only_mismatches"):
         if not _node_has_mismatch(node):
+            return False
+    if quick_filters.get("only_active"):
+        if not _node_has_active_span(node):
+            return False
+    if quick_filters.get("only_stuck"):
+        if not _node_has_stuck_span(node, now, stuck_threshold):
             return False
     return True
 
@@ -1397,6 +1624,114 @@ def _node_has_mismatch(node: Node) -> bool:
     return False
 
 
+def _node_has_active_span(node: Node) -> bool:
+    for span in node.spans or []:
+        if span.status == "active":
+            return True
+    return False
+
+
+def _node_has_stuck_span(node: Node, now: float, stuck_threshold: int) -> bool:
+    for span in node.spans or []:
+        if _span_is_stuck(span, now, stuck_threshold):
+            return True
+    return False
+
+
+def _span_is_stuck(span: SpanRecord, now: float, threshold: int) -> bool:
+    if span.status != "active":
+        return False
+    last_ts = span.updated_ts or span.started_ts
+    if not last_ts:
+        return False
+    return (now - last_ts) >= float(threshold)
+
+
+def _span_fallback_node_id(graph: ArchitectureGraph, workspace_id: str) -> Optional[str]:
+    node_ids = {node.node_id for node in graph.nodes}
+    if "system:content_system" in node_ids:
+        return "system:content_system"
+    if "system:app_ui" in node_ids:
+        return "system:app_ui"
+    workspace_node = f"workspace:{workspace_id}"
+    if workspace_node in node_ids:
+        return workspace_node
+    if graph.nodes:
+        return graph.nodes[0].node_id
+    return None
+
+
+def _merge_span_badges(
+    badges: list[Badge],
+    spans: list[SpanRecord],
+    now: float,
+    threshold: int,
+) -> list[Badge]:
+    if not spans:
+        return badges
+    existing_keys = {badge.key for badge in badges}
+    active = [span for span in spans if span.status == "active"]
+    stuck = [span for span in active if _span_is_stuck(span, now, threshold)]
+    failed = [span for span in spans if span.status == "failed"]
+    extras: list[Badge] = []
+    if active and "activity.active" not in existing_keys:
+        extras.append(
+            Badge(
+                key="activity.active",
+                rail="top",
+                title="Active",
+                summary=f"{len(active)} active span(s)",
+                detail=_span_titles(active, limit=3),
+                severity="normal",
+            )
+        )
+    if stuck and "activity.stuck" not in existing_keys:
+        extras.append(
+            Badge(
+                key="activity.stuck",
+                rail="top",
+                title="Stuck",
+                summary=f"{len(stuck)} stuck span(s)",
+                detail=_span_titles(stuck, limit=3),
+                severity="warn",
+            )
+        )
+    if failed and "state.error" not in existing_keys:
+        extras.append(
+            Badge(
+                key="state.error",
+                rail="top",
+                title="Span Failed",
+                summary=f"{len(failed)} span(s) failed",
+                detail=_span_titles(failed, limit=3),
+                severity="error",
+            )
+        )
+    return badges + extras
+
+
+def _span_titles(spans: list[SpanRecord], limit: int = 3) -> Optional[str]:
+    titles = [span.label for span in spans if span.label]
+    if not titles:
+        return None
+    sliced = titles[:limit]
+    if len(titles) > limit:
+        sliced.append("...")
+    return ", ".join(sliced)
+
+
+def _active_span_node_ids(spans: list[SpanRecord], limit: int = 4) -> list[str]:
+    seen = set()
+    nodes: list[str] = []
+    for span in spans:
+        if span.node_id and span.node_id not in seen:
+            nodes.append(span.node_id)
+            seen.add(span.node_id)
+        if len(nodes) >= limit:
+            break
+    return nodes
+
+
 class CodeSeeInspectorDialog(QtWidgets.QDialog):
     def __init__(
         self,
@@ -1409,6 +1744,7 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         crash_record: Optional[dict],
         build_info: Optional[dict],
         crash_build_info: Optional[dict],
+        span_stuck_seconds: int,
         parent: Optional[QtWidgets.QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -1454,6 +1790,14 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         badges_text.setReadOnly(True)
         badges_text.setPlainText(_format_badges(node.badges))
         layout.addWidget(badges_text)
+
+        activity_label = QtWidgets.QLabel("Activity")
+        activity_label.setStyleSheet("color: #444;")
+        layout.addWidget(activity_label)
+        activity_text = QtWidgets.QPlainTextEdit()
+        activity_text.setReadOnly(True)
+        activity_text.setPlainText(_format_spans(node.spans, span_stuck_seconds))
+        layout.addWidget(activity_text)
 
         edges_label = QtWidgets.QLabel("Edges")
         edges_label.setStyleSheet("color: #444;")
@@ -1612,6 +1956,33 @@ def _format_events(events: list[CodeSeeEvent]) -> str:
     return "\n".join(lines)
 
 
+def _format_spans(spans: list[SpanRecord], stuck_threshold_s: int, limit: int = 6) -> str:
+    if not spans:
+        return "No activity spans."
+    now = time.time()
+    sorted_spans = sorted(
+        spans,
+        key=lambda s: s.updated_ts or s.started_ts or 0.0,
+        reverse=True,
+    )[:limit]
+    lines = []
+    for span in sorted_spans:
+        status = span.status or "active"
+        if _span_is_stuck(span, now, stuck_threshold_s):
+            status = "stuck"
+        ts = span.updated_ts or span.started_ts
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "n/a"
+        progress = ""
+        if span.progress is not None:
+            if 0.0 <= span.progress <= 1.0:
+                progress = f" ({int(span.progress * 100)}%)"
+            else:
+                progress = f" ({span.progress})"
+        message = f" - {span.message}" if span.message else ""
+        lines.append(f"{stamp} | {status.upper()} | {span.label}{progress}{message}")
+    return "\n".join(lines)
+
+
 def _format_build_info(build: Optional[dict], crash_build: Optional[dict]) -> str:
     build = build if isinstance(build, dict) else {}
     crash_build = crash_build if isinstance(crash_build, dict) else {}
@@ -1702,3 +2073,36 @@ def _format_crash_timestamp(record: Optional[dict]) -> str:
     if isinstance(ts, (int, float)):
         return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
     return "n/a"
+
+
+def run_pulse_smoke_test() -> None:
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication([])
+    hub = CodeSeeRuntimeHub()
+    screen = CodeSeeScreen(
+        on_back=lambda: None,
+        workspace_info_provider=lambda: {"id": "default"},
+        runtime_hub=hub,
+        allow_detach=False,
+    )
+    screen.live_toggle.setChecked(True)
+    screen._pulse_settings.travel_speed_px_per_s = 200
+    result = {"events": 0, "signals": 0}
+
+    def _emit() -> None:
+        hub.publish_test_pulse(node_ids=["module.ui", "module.runtime_bus"])
+
+    def _check() -> None:
+        result["events"] = hub.event_count()
+        result["signals"] = screen.scene.signals_active_count()
+        app.quit()
+
+    QtCore.QTimer.singleShot(80, _emit)
+    QtCore.QTimer.singleShot(250, _check)
+    QtCore.QTimer.singleShot(1500, app.quit)
+    app.exec()
+    if result["events"] <= 0:
+        raise AssertionError("expected at least one event")
+    if result["signals"] <= 0:
+        raise AssertionError("expected active signals")
