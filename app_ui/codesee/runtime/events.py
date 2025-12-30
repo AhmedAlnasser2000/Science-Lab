@@ -16,6 +16,7 @@ EVENT_SPAN_START = "span.start"
 EVENT_SPAN_UPDATE = "span.update"
 EVENT_SPAN_END = "span.end"
 EVENT_TEST_PULSE = "codesee.test_pulse"
+EVENT_PULSE_TRAIL = "codesee.pulse.trail"
 
 
 @dataclass(frozen=True)

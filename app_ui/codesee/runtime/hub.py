@@ -121,6 +121,7 @@ def _record_span_end(end: SpanEnd) -> SpanRecord:
 
 class CodeSeeRuntimeHub(QtCore.QObject):
     event_emitted = QtCore.pyqtSignal(object)
+    schedule_event_requested = QtCore.pyqtSignal(object, int)
 
     def __init__(self, *, max_events: int = 500) -> None:
         super().__init__()
@@ -133,6 +134,7 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         self._persist_timer = QtCore.QTimer(self)
         self._persist_timer.setSingleShot(True)
         self._persist_timer.timeout.connect(self._persist_activity)
+        self.schedule_event_requested.connect(self._schedule_event)
         self._ingest_timer = QtCore.QTimer(self)
         self._ingest_timer.setInterval(50)
         self._ingest_timer.timeout.connect(self._drain_pending)
@@ -157,6 +159,31 @@ class CodeSeeRuntimeHub(QtCore.QObject):
 
     def publish(self, event: CodeSeeEvent) -> None:
         self._enqueue_event(event)
+
+    def publish_trail(
+        self,
+        event: CodeSeeEvent,
+        *,
+        count: int = 3,
+        spacing_ms: int = 70,
+        trail_kind: Optional[str] = None,
+        transient: bool = True,
+    ) -> None:
+        count = max(1, int(count))
+        spacing = max(0, int(spacing_ms))
+        if count <= 1:
+            self.publish(event)
+            return
+        self.publish(event)
+        for idx in range(1, count):
+            delay = idx * spacing
+            trail_event = _clone_event(
+                event,
+                kind=trail_kind or event.kind,
+                payload=_trail_payload(event.payload, idx, count, transient=transient),
+                ts=_format_ts(time.time() + (delay / 1000.0)),
+            )
+            self.schedule_event(trail_event, delay)
 
     def query(self, node_id: str, limit: int = 20) -> List[CodeSeeEvent]:
         results: List[CodeSeeEvent] = []
@@ -298,6 +325,9 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         with self._pending_lock:
             self._pending_events.append(event)
 
+    def schedule_event(self, event: CodeSeeEvent, delay_ms: int) -> None:
+        self.schedule_event_requested.emit(event, int(delay_ms))
+
     def _drain_pending(self) -> None:
         pending: List[CodeSeeEvent] = []
         with self._pending_lock:
@@ -309,11 +339,24 @@ class CodeSeeRuntimeHub(QtCore.QObject):
             self._apply_event(event)
 
     def _apply_event(self, event: CodeSeeEvent) -> None:
-        self._events.append(event)
+        persist = not _event_is_transient(event)
+        if persist:
+            self._events.append(event)
         self._event_count += 1
         self._last_event_ts = event.ts
         self.event_emitted.emit(event)
-        self._schedule_persist()
+        if persist:
+            self._schedule_persist()
+
+    @QtCore.pyqtSlot(object, int)
+    def _schedule_event(self, event: object, delay_ms: int) -> None:
+        if not isinstance(event, CodeSeeEvent):
+            return
+        delay = max(0, int(delay_ms))
+        if delay <= 0:
+            self.publish(event)
+            return
+        QtCore.QTimer.singleShot(delay, lambda e=event: self.publish(e))
 
     def _persist_activity(self) -> None:
         if not self._workspace_id:
@@ -425,6 +468,50 @@ def publish_test_pulse_global(node_ids: List[str]) -> None:
 
 def _format_ts(ts: float) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts or time.time()))
+
+
+def _clone_event(
+    event: CodeSeeEvent,
+    *,
+    kind: Optional[str] = None,
+    payload=None,
+    ts: Optional[str] = None,
+) -> CodeSeeEvent:
+    return CodeSeeEvent(
+        ts=ts or event.ts,
+        kind=kind or event.kind,
+        severity=event.severity,
+        message=event.message,
+        node_ids=list(event.node_ids or []),
+        detail=event.detail,
+        source=event.source,
+        payload=payload if payload is not None else event.payload,
+        source_node_id=event.source_node_id,
+        target_node_id=event.target_node_id,
+    )
+
+
+def _trail_payload(payload, index: int, count: int, *, transient: bool) -> Optional[dict]:
+    merged: dict
+    if isinstance(payload, dict):
+        merged = dict(payload)
+    else:
+        merged = {}
+        if payload is not None:
+            merged["payload"] = payload
+    merged["trail"] = True
+    merged["trail_index"] = index
+    merged["trail_count"] = count
+    if transient:
+        merged["transient"] = True
+    return merged
+
+
+def _event_is_transient(event: CodeSeeEvent) -> bool:
+    payload = event.payload
+    if isinstance(payload, dict):
+        return bool(payload.get("transient"))
+    return False
 
 
 def _sanitize_workspace_id(workspace_id: str) -> str:

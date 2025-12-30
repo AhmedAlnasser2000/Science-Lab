@@ -140,6 +140,14 @@ def register_core_center_endpoints(bus: Any) -> None:
         result = storage_manager.allocate_run_dir(lab_id, keep_last_n=keep_last_n)
         if not result.get("ok"):
             return {"ok": False, "error": result.get("error") or "allocate_failed"}
+        try:
+            proxy.publish(
+                RUN_DIR_REQUEST_TOPIC,
+                {"lab_id": lab_id, "run_id": result.get("run_id"), "ok": True},
+                source="core_center",
+            )
+        except Exception:
+            pass
         return {"ok": True, "run_id": result.get("run_id"), "run_dir": result.get("run_dir")}
 
     def _handle_policy(envelope) -> Dict[str, object]:  # noqa: ARG001
@@ -169,6 +177,14 @@ def register_core_center_endpoints(bus: Any) -> None:
         result = storage_manager.delete_run(str(lab_id), str(run_id), str(root_kind))
         if not result.get("ok"):
             return {"ok": False, "error": result.get("error") or "delete_failed"}
+        try:
+            proxy.publish(
+                RUNS_DELETE_REQUEST_TOPIC,
+                {"lab_id": lab_id, "run_id": run_id, "root_kind": root_kind, "ok": True},
+                source="core_center",
+            )
+        except Exception:
+            pass
         return {"ok": True}
 
     def _handle_runs_prune(envelope) -> Dict[str, object]:
@@ -188,12 +204,33 @@ def register_core_center_endpoints(bus: Any) -> None:
             delete_older_than_days=older_than,
             max_total_mb=max_total_mb,
         )
+        try:
+            proxy.publish(
+                RUNS_PRUNE_REQUEST_TOPIC,
+                {"ok": True, "summary": result},
+                source="core_center",
+            )
+        except Exception:
+            pass
         return {"ok": True, "summary": result}
 
     def _handle_runs_delete_many(envelope) -> Dict[str, object]:
         payload = envelope.payload or {}
         items = payload.get("items") or []
         result = storage_manager.delete_runs_many(items)
+        try:
+            proxy.publish(
+                RUNS_DELETE_MANY_REQUEST_TOPIC,
+                {
+                    "ok": True,
+                    "ok_count": result.get("ok_count"),
+                    "fail_count": result.get("fail_count"),
+                    "freed_bytes": result.get("freed_bytes"),
+                },
+                source="core_center",
+            )
+        except Exception:
+            pass
         return {"ok": True, **result}
 
     def _handle_workspace_get_active(envelope) -> Dict[str, object]:  # noqa: ARG001

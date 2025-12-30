@@ -8,6 +8,7 @@ from .events import (
     EVENT_APP_ACTIVITY,
     EVENT_APP_ERROR,
     EVENT_BUS_REQUEST,
+    EVENT_PULSE_TRAIL,
     SpanEnd,
     SpanStart,
     SpanUpdate,
@@ -26,12 +27,48 @@ TOPIC_JOB_COMPLETED = BUS_TOPICS.JOB_COMPLETED if BUS_TOPICS else "job.completed
 TOPIC_CONTENT_PROGRESS = (
     BUS_TOPICS.CONTENT_INSTALL_PROGRESS if BUS_TOPICS else "content.install.progress"
 )
+TOPIC_CONTENT_REQUEST = BUS_TOPICS.CONTENT_INSTALL_REQUEST if BUS_TOPICS else "content.install.request"
 TOPIC_CONTENT_COMPLETED = (
     BUS_TOPICS.CONTENT_INSTALL_COMPLETED if BUS_TOPICS else "content.install.completed"
 )
+TOPIC_LAB_RUN_STARTED = BUS_TOPICS.LAB_RUN_STARTED if BUS_TOPICS else "lab.run.started"
+TOPIC_LAB_RUN_STOPPED = BUS_TOPICS.LAB_RUN_STOPPED if BUS_TOPICS else "lab.run.stopped"
 TOPIC_CLEANUP_STARTED = BUS_TOPICS.CORE_CLEANUP_STARTED if BUS_TOPICS else "core.cleanup.started"
 TOPIC_CLEANUP_COMPLETED = BUS_TOPICS.CORE_CLEANUP_COMPLETED if BUS_TOPICS else "core.cleanup.completed"
+TOPIC_RUN_DIR_REQUEST = (
+    BUS_TOPICS.CORE_STORAGE_ALLOCATE_RUN_DIR_REQUEST
+    if BUS_TOPICS
+    else "core.storage.allocate_run_dir.request"
+)
+TOPIC_RUNS_DELETE_REQUEST = BUS_TOPICS.CORE_RUNS_DELETE_REQUEST if BUS_TOPICS else "core.runs.delete.request"
+TOPIC_RUNS_PRUNE_REQUEST = BUS_TOPICS.CORE_RUNS_PRUNE_REQUEST if BUS_TOPICS else "core.runs.prune.request"
+TOPIC_RUNS_DELETE_MANY_REQUEST = (
+    BUS_TOPICS.CORE_RUNS_DELETE_MANY_REQUEST if BUS_TOPICS else "core.runs.delete_many.request"
+)
+TOPIC_MODULE_INSTALL_REQUEST = (
+    BUS_TOPICS.CORE_CONTENT_MODULE_INSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.content.module.install.request"
+)
+TOPIC_MODULE_UNINSTALL_REQUEST = (
+    BUS_TOPICS.CORE_CONTENT_MODULE_UNINSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.content.module.uninstall.request"
+)
+TOPIC_COMPONENT_PACK_INSTALL_REQUEST = (
+    BUS_TOPICS.CORE_COMPONENT_PACK_INSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.component_pack.install.request"
+)
+TOPIC_COMPONENT_PACK_UNINSTALL_REQUEST = (
+    BUS_TOPICS.CORE_COMPONENT_PACK_UNINSTALL_REQUEST
+    if BUS_TOPICS
+    else "core.component_pack.uninstall.request"
+)
 TOPIC_ERROR_RAISED = BUS_TOPICS.ERROR_RAISED if BUS_TOPICS else "error.raised"
+
+_TRAIL_COUNT = 3
+_TRAIL_SPACING_MS = 70
 
 
 class BusBridge:
@@ -59,10 +96,21 @@ class BusBridge:
         self._subscribe(TOPIC_JOB_STARTED, self._on_job_started)
         self._subscribe(TOPIC_JOB_PROGRESS, self._on_job_progress)
         self._subscribe(TOPIC_JOB_COMPLETED, self._on_job_completed)
+        self._subscribe(TOPIC_CONTENT_REQUEST, self._on_content_request)
         self._subscribe(TOPIC_CONTENT_PROGRESS, self._on_content_progress)
         self._subscribe(TOPIC_CONTENT_COMPLETED, self._on_content_completed)
+        self._subscribe(TOPIC_LAB_RUN_STARTED, self._on_lab_run_started)
+        self._subscribe(TOPIC_LAB_RUN_STOPPED, self._on_lab_run_stopped)
         self._subscribe(TOPIC_CLEANUP_STARTED, self._on_cleanup_started)
         self._subscribe(TOPIC_CLEANUP_COMPLETED, self._on_cleanup_completed)
+        self._subscribe(TOPIC_RUN_DIR_REQUEST, self._on_run_dir_request)
+        self._subscribe(TOPIC_RUNS_DELETE_REQUEST, self._on_runs_delete_request)
+        self._subscribe(TOPIC_RUNS_DELETE_MANY_REQUEST, self._on_runs_delete_many_request)
+        self._subscribe(TOPIC_RUNS_PRUNE_REQUEST, self._on_runs_prune_request)
+        self._subscribe(TOPIC_MODULE_INSTALL_REQUEST, self._on_module_install_request)
+        self._subscribe(TOPIC_MODULE_UNINSTALL_REQUEST, self._on_module_uninstall_request)
+        self._subscribe(TOPIC_COMPONENT_PACK_INSTALL_REQUEST, self._on_pack_install_request)
+        self._subscribe(TOPIC_COMPONENT_PACK_UNINSTALL_REQUEST, self._on_pack_uninstall_request)
         self._subscribe(TOPIC_ERROR_RAISED, self._on_error_raised)
 
     def stop(self) -> None:
@@ -134,7 +182,12 @@ class BusBridge:
                 message=stage or None,
             )
         )
-        self._publish_bus_activity(envelope, node_id=node_id, message=stage or "job progress")
+        self._publish_bus_activity(
+            envelope,
+            node_id=node_id,
+            message=stage or "job progress",
+            trail=False,
+        )
 
     def _on_job_completed(self, envelope) -> None:
         payload = _payload(envelope)
@@ -153,6 +206,13 @@ class BusBridge:
             )
         )
         self._publish_bus_activity(envelope, node_id=node_id, message=message or "job completed")
+
+    def _on_content_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        module_id = _str(payload.get("module_id") or payload.get("id") or "")
+        action = _str(payload.get("action") or "content")
+        message = f"{action} {module_id}".strip() or "content request"
+        self._publish_bus_activity(envelope, node_id="system:content_system", message=message)
 
     def _on_content_progress(self, envelope) -> None:
         payload = _payload(envelope)
@@ -178,7 +238,12 @@ class BusBridge:
                 message=stage or None,
             )
         )
-        self._publish_bus_activity(envelope, node_id=node_id, message=stage or "content progress")
+        self._publish_bus_activity(
+            envelope,
+            node_id=node_id,
+            message=stage or "content progress",
+            trail=False,
+        )
 
     def _on_content_completed(self, envelope) -> None:
         payload = _payload(envelope)
@@ -197,6 +262,38 @@ class BusBridge:
             )
         )
         self._publish_bus_activity(envelope, node_id=node_id, message=message or "content completed")
+
+    def _on_lab_run_started(self, envelope) -> None:
+        payload = _payload(envelope)
+        lab_id = _str(payload.get("lab_id") or "lab")
+        run_id = _str(payload.get("run_id") or payload.get("id") or "")
+        span_id = f"run:{lab_id}:{run_id or int(time.time())}"
+        node_id = f"lab:{lab_id}"
+        self._active_spans[span_id] = node_id
+        self._hub.publish_span_start(
+            SpanStart(
+                span_id=span_id,
+                label=f"Run {lab_id}",
+                node_id=node_id,
+                source_id="system:runtime_bus",
+            )
+        )
+        self._publish_bus_activity(envelope, node_id=node_id, message="run started")
+
+    def _on_lab_run_stopped(self, envelope) -> None:
+        payload = _payload(envelope)
+        lab_id = _str(payload.get("lab_id") or "lab")
+        run_id = _str(payload.get("run_id") or payload.get("id") or "")
+        span_id = f"run:{lab_id}:{run_id or 'active'}"
+        node_id = self._active_spans.pop(span_id, None) or f"lab:{lab_id}"
+        self._hub.publish_span_end(
+            SpanEnd(
+                span_id=span_id,
+                status="completed",
+                message="run stopped",
+            )
+        )
+        self._publish_bus_activity(envelope, node_id=node_id, message="run stopped")
 
     def _on_cleanup_started(self, envelope) -> None:
         payload = _payload(envelope)
@@ -231,6 +328,76 @@ class BusBridge:
         )
         self._publish_bus_activity(envelope, node_id=node_id, message=message or "cleanup completed")
 
+    def _on_run_dir_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        lab_id = _str(payload.get("lab_id") or "lab")
+        self._publish_bus_activity(
+            envelope,
+            node_id="system:core_center",
+            message=f"run dir for {lab_id}",
+        )
+
+    def _on_runs_delete_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        lab_id = _str(payload.get("lab_id") or "lab")
+        run_id = _str(payload.get("run_id") or "")
+        message = f"delete run {run_id} ({lab_id})".strip()
+        self._publish_bus_activity(envelope, node_id="system:core_center", message=message or "delete run")
+
+    def _on_runs_delete_many_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        items = payload.get("items") or []
+        count = len(items) if isinstance(items, list) else 0
+        message = f"delete {count} runs" if count else "delete runs"
+        self._publish_bus_activity(envelope, node_id="system:core_center", message=message)
+
+    def _on_runs_prune_request(self, envelope) -> None:
+        self._publish_bus_activity(
+            envelope,
+            node_id="system:core_center",
+            message="prune runs",
+        )
+
+    def _on_module_install_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        module_id = _str(payload.get("module_id") or "")
+        message = f"install module {module_id}".strip()
+        self._publish_bus_activity(
+            envelope,
+            node_id="system:content_system",
+            message=message or "install module",
+        )
+
+    def _on_module_uninstall_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        module_id = _str(payload.get("module_id") or "")
+        message = f"uninstall module {module_id}".strip()
+        self._publish_bus_activity(
+            envelope,
+            node_id="system:content_system",
+            message=message or "uninstall module",
+        )
+
+    def _on_pack_install_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        pack_id = _str(payload.get("pack_id") or "")
+        message = f"install pack {pack_id}".strip()
+        self._publish_bus_activity(
+            envelope,
+            node_id="system:component_runtime",
+            message=message or "install pack",
+        )
+
+    def _on_pack_uninstall_request(self, envelope) -> None:
+        payload = _payload(envelope)
+        pack_id = _str(payload.get("pack_id") or "")
+        message = f"uninstall pack {pack_id}".strip()
+        self._publish_bus_activity(
+            envelope,
+            node_id="system:component_runtime",
+            message=message or "uninstall pack",
+        )
+
     def _on_error_raised(self, envelope) -> None:
         payload = _payload(envelope)
         message = _str(payload.get("message") or payload.get("error") or "Error raised")
@@ -249,19 +416,33 @@ class BusBridge:
         )
         self._publish_bus_activity(envelope, node_id="system:runtime_bus", message=message)
 
-    def _publish_bus_activity(self, envelope, *, node_id: str, message: str) -> None:
-        self._hub.publish(
-            CodeSeeEvent(
-                ts=_event_ts(envelope),
-                kind=EVENT_BUS_REQUEST,
-                severity="info",
-                message=_short_message(message),
-                node_ids=[node_id or "system:runtime_bus"],
-                source="runtime_bus",
-                source_node_id="system:runtime_bus",
-                target_node_id=node_id or "system:runtime_bus",
-            )
+    def _publish_bus_activity(
+        self,
+        envelope,
+        *,
+        node_id: str,
+        message: str,
+        trail: bool = True,
+    ) -> None:
+        event = CodeSeeEvent(
+            ts=_event_ts(envelope),
+            kind=EVENT_BUS_REQUEST,
+            severity="info",
+            message=_short_message(message),
+            node_ids=[node_id or "system:runtime_bus"],
+            source="runtime_bus",
+            source_node_id="system:runtime_bus",
+            target_node_id=node_id or "system:runtime_bus",
         )
+        self._hub.publish(event)
+        if trail:
+            self._hub.publish_trail(
+                event,
+                count=_TRAIL_COUNT,
+                spacing_ms=_TRAIL_SPACING_MS,
+                trail_kind=EVENT_PULSE_TRAIL,
+                transient=True,
+            )
 
 
 def _payload(envelope) -> Dict[str, object]:
