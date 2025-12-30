@@ -236,12 +236,14 @@ class GraphScene(QtWidgets.QGraphicsScene):
         travel_duration_ms = _setting_value(settings, "travel_duration_ms", 0)
         linger_ms = _setting_value(settings, "arrive_linger_ms", 300)
         fade_ms = _setting_value(settings, "fade_ms", 500)
-        radius = max(4.0, float(_setting_value(settings, "pulse_radius_px", 8)))
+        radius = max(5.0, float(_setting_value(settings, "pulse_radius_px", 10)))
         alpha = _setting_value(settings, "pulse_alpha", 0.6)
         min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
         intensity = _setting_value(settings, "intensity_multiplier", 1.0)
         curve = _setting_value(settings, "fade_curve", "linear")
         max_signals = _setting_value(settings, "max_concurrent_signals", 6)
+        trail_length = int(_setting_value(settings, "trail_length", 1))
+        trail_spacing_ms = int(_setting_value(settings, "trail_spacing_ms", 70))
         if self._reduced_motion:
             self._queue_pulse(
                 target_id,
@@ -266,7 +268,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 fade_curve=str(curve),
             )
             return
-        if len(self._signals) >= int(max_signals):
+        trail_length = max(1, trail_length)
+        max_signals = max(1, int(max_signals))
+        while len(self._signals) + trail_length > max_signals:
             self._drop_oldest_signal()
         src_item = self._nodes.get(source_id)
         if not src_item:
@@ -288,25 +292,31 @@ class GraphScene(QtWidgets.QGraphicsScene):
             duration = max(0.15, distance / max(1.0, float(speed)))
         intensity = max(0.1, float(intensity))
         alpha = min(1.0, max(0.25, float(alpha) * intensity))
-        dot = SignalDotItem(radius=float(radius), color=color, alpha=float(alpha))
-        dot.setPos(start)
-        self.addItem(dot)
-        self._signals.append(
-            {
-                "dot": dot,
-                "start": start,
-                "end": end,
-                "target": target_id,
-                "t0": time.monotonic(),
-                "duration": duration,
-                "linger_ms": int(linger_ms),
-                "fade_ms": int(fade_ms),
-                "color": color,
-                "min_alpha": float(min_alpha),
-                "intensity": float(intensity),
-                "fade_curve": str(curve),
-            }
-        )
+        now = time.monotonic()
+        for index in range(trail_length):
+            offset_s = (trail_spacing_ms * index) / 1000.0
+            decay = 1.0 - (0.18 * index)
+            dot_alpha = max(0.25, float(alpha) * float(intensity) * decay)
+            dot = SignalDotItem(radius=float(radius), color=color, alpha=float(dot_alpha))
+            dot.setPos(start)
+            self.addItem(dot)
+            self._signals.append(
+                {
+                    "dot": dot,
+                    "start": start,
+                    "end": end,
+                    "target": target_id,
+                    "t0": now + offset_s,
+                    "duration": duration,
+                    "linger_ms": int(linger_ms),
+                    "fade_ms": int(fade_ms),
+                    "color": color,
+                    "min_alpha": float(min_alpha),
+                    "intensity": float(intensity),
+                    "fade_curve": str(curve),
+                    "arrival": index == (trail_length - 1),
+                }
+            )
         if not self._signal_timer.isActive():
             self._signal_timer.start()
 
@@ -323,15 +333,23 @@ class GraphScene(QtWidgets.QGraphicsScene):
         return len(self._signals) + len(self._pulses)
 
     def clear_pulses(self) -> None:
-        if not self._pulses:
-            return
-        for node_id, item in list(self._nodes.items()):
-            try:
-                item.set_highlight(0.0, None)
-            except RuntimeError:
-                pass
-        self._pulses = {}
-        if not self._signals and self._signal_timer.isActive():
+        if self._pulses:
+            for node_id, item in list(self._nodes.items()):
+                try:
+                    item.set_highlight(0.0, None)
+                except RuntimeError:
+                    pass
+            self._pulses = {}
+        if self._signals:
+            for state in list(self._signals):
+                dot = state.get("dot")
+                if isinstance(dot, SignalDotItem):
+                    try:
+                        self.removeItem(dot)
+                    except RuntimeError:
+                        pass
+            self._signals = []
+        if not self._signals and not self._pulses and self._signal_timer.isActive():
             self._signal_timer.stop()
 
     def node_positions(self) -> Dict[str, Tuple[float, float]]:
@@ -351,19 +369,26 @@ class GraphScene(QtWidgets.QGraphicsScene):
             t0 = float(state.get("t0", now))
             duration = float(state.get("duration", 0.2))
             progress = (now - t0) / max(duration, 0.001)
+            if progress < 0.0:
+                dot.setVisible(False)
+                remaining.append(state)
+                continue
+            if not dot.isVisible():
+                dot.setVisible(True)
             if progress >= 1.0:
                 self.removeItem(dot)
                 target_id = str(state.get("target"))
-                self._queue_pulse(
-                    target_id,
-                    color=state.get("color"),
-                    mode="arrival",
-                    linger_ms=int(state.get("linger_ms", 300)),
-                    fade_ms=int(state.get("fade_ms", 500)),
-                    min_alpha=float(state.get("min_alpha", 0.1)),
-                    intensity=float(state.get("intensity", 1.0)),
-                    fade_curve=str(state.get("fade_curve", "linear")),
-                )
+                if state.get("arrival", True):
+                    self._queue_pulse(
+                        target_id,
+                        color=state.get("color"),
+                        mode="arrival",
+                        linger_ms=int(state.get("linger_ms", 300)),
+                        fade_ms=int(state.get("fade_ms", 500)),
+                        min_alpha=float(state.get("min_alpha", 0.1)),
+                        intensity=float(state.get("intensity", 1.0)),
+                        fade_curve=str(state.get("fade_curve", "linear")),
+                    )
                 continue
             start = state.get("start")
             end = state.get("end")

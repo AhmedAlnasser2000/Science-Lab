@@ -1262,6 +1262,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._overlay_checks[node_id] = overlay[-self._overlay_limit :]
 
     def _emit_live_signal(self, event: CodeSeeEvent) -> None:
+        if not _pulse_topic_enabled(self._pulse_settings, event.kind):
+            return
         node_ids = event.node_ids or []
         target_id = event.target_node_id or (node_ids[-1] if node_ids else None)
         source_id = event.source_node_id
@@ -1386,6 +1388,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         intensity.setValue(float(self._pulse_settings.intensity_multiplier))
         form.addRow("Intensity multiplier", intensity)
 
+        trail_length = QtWidgets.QSpinBox()
+        trail_length.setRange(1, 8)
+        trail_length.setValue(int(getattr(self._pulse_settings, "trail_length", 3)))
+        form.addRow("Trail length (dots)", trail_length)
+
+        trail_spacing = QtWidgets.QSpinBox()
+        trail_spacing.setRange(30, 400)
+        trail_spacing.setValue(int(getattr(self._pulse_settings, "trail_spacing_ms", 70)))
+        form.addRow("Trail spacing (ms)", trail_spacing)
+
         tint_active = QtWidgets.QCheckBox("Tint node while active span runs")
         tint_active.setChecked(bool(self._pulse_settings.tint_active_spans))
         form.addRow(tint_active)
@@ -1394,6 +1406,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
         max_signals.setRange(1, 20)
         max_signals.setValue(int(self._pulse_settings.max_concurrent_signals))
         form.addRow("Max concurrent", max_signals)
+
+        topic_group = QtWidgets.QGroupBox("Pulse topics")
+        topic_layout = QtWidgets.QVBoxLayout(topic_group)
+        topic_checks: Dict[str, QtWidgets.QCheckBox] = {}
+        for key, label in _pulse_topic_labels().items():
+            checkbox = QtWidgets.QCheckBox(label)
+            enabled = bool(getattr(self._pulse_settings, "topic_enabled", {}).get(key, True))
+            checkbox.setChecked(enabled)
+            topic_layout.addWidget(checkbox)
+            topic_checks[key] = checkbox
+        layout.addWidget(topic_group)
 
         layout.addLayout(form)
         buttons = QtWidgets.QDialogButtonBox(
@@ -1417,8 +1440,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
             pulse_min_alpha=float(min_alpha.value()),
             intensity_multiplier=float(intensity.value()),
             fade_curve=str(curve.currentData() or "linear"),
+            trail_length=int(trail_length.value()),
+            trail_spacing_ms=int(trail_spacing.value()),
             max_concurrent_signals=int(max_signals.value()),
             tint_active_spans=bool(tint_active.isChecked()),
+            topic_enabled={key: bool(check.isChecked()) for key, check in topic_checks.items()},
         )
         self._view_config.pulse_settings = self._pulse_settings
         self._persist_view_config()
@@ -1859,6 +1885,22 @@ def _diff_filter_labels() -> Dict[str, str]:
     }
 
 
+def _pulse_topic_labels() -> Dict[str, str]:
+    return {
+        "app.activity": "App activity",
+        "app.error": "App error",
+        "app.crash": "App crash",
+        "job.update": "Job update",
+        "span.start": "Span start",
+        "span.update": "Span update",
+        "span.end": "Span end",
+        "bus.request": "Bus request",
+        "bus.reply": "Bus reply",
+        "expect.check": "Expectation check",
+        "codesee.test_pulse": "Test pulse",
+    }
+
+
 def _quick_filter_summary(config: view_config.ViewConfig) -> str:
     labels = []
     for key, label in _quick_filter_labels().items():
@@ -1873,6 +1915,15 @@ def _diff_filter_summary(filters: Dict[str, bool]) -> str:
         if filters.get(key):
             labels.append(label.replace("Only ", "").strip())
     return " + ".join(labels)
+
+
+def _pulse_topic_enabled(settings: view_config.PulseSettings, kind: str) -> bool:
+    enabled = getattr(settings, "topic_enabled", None)
+    if not isinstance(enabled, dict):
+        return True
+    if kind not in enabled:
+        return True
+    return bool(enabled.get(kind, True))
 
 
 def _category_visible(node: Node, categories: Dict[str, bool]) -> bool:

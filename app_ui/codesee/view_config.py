@@ -29,13 +29,16 @@ class PulseSettings:
     arrive_linger_ms: int = 300
     fade_ms: int = 500
     pulse_duration_ms: int = 650
-    pulse_radius_px: int = 8
-    pulse_alpha: float = 0.6
-    pulse_min_alpha: float = 0.12
+    pulse_radius_px: int = 10
+    pulse_alpha: float = 0.7
+    pulse_min_alpha: float = 0.18
     intensity_multiplier: float = 1.0
     fade_curve: str = "linear"
+    trail_length: int = 3
+    trail_spacing_ms: int = 70
     max_concurrent_signals: int = 6
     tint_active_spans: bool = False
+    topic_enabled: Dict[str, bool] = field(default_factory=lambda: _default_pulse_topics())
 
 
 _CATEGORY_DEFAULTS = {
@@ -209,6 +212,9 @@ def _merge_pulse_settings(defaults: PulseSettings, raw) -> PulseSettings:
         if field_name not in raw:
             continue
         value = raw.get(field_name)
+        if field_name == "topic_enabled":
+            merged.topic_enabled = _merge_bool_map(merged.topic_enabled, value)
+            continue
         if isinstance(getattr(merged, field_name), bool):
             if isinstance(value, bool):
                 setattr(merged, field_name, value)
@@ -249,8 +255,27 @@ def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:
         "pulse_min_alpha": float(settings.pulse_min_alpha),
         "intensity_multiplier": float(settings.intensity_multiplier),
         "fade_curve": str(settings.fade_curve),
+        "trail_length": int(settings.trail_length),
+        "trail_spacing_ms": int(settings.trail_spacing_ms),
         "max_concurrent_signals": int(settings.max_concurrent_signals),
         "tint_active_spans": bool(settings.tint_active_spans),
+        "topic_enabled": dict(settings.topic_enabled),
+    }
+
+
+def _default_pulse_topics() -> Dict[str, bool]:
+    return {
+        "app.activity": True,
+        "app.error": True,
+        "app.crash": True,
+        "job.update": True,
+        "span.start": True,
+        "span.update": True,
+        "span.end": True,
+        "bus.request": True,
+        "bus.reply": True,
+        "expect.check": True,
+        "codesee.test_pulse": True,
     }
 
 
