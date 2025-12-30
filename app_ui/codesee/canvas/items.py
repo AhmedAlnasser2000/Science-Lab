@@ -70,6 +70,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._last_badge_key: Optional[str] = None
         self._highlight_strength = 0.0
         self._highlight_color = QtGui.QColor("#4c6ef5")
+        self._tint_strength = 0.0
+        self._tint_color = QtGui.QColor("#4c6ef5")
 
         self.setFlags(
             QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -131,12 +133,30 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._highlight_strength = max(0.0, min(1.0, float(strength)))
         self.update()
 
+    def set_tint(self, strength: float, color: Optional[QtGui.QColor] = None) -> None:
+        if color is not None:
+            self._tint_color = color
+        self._tint_strength = max(0.0, min(1.0, float(strength)))
+        self.update()
+
     def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
         rect = self.boundingRect()
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.setBrush(QtGui.QColor("#f7f7f7"))
         painter.setPen(QtGui.QPen(_severity_color(self.node.effective_severity()), 2.0))
         painter.drawRoundedRect(rect, NODE_RADIUS, NODE_RADIUS)
+
+        if self._tint_strength > 0.0:
+            tint = QtGui.QColor(self._tint_color)
+            tint.setAlphaF(min(0.25, 0.08 + (self._tint_strength * 0.2)))
+            painter.setBrush(tint)
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            inset = 2.0
+            painter.drawRoundedRect(
+                rect.adjusted(inset, inset, -inset, -inset),
+                NODE_RADIUS - 2.0,
+                NODE_RADIUS - 2.0,
+            )
 
         _paint_theme_marker(painter, rect, self.node.node_type, self._icon_style, self._node_theme)
 
@@ -445,7 +465,7 @@ def _badge_layer(key: str) -> Optional[str]:
 
 def _paint_diff_badge(painter: QtGui.QPainter, rect: QtCore.QRectF, state: str) -> None:
     color = QtGui.QColor("#3a7d5d") if state == "added" else QtGui.QColor("#b07d21")
-    symbol = "+" if state == "added" else "Δ"
+    symbol = "+" if state == "added" else "I"
     size = _diff_badge_size()
     badge_rect = QtCore.QRectF(
         rect.right() - size - 4.0,

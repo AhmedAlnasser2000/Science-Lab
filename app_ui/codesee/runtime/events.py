@@ -73,6 +73,47 @@ class SpanRecord:
     message: Optional[str] = None
 
 
+def event_to_dict(event: CodeSeeEvent) -> dict:
+    return {
+        "ts": event.ts,
+        "kind": event.kind,
+        "severity": event.severity,
+        "message": event.message,
+        "node_ids": list(event.node_ids or []),
+        "detail": event.detail,
+        "source": event.source,
+        "payload": dict(event.payload) if isinstance(event.payload, dict) else event.payload,
+        "source_node_id": event.source_node_id,
+        "target_node_id": event.target_node_id,
+    }
+
+
+def event_from_dict(data: dict) -> Optional[CodeSeeEvent]:
+    if not isinstance(data, dict):
+        return None
+    ts = data.get("ts")
+    kind = data.get("kind")
+    severity = data.get("severity")
+    message = data.get("message")
+    if not (isinstance(ts, str) and isinstance(kind, str) and isinstance(severity, str) and isinstance(message, str)):
+        return None
+    node_ids = data.get("node_ids")
+    if not isinstance(node_ids, list):
+        node_ids = []
+    return CodeSeeEvent(
+        ts=ts,
+        kind=kind,
+        severity=severity,
+        message=message,
+        node_ids=[str(node_id) for node_id in node_ids if node_id is not None],
+        detail=_optional_str(data.get("detail")),
+        source=_optional_str(data.get("source")),
+        payload=data.get("payload"),
+        source_node_id=_optional_str(data.get("source_node_id")),
+        target_node_id=_optional_str(data.get("target_node_id")),
+    )
+
+
 def span_to_dict(span: SpanRecord) -> dict:
     payload: dict = {
         "span_id": span.span_id,

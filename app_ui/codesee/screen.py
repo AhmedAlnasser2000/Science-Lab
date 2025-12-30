@@ -27,6 +27,8 @@ from .runtime.events import (
     EVENT_APP_ACTIVITY,
     EVENT_APP_CRASH,
     EVENT_APP_ERROR,
+    EVENT_BUS_REPLY,
+    EVENT_BUS_REQUEST,
     EVENT_EXPECT_CHECK,
     EVENT_JOB_UPDATE,
     EVENT_SPAN_END,
@@ -84,6 +86,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
         self._build_info = versioning.get_build_info()
+        if self._runtime_hub:
+            self._runtime_hub.set_workspace_id(self._workspace_id())
 
         self._demo_root = build_demo_root_graph()
         self._demo_subgraphs = build_demo_subgraphs()
@@ -153,99 +157,69 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.source_combo.setCurrentText(self._source)
         self.source_combo.blockSignals(False)
         source_row.addWidget(self.source_combo)
-        self.layers_button = QtWidgets.QToolButton()
-        self.layers_button.setText("Layers")
-        self.layers_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.layers_menu = QtWidgets.QMenu(self.layers_button)
-        self.layers_button.setMenu(self.layers_menu)
-        source_row.addWidget(self.layers_button)
-        self.badges_button = QtWidgets.QToolButton()
-        self.badges_button.setText("Badges")
-        self.badges_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.badges_menu = QtWidgets.QMenu(self.badges_button)
-        self.badges_button.setMenu(self.badges_menu)
-        source_row.addWidget(self.badges_button)
-        self._only_errors_btn = _make_toggle_button("Only errors", self._on_quick_filter_changed)
-        self._only_failures_btn = _make_toggle_button("Only failures", self._on_quick_filter_changed)
-        self._only_expecting_btn = _make_toggle_button("Only expecting", self._on_quick_filter_changed)
-        self._only_mismatches_btn = _make_toggle_button("Only mismatches", self._on_quick_filter_changed)
-        self._only_active_btn = _make_toggle_button("Only active", self._on_quick_filter_changed)
-        self._only_stuck_btn = _make_toggle_button("Only stuck", self._on_quick_filter_changed)
-        source_row.addWidget(self._only_errors_btn)
-        source_row.addWidget(self._only_failures_btn)
-        source_row.addWidget(self._only_expecting_btn)
-        source_row.addWidget(self._only_mismatches_btn)
-        source_row.addWidget(self._only_active_btn)
-        source_row.addWidget(self._only_stuck_btn)
         self.capture_btn = QtWidgets.QPushButton("Capture Snapshot")
         self.capture_btn.clicked.connect(self._capture_snapshot)
         source_row.addWidget(self.capture_btn)
         self.load_btn = QtWidgets.QPushButton("Load Latest Snapshot")
         self.load_btn.clicked.connect(self._load_latest_snapshot_action)
         source_row.addWidget(self.load_btn)
-        source_row.addWidget(QtWidgets.QLabel("Baseline:"))
+        self.baseline_label = QtWidgets.QLabel("Baseline:")
         self.baseline_combo = QtWidgets.QComboBox()
         self.baseline_combo.currentIndexChanged.connect(self._on_baseline_changed)
+        source_row.addWidget(self.baseline_label)
         source_row.addWidget(self.baseline_combo)
-        source_row.addWidget(QtWidgets.QLabel("Compare:"))
+        self.compare_label = QtWidgets.QLabel("Compare:")
         self.compare_combo = QtWidgets.QComboBox()
         self.compare_combo.currentIndexChanged.connect(self._on_compare_changed)
+        source_row.addWidget(self.compare_label)
         source_row.addWidget(self.compare_combo)
-        self.diff_toggle = QtWidgets.QToolButton()
-        self.diff_toggle.setText("Diff Mode")
-        self.diff_toggle.setCheckable(True)
-        self.diff_toggle.toggled.connect(self._on_diff_toggled)
-        source_row.addWidget(self.diff_toggle)
         self.live_toggle = QtWidgets.QToolButton()
         self.live_toggle.setText("Live")
         self.live_toggle.setCheckable(True)
         self.live_toggle.toggled.connect(self._on_live_toggled)
         source_row.addWidget(self.live_toggle)
-        self.test_pulse_btn = QtWidgets.QToolButton()
-        self.test_pulse_btn.setText("Emit Test Pulse")
-        self.test_pulse_btn.clicked.connect(self._emit_test_pulse)
-        source_row.addWidget(self.test_pulse_btn)
         toggle_style = _toggle_style()
-        _apply_toggle_style(
-            [
-                self._only_errors_btn,
-                self._only_failures_btn,
-                self._only_expecting_btn,
-                self._only_mismatches_btn,
-                self._only_active_btn,
-                self._only_stuck_btn,
-                self.diff_toggle,
-                self.live_toggle,
-            ],
-            toggle_style,
-        )
-        self.removed_button = QtWidgets.QToolButton()
-        self.removed_button.setText("Removed")
-        self.removed_button.clicked.connect(self._open_removed_dialog)
-        source_row.addWidget(self.removed_button)
+        _apply_toggle_style([self.live_toggle], toggle_style)
         self.open_window_btn = QtWidgets.QToolButton()
         self.open_window_btn.setText("Open in Window")
         self.open_window_btn.clicked.connect(self._open_in_window)
         if not self._allow_detach or not self._on_open_window:
             self.open_window_btn.setVisible(False)
         source_row.addWidget(self.open_window_btn)
-        source_row.addWidget(QtWidgets.QLabel("Icon Style:"))
-        self.style_combo = QtWidgets.QComboBox()
-        self.style_combo.addItems(list(ICON_STYLE_LABELS.values()))
-        self.style_combo.currentTextChanged.connect(self._on_icon_style_changed)
-        source_row.addWidget(self.style_combo)
-        source_row.addWidget(QtWidgets.QLabel("Theme:"))
-        self.theme_combo = QtWidgets.QComboBox()
-        self.theme_combo.addItem("Neutral", "neutral")
-        self.theme_combo.addItem("Categorical", "categorical")
-        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        source_row.addWidget(self.theme_combo)
-        self.pulse_btn = QtWidgets.QToolButton()
-        self.pulse_btn.setText("Pulse...")
-        self.pulse_btn.clicked.connect(self._open_pulse_settings)
-        source_row.addWidget(self.pulse_btn)
+        self.view_button = QtWidgets.QToolButton()
+        self.view_button.setText("View")
+        self.view_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.view_menu = QtWidgets.QMenu(self.view_button)
+        self.view_button.setMenu(self.view_menu)
+        source_row.addWidget(self.view_button)
+        self.filters_button = QtWidgets.QToolButton()
+        self.filters_button.setText("Filters")
+        self.filters_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.filters_menu = QtWidgets.QMenu(self.filters_button)
+        self.filters_button.setMenu(self.filters_menu)
+        source_row.addWidget(self.filters_button)
+        self.layers_button = QtWidgets.QToolButton()
+        self.layers_button.setText("Layers")
+        self.layers_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.layers_menu = QtWidgets.QMenu(self.layers_button)
+        self.layers_button.setMenu(self.layers_menu)
+        self.category_menu = self.layers_menu.addMenu("Categories")
+        self.badge_layer_menu = self.layers_menu.addMenu("Badge Layers")
+        source_row.addWidget(self.layers_button)
+        self.more_button = QtWidgets.QToolButton()
+        self.more_button.setText("More")
+        self.more_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_menu = QtWidgets.QMenu(self.more_button)
+        self.more_button.setMenu(self.more_menu)
+        source_row.addWidget(self.more_button)
         source_row.addStretch()
         layout.addLayout(source_row)
+
+        self._build_view_menu()
+        self._build_filter_menu()
+        self._build_layer_menu()
+        self._build_badge_menu()
+        self._build_more_menu()
 
         self.mode_status_row = QtWidgets.QWidget()
         mode_layout = QtWidgets.QHBoxLayout(self.mode_status_row)
@@ -314,10 +288,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
         ui_scale.register_listener(self._on_ui_scale_changed)
         self._apply_density(ui_scale.get_config())
-        self._build_layer_menu()
-        self._build_badge_menu()
         self._refresh_snapshot_history()
-        self._sync_style_combo()
         self._sync_view_controls()
         self._update_action_state()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
@@ -328,7 +299,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.live_toggle.setChecked(False)
             self.live_toggle.setEnabled(False)
             self.live_toggle.setVisible(False)
-            self.test_pulse_btn.setVisible(False)
+            if hasattr(self, "test_pulse_action"):
+                self.test_pulse_action.setVisible(False)
             self._update_action_state()
             if self._crash_view:
                 self._load_crash_record()
@@ -360,19 +332,21 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._overlay_checks.clear()
         if self._crash_view:
             self._load_crash_record()
-        self._sync_style_combo()
         self._sync_view_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_node_theme(self._node_theme)
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
         self._refresh_snapshot_history()
-        self.diff_toggle.blockSignals(True)
-        self.diff_toggle.setChecked(False)
-        self.diff_toggle.blockSignals(False)
+        if hasattr(self, "diff_action"):
+            self.diff_action.blockSignals(True)
+            self.diff_action.setChecked(False)
+            self.diff_action.blockSignals(False)
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(False)
         self.live_toggle.blockSignals(False)
         self._update_action_state()
+        if self._runtime_hub:
+            self._runtime_hub.set_workspace_id(self._workspace_id())
         if self._source == SOURCE_ATLAS:
             self._build_atlas()
             return
@@ -489,6 +463,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.build_graph(filtered, positions, diff_result=diff_result)
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
+        self._update_span_tints(filtered)
         self._update_debug_status()
         self._ensure_status_timer()
 
@@ -548,32 +523,103 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _update_action_state(self) -> None:
         self.capture_btn.setEnabled(self._source in (SOURCE_DEMO, SOURCE_ATLAS))
-        self.removed_button.setEnabled(self._diff_mode and self._diff_result is not None)
+        if hasattr(self, "removed_action"):
+            self.removed_action.setEnabled(self._diff_mode and self._diff_result is not None)
         self.open_window_btn.setEnabled(bool(self._allow_detach and self._on_open_window))
+        diff_visible = bool(self._diff_mode)
+        if hasattr(self, "baseline_label"):
+            self.baseline_label.setVisible(diff_visible)
+        if hasattr(self, "baseline_combo"):
+            self.baseline_combo.setVisible(diff_visible)
+        if hasattr(self, "compare_label"):
+            self.compare_label.setVisible(diff_visible)
+        if hasattr(self, "compare_combo"):
+            self.compare_combo.setVisible(diff_visible)
         self._update_mode_status(0, 0)
+
+    def _build_view_menu(self) -> None:
+        self.view_menu.clear()
+        self.diff_action = QtGui.QAction("Diff Mode", self.view_menu)
+        self.diff_action.setCheckable(True)
+        self.diff_action.toggled.connect(self._on_diff_toggled)
+        self.view_menu.addAction(self.diff_action)
+        self.removed_action = QtGui.QAction("Removed Items...", self.view_menu)
+        self.removed_action.triggered.connect(self._open_removed_dialog)
+        self.view_menu.addAction(self.removed_action)
+        self.view_menu.addSeparator()
+
+        style_menu = self.view_menu.addMenu("Icon Style")
+        self._style_actions: Dict[str, QtGui.QAction] = {}
+        style_group = QtGui.QActionGroup(style_menu)
+        style_group.setExclusive(True)
+        for style, label in ICON_STYLE_LABELS.items():
+            action = QtGui.QAction(label, style_menu)
+            action.setCheckable(True)
+            action.setActionGroup(style_group)
+            action.triggered.connect(lambda _checked=False, value=style: self._set_icon_style(value))
+            style_menu.addAction(action)
+            self._style_actions[style] = action
+
+        theme_menu = self.view_menu.addMenu("Theme")
+        self._theme_actions: Dict[str, QtGui.QAction] = {}
+        theme_group = QtGui.QActionGroup(theme_menu)
+        theme_group.setExclusive(True)
+        for theme_id, label in [("neutral", "Neutral"), ("categorical", "Categorical")]:
+            action = QtGui.QAction(label, theme_menu)
+            action.setCheckable(True)
+            action.setActionGroup(theme_group)
+            action.triggered.connect(lambda _checked=False, value=theme_id: self._set_node_theme(value))
+            theme_menu.addAction(action)
+            self._theme_actions[theme_id] = action
+
+        self.view_menu.addSeparator()
+        self.pulse_settings_action = QtGui.QAction("Pulse Settings...", self.view_menu)
+        self.pulse_settings_action.triggered.connect(self._open_pulse_settings)
+        self.view_menu.addAction(self.pulse_settings_action)
+
+    def _build_filter_menu(self) -> None:
+        self.filters_menu.clear()
+        self._filter_actions: Dict[str, QtGui.QAction] = {}
+        for key, label in _quick_filter_labels().items():
+            action = QtGui.QAction(label, self.filters_menu)
+            action.setCheckable(True)
+            action.toggled.connect(lambda checked=False, k=key: self._set_quick_filter(k, checked))
+            self.filters_menu.addAction(action)
+            self._filter_actions[key] = action
 
     def _build_layer_menu(self) -> None:
         self._category_actions: Dict[str, QtGui.QAction] = {}
-        self.layers_menu.clear()
+        self.category_menu.clear()
         for category in _category_keys():
-            action = QtGui.QAction(category, self.layers_menu)
+            action = QtGui.QAction(category, self.category_menu)
             action.setCheckable(True)
             action.toggled.connect(self._on_category_toggled)
-            self.layers_menu.addAction(action)
+            self.category_menu.addAction(action)
             self._category_actions[category] = action
 
     def _build_badge_menu(self) -> None:
         self._badge_actions: Dict[str, QtGui.QAction] = {}
-        self.badges_menu.clear()
+        self.badge_layer_menu.clear()
         for layer_id, label in _badge_layer_labels().items():
-            action = QtGui.QAction(label, self.badges_menu)
+            action = QtGui.QAction(label, self.badge_layer_menu)
             action.setCheckable(True)
             action.toggled.connect(self._on_badge_layer_toggled)
-            self.badges_menu.addAction(action)
+            self.badge_layer_menu.addAction(action)
             self._badge_actions[layer_id] = action
+
+    def _build_more_menu(self) -> None:
+        self.more_menu.clear()
+        debug_menu = self.more_menu.addMenu("Debug")
+        self.test_pulse_action = QtGui.QAction("Emit Test Pulse", debug_menu)
+        self.test_pulse_action.triggered.connect(self._emit_test_pulse)
+        debug_menu.addAction(self.test_pulse_action)
 
     def _sync_view_controls(self) -> None:
         self._sync_lens_combo()
+        if hasattr(self, "diff_action"):
+            self.diff_action.blockSignals(True)
+            self.diff_action.setChecked(self._diff_mode)
+            self.diff_action.blockSignals(False)
         for category, action in self._category_actions.items():
             action.blockSignals(True)
             action.setChecked(self._view_config.show_categories.get(category, True))
@@ -582,29 +628,18 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.blockSignals(True)
             action.setChecked(self._view_config.show_badge_layers.get(layer_id, True))
             action.blockSignals(False)
-        self.theme_combo.blockSignals(True)
-        idx = self.theme_combo.findData(self._view_config.node_theme or "neutral")
-        if idx >= 0:
-            self.theme_combo.setCurrentIndex(idx)
-        self.theme_combo.blockSignals(False)
-        self._only_errors_btn.blockSignals(True)
-        self._only_errors_btn.setChecked(self._view_config.quick_filters.get("only_errors", False))
-        self._only_errors_btn.blockSignals(False)
-        self._only_failures_btn.blockSignals(True)
-        self._only_failures_btn.setChecked(self._view_config.quick_filters.get("only_failures", False))
-        self._only_failures_btn.blockSignals(False)
-        self._only_expecting_btn.blockSignals(True)
-        self._only_expecting_btn.setChecked(self._view_config.quick_filters.get("only_expecting", False))
-        self._only_expecting_btn.blockSignals(False)
-        self._only_mismatches_btn.blockSignals(True)
-        self._only_mismatches_btn.setChecked(self._view_config.quick_filters.get("only_mismatches", False))
-        self._only_mismatches_btn.blockSignals(False)
-        self._only_active_btn.blockSignals(True)
-        self._only_active_btn.setChecked(self._view_config.quick_filters.get("only_active", False))
-        self._only_active_btn.blockSignals(False)
-        self._only_stuck_btn.blockSignals(True)
-        self._only_stuck_btn.setChecked(self._view_config.quick_filters.get("only_stuck", False))
-        self._only_stuck_btn.blockSignals(False)
+        for style, action in getattr(self, "_style_actions", {}).items():
+            action.blockSignals(True)
+            action.setChecked(style == self._icon_style)
+            action.blockSignals(False)
+        for theme_id, action in getattr(self, "_theme_actions", {}).items():
+            action.blockSignals(True)
+            action.setChecked(theme_id == (self._view_config.node_theme or "neutral"))
+            action.blockSignals(False)
+        for key, action in getattr(self, "_filter_actions", {}).items():
+            action.blockSignals(True)
+            action.setChecked(self._view_config.quick_filters.get(key, False))
+            action.blockSignals(False)
 
     def _sync_lens_combo(self) -> None:
         for idx in range(self.lens_combo.count()):
@@ -631,7 +666,6 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._icon_style = self._view_config.icon_style
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
-        self._sync_style_combo()
         self._sync_view_controls()
         self.scene.set_node_theme(self._node_theme)
         self._render_current_graph()
@@ -652,13 +686,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.update()
         self._update_mode_status(0, 0)
 
-    def _on_quick_filter_changed(self) -> None:
-        self._view_config.quick_filters["only_errors"] = self._only_errors_btn.isChecked()
-        self._view_config.quick_filters["only_failures"] = self._only_failures_btn.isChecked()
-        self._view_config.quick_filters["only_expecting"] = self._only_expecting_btn.isChecked()
-        self._view_config.quick_filters["only_mismatches"] = self._only_mismatches_btn.isChecked()
-        self._view_config.quick_filters["only_active"] = self._only_active_btn.isChecked()
-        self._view_config.quick_filters["only_stuck"] = self._only_stuck_btn.isChecked()
+    def _set_quick_filter(self, key: str, checked: bool) -> None:
+        if key not in self._view_config.quick_filters:
+            return
+        self._view_config.quick_filters[key] = bool(checked)
         self._persist_view_config()
         self._render_current_graph()
         self._update_mode_status(0, 0)
@@ -844,6 +875,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
             edges=graph.edges,
         )
 
+    def _update_span_tints(self, graph: ArchitectureGraph) -> None:
+        if not self._pulse_settings.tint_active_spans:
+            self.scene.set_span_tints([], color=None, strength=0.0)
+            return
+        active_nodes: list[str] = []
+        for node in graph.nodes:
+            if any(span.status == "active" for span in node.spans or []):
+                active_nodes.append(node.node_id)
+        strength = max(0.08, min(0.35, float(self._pulse_settings.pulse_min_alpha)))
+        self.scene.set_span_tints(active_nodes, color=QtGui.QColor("#4c6ef5"), strength=strength)
+
     def _on_ui_scale_changed(self, cfg: ui_scale.UiScaleConfig) -> None:
         clear_icon_cache()
         self._apply_density(cfg)
@@ -878,7 +920,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.filter_status_row.setVisible(active)
         if not active:
             return
-        self.filter_status_label.setText(f"Showing {shown} / {total} nodes")
+        summary = _quick_filter_summary(self._view_config)
+        label = f"Showing {shown} / {total} nodes"
+        if summary:
+            label = f"{label} | Filters: {summary}"
+        self.filter_status_label.setText(label)
         chips = view_config.build_active_filter_chips(self._view_config)
         lens_title = self._lens_map.get(self._lens).title if self._lens in self._lens_map else self._lens
         chips.insert(0, f"Lens: {lens_title}")
@@ -910,8 +956,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         last_ts = self._runtime_hub.last_event_ts() or "n/a"
         signals = self.scene.signals_active_count() if self.scene else 0
         spans = self._runtime_hub.active_span_count()
+        bus_state = "bus:on" if self._runtime_hub.bus_connected() else "bus:off"
         self.debug_status_label.setText(
-            f"Events: {event_count} (last {last_ts}) | Signals active: {signals} | Spans active: {spans}"
+            f"{bus_state} | Events: {event_count} (last {last_ts}) | Signals: {signals} | Spans: {spans}"
         )
         self.debug_status_row.setVisible(True)
 
@@ -947,7 +994,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._last_span_pulse = now
         nodes = _active_span_node_ids(active_spans, limit=4)
         for node_id in nodes:
-            self.scene.flash_node(node_id, QtGui.QColor("#4c6ef5"))
+            self.scene.flash_node_with_settings(
+                node_id,
+                color=QtGui.QColor("#4c6ef5"),
+                settings=self._pulse_settings,
+            )
 
     def _refresh_snapshot_history(self) -> None:
         self._snapshot_entries = snapshot_index.list_snapshots_sorted(self._workspace_id())
@@ -1161,22 +1212,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _resolved_icon_style(self) -> str:
         return icon_pack.resolve_style(self._icon_style, self._reduced_motion)
 
-    def _sync_style_combo(self) -> None:
-        label = ICON_STYLE_LABELS.get(self._icon_style, "Auto")
-        self.style_combo.blockSignals(True)
-        self.style_combo.setCurrentText(label)
-        self.style_combo.blockSignals(False)
-
-    def _on_icon_style_changed(self, value: str) -> None:
-        style = _style_from_label(value)
+    def _set_icon_style(self, style: str) -> None:
+        if not style:
+            return
         self._icon_style = style
         self._view_config.icon_style = style
         icon_pack.save_style(self._workspace_id(), style)
         self._persist_view_config()
         self.scene.set_icon_style(self._resolved_icon_style())
 
-    def _on_theme_changed(self, index: int) -> None:
-        theme = self.theme_combo.itemData(index)
+    def _set_node_theme(self, theme: str) -> None:
         if not theme:
             return
         self._node_theme = str(theme)
@@ -1196,6 +1241,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         speed.setValue(int(self._pulse_settings.travel_speed_px_per_s))
         form.addRow("Travel speed (px/s)", speed)
 
+        duration = QtWidgets.QSpinBox()
+        duration.setRange(150, 2000)
+        duration.setValue(int(self._pulse_settings.pulse_duration_ms))
+        form.addRow("Pulse duration (ms)", duration)
+
         linger = QtWidgets.QSpinBox()
         linger.setRange(0, 2000)
         linger.setValue(int(self._pulse_settings.arrive_linger_ms))
@@ -1205,6 +1255,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         fade.setRange(100, 3000)
         fade.setValue(int(self._pulse_settings.fade_ms))
         form.addRow("Fade (ms)", fade)
+
+        curve = QtWidgets.QComboBox()
+        curve.addItem("Linear", "linear")
+        curve.addItem("Ease Out", "ease")
+        curve_index = curve.findData(self._pulse_settings.fade_curve)
+        if curve_index >= 0:
+            curve.setCurrentIndex(curve_index)
+        form.addRow("Fade curve", curve)
 
         radius = QtWidgets.QSpinBox()
         radius.setRange(4, 24)
@@ -1217,6 +1275,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
         alpha.setDecimals(2)
         alpha.setValue(float(self._pulse_settings.pulse_alpha))
         form.addRow("Pulse alpha", alpha)
+
+        min_alpha = QtWidgets.QDoubleSpinBox()
+        min_alpha.setRange(0.0, 0.8)
+        min_alpha.setSingleStep(0.05)
+        min_alpha.setDecimals(2)
+        min_alpha.setValue(float(self._pulse_settings.pulse_min_alpha))
+        form.addRow("Min intensity", min_alpha)
+
+        tint_active = QtWidgets.QCheckBox("Tint node while active span runs")
+        tint_active.setChecked(bool(self._pulse_settings.tint_active_spans))
+        form.addRow(tint_active)
 
         max_signals = QtWidgets.QSpinBox()
         max_signals.setRange(1, 20)
@@ -1238,12 +1307,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
             travel_speed_px_per_s=int(speed.value()),
             arrive_linger_ms=int(linger.value()),
             fade_ms=int(fade.value()),
+            pulse_duration_ms=int(duration.value()),
             pulse_radius_px=int(radius.value()),
             pulse_alpha=float(alpha.value()),
+            pulse_min_alpha=float(min_alpha.value()),
+            fade_curve=str(curve.currentData() or "linear"),
             max_concurrent_signals=int(max_signals.value()),
+            tint_active_spans=bool(tint_active.isChecked()),
         )
         self._view_config.pulse_settings = self._pulse_settings
         self._persist_view_config()
+        self._render_current_graph()
 
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
         graph = self._current_graph
@@ -1446,11 +1520,21 @@ class CodeSeeScreen(QtWidgets.QWidget):
         live_state = "On" if self._live_enabled else "Off"
         diff_state = "On" if self._diff_mode else "Off"
         filter_count = len(view_config.build_active_filter_chips(self._view_config))
+        bus_state = "Disconnected"
+        active_spans = 0
+        last_event = "n/a"
+        if self._runtime_hub:
+            bus_state = "Connected" if self._runtime_hub.bus_connected() else "Disconnected"
+            active_spans = self._runtime_hub.active_span_count()
+            last_event = self._runtime_hub.last_event_ts() or "n/a"
         parts = [
             f"Source: {self._source}",
             f"Lens: {lens_title}",
             f"Live: {live_state}",
             f"Diff: {diff_state}",
+            f"Bus: {bus_state}",
+            f"Spans: {active_spans}",
+            f"Last: {last_event}",
             f"Filters: {filter_count}",
         ]
         if total_nodes > 0:
@@ -1545,6 +1629,8 @@ def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:
         return "state.warn"
     if event.kind == EVENT_JOB_UPDATE:
         return "state.warn"
+    if event.kind in (EVENT_BUS_REQUEST, EVENT_BUS_REPLY):
+        return "activity.muted"
     if event.kind == EVENT_APP_ACTIVITY:
         return "activity.muted"
     return None
@@ -1575,6 +1661,25 @@ def _badge_layer_labels() -> Dict[str, str]:
         "perf": "Performance",
         "activity": "Activity",
     }
+
+
+def _quick_filter_labels() -> Dict[str, str]:
+    return {
+        "only_errors": "Only errors",
+        "only_failures": "Only failures",
+        "only_expecting": "Only expecting",
+        "only_mismatches": "Only mismatches",
+        "only_active": "Only active",
+        "only_stuck": "Only stuck",
+    }
+
+
+def _quick_filter_summary(config: view_config.ViewConfig) -> str:
+    labels = []
+    for key, label in _quick_filter_labels().items():
+        if config.quick_filters.get(key):
+            labels.append(label.replace("Only ", "").strip())
+    return " + ".join(labels)
 
 
 def _category_visible(node: Node, categories: Dict[str, bool]) -> bool:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import deque
+import json
+from pathlib import Path
 import time
 from typing import Deque, Dict, List, Optional
 
@@ -17,6 +19,10 @@ from .events import (
     SpanRecord,
     SpanStart,
     SpanUpdate,
+    event_from_dict,
+    event_to_dict,
+    span_from_dict,
+    span_to_dict,
 )
 from ..expectations import EVACheck, check_to_dict
 
@@ -111,12 +117,34 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         self._events: Deque[CodeSeeEvent] = deque(maxlen=max_events)
         self._event_count = 0
         self._last_event_ts: Optional[str] = None
+        self._workspace_id: Optional[str] = None
+        self._persist_timer = QtCore.QTimer(self)
+        self._persist_timer.setSingleShot(True)
+        self._persist_timer.timeout.connect(self._persist_activity)
+        self._bus_connected = False
+
+    def set_workspace_id(self, workspace_id: str) -> None:
+        safe_id = _sanitize_workspace_id(workspace_id)
+        if safe_id == self._workspace_id:
+            return
+        if self._workspace_id:
+            self._persist_activity()
+        self._workspace_id = safe_id
+        self._load_activity()
+
+    def bus_connected(self) -> bool:
+        return self._bus_connected
+
+    def set_bus_connected(self, connected: bool) -> None:
+        self._bus_connected = bool(connected)
+        self._schedule_persist()
 
     def publish(self, event: CodeSeeEvent) -> None:
         self._events.append(event)
         self._event_count += 1
         self._last_event_ts = event.ts
         self.event_emitted.emit(event)
+        self._schedule_persist()
 
     def query(self, node_id: str, limit: int = 20) -> List[CodeSeeEvent]:
         results: List[CodeSeeEvent] = []
@@ -235,6 +263,78 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         )
         self.publish(event)
 
+    def flush_activity(self) -> None:
+        self._persist_activity()
+
+    def activity_path(self) -> Optional[Path]:
+        if not self._workspace_id:
+            return None
+        return _activity_path(self._workspace_id)
+
+    def _schedule_persist(self) -> None:
+        if not self._workspace_id:
+            return
+        if self._persist_timer.isActive():
+            return
+        self._persist_timer.start(350)
+
+    def _persist_activity(self) -> None:
+        if not self._workspace_id:
+            return
+        path = _activity_path(self._workspace_id)
+        payload = {
+            "format_version": 1,
+            "workspace_id": self._workspace_id,
+            "updated_ts": time.time(),
+            "bus_connected": bool(self._bus_connected),
+            "events": [event_to_dict(event) for event in list(self._events)],
+            "active_spans": [span_to_dict(span) for span in active_spans()],
+            "recent_spans": [span_to_dict(span) for span in recent_spans()],
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception:
+            return
+
+    def _load_activity(self) -> None:
+        if not self._workspace_id:
+            return
+        path = _activity_path(self._workspace_id)
+        if not path.exists():
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        events_raw = payload.get("events") if isinstance(payload, dict) else None
+        active_raw = payload.get("active_spans") if isinstance(payload, dict) else None
+        recent_raw = payload.get("recent_spans") if isinstance(payload, dict) else None
+        self._events.clear()
+        _ACTIVE_SPANS.clear()
+        _RECENT_SPANS.clear()
+        if isinstance(events_raw, list):
+            for entry in events_raw:
+                event = event_from_dict(entry)
+                if event:
+                    self._events.append(event)
+        if isinstance(active_raw, list):
+            for entry in active_raw:
+                span = span_from_dict(entry)
+                if span:
+                    _ACTIVE_SPANS[span.span_id] = span
+        if isinstance(recent_raw, list):
+            for entry in recent_raw:
+                span = span_from_dict(entry)
+                if span:
+                    _RECENT_SPANS.append(span)
+        if self._events:
+            self._event_count = len(self._events)
+            self._last_event_ts = self._events[-1].ts
+        else:
+            self._event_count = 0
+            self._last_event_ts = None
+
 
 _GLOBAL_HUB: Optional[CodeSeeRuntimeHub] = None
 
@@ -285,3 +385,15 @@ def publish_test_pulse_global(node_ids: List[str]) -> None:
 
 def _format_ts(ts: float) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts or time.time()))
+
+
+def _sanitize_workspace_id(workspace_id: str) -> str:
+    text = str(workspace_id or "").strip()
+    if not text:
+        return "default"
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in text) or "default"
+
+
+def _activity_path(workspace_id: str) -> Path:
+    safe_id = _sanitize_workspace_id(workspace_id)
+    return Path("data") / "workspaces" / safe_id / "codesee" / "activity_latest.json"

@@ -42,6 +42,7 @@ from .labs.host import DEFAULT_POLICY as LAB_DEFAULT_POLICY
 from .widgets.app_header import AppHeader
 from .widgets.workspace_selector import WorkspaceSelector
 from app_ui.codesee.runtime.events import CodeSeeEvent, EVENT_APP_ACTIVITY, EVENT_JOB_UPDATE
+from app_ui.codesee.runtime.bus_bridge import BusBridge
 from app_ui.codesee.runtime.hooks import install_exception_hooks
 from app_ui.codesee.runtime.hub import CodeSeeRuntimeHub, get_global_hub, set_global_hub
 from app_ui.codesee.screen import CodeSeeScreen
@@ -2769,12 +2770,22 @@ class MainWindow(QtWidgets.QMainWindow):
         set_global_hub(self.codesee_hub)
         install_exception_hooks(self.codesee_hub)
         self.codesee_window: Optional[CodeSeeWindow] = None
+        self.codesee_bus_bridge: Optional[BusBridge] = None
 
         self.stacked = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stacked)
         self.lab_widget: Optional[QtWidgets.QWidget] = None
         self.lab_host_widget: Optional[QtWidgets.QWidget] = None
         self.workspace_info: Dict[str, Any] = self._ensure_workspace_context()
+        if self.codesee_hub:
+            self.codesee_hub.set_workspace_id((self.workspace_info or {}).get("id") or "default")
+        if APP_BUS and self.codesee_hub:
+            self.codesee_bus_bridge = BusBridge(
+                APP_BUS,
+                self.codesee_hub,
+                workspace_id_provider=lambda: (self.workspace_info or {}).get("id") or "default",
+            )
+            self.codesee_bus_bridge.start()
         self.workspace_component_policy = WorkspaceComponentPolicy()
         _set_global_component_policy(self.workspace_component_policy)
         self.workspace_config: Dict[str, Any] = {}
@@ -2922,6 +2933,11 @@ class MainWindow(QtWidgets.QMainWindow):
         restore_window_geometry(self, "main")
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[name-defined]
+        if self.codesee_bus_bridge:
+            try:
+                self.codesee_bus_bridge.stop()
+            except Exception:
+                pass
         save_window_geometry(self, "main")
         super().closeEvent(event)
 
@@ -3245,6 +3261,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
         if isinstance(workspace, dict):
             self.workspace_info = workspace
+        if self.codesee_hub:
+            self.codesee_hub.set_workspace_id((self.workspace_info or {}).get("id") or "default")
         self._load_active_workspace_config()
         self._reload_workspace_components()
         self._refresh_workspace_selectors()

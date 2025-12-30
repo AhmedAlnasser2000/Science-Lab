@@ -34,6 +34,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._edges: list[EdgeItem] = []
         self._signals: list[dict] = []
         self._pulses: Dict[str, dict] = {}
+        self._span_tints: Dict[str, dict] = {}
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -86,6 +87,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 item.setPos(x, y)
             self._nodes[node.node_id] = item
 
+        self._apply_span_tints()
+
         for edge in graph.edges:
             src = self._nodes.get(edge.src_node_id)
             dst = self._nodes.get(edge.dst_node_id)
@@ -120,21 +123,51 @@ class GraphScene(QtWidgets.QGraphicsScene):
     def set_reduced_motion(self, value: bool) -> None:
         self._reduced_motion = bool(value)
 
+    def set_span_tints(
+        self,
+        node_ids: list[str],
+        *,
+        color: Optional[QtGui.QColor],
+        strength: float,
+    ) -> None:
+        self._span_tints = {}
+        for node_id in node_ids:
+            self._span_tints[str(node_id)] = {"color": color, "strength": strength}
+        self._apply_span_tints()
+
     def flash_node(self, node_id: str, color: Optional[QtGui.QColor] = None) -> None:
+        self.flash_node_with_settings(node_id, color=color, settings=None)
+
+    def flash_node_with_settings(
+        self,
+        node_id: str,
+        *,
+        color: Optional[QtGui.QColor],
+        settings,
+    ) -> None:
+        linger_ms = _setting_value(settings, "arrive_linger_ms", 200)
+        fade_ms = _setting_value(settings, "fade_ms", 300)
+        duration_ms = _setting_value(settings, "pulse_duration_ms", 500)
+        min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
+        curve = _setting_value(settings, "fade_curve", "linear")
         if self._reduced_motion:
             self._queue_pulse(
                 node_id,
                 color=color,
                 mode="arrival",
-                linger_ms=200,
-                fade_ms=300,
+                linger_ms=int(linger_ms),
+                fade_ms=int(fade_ms),
+                min_alpha=float(min_alpha),
+                fade_curve=str(curve),
             )
             return
         self._queue_pulse(
             node_id,
             color=color,
             mode="flash",
-            duration_ms=500,
+            duration_ms=int(duration_ms),
+            min_alpha=float(min_alpha),
+            fade_curve=str(curve),
         )
 
     def pulse_node(
@@ -178,6 +211,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
         fade_ms = _setting_value(settings, "fade_ms", 500)
         radius = _setting_value(settings, "pulse_radius_px", 8)
         alpha = _setting_value(settings, "pulse_alpha", 0.6)
+        min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
+        curve = _setting_value(settings, "fade_curve", "linear")
         max_signals = _setting_value(settings, "max_concurrent_signals", 6)
         if self._reduced_motion:
             self._queue_pulse(
@@ -186,6 +221,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 mode="arrival",
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
+                min_alpha=float(min_alpha),
+                fade_curve=str(curve),
             )
             return
         if not source_id or not self._edge_exists(source_id, target_id):
@@ -195,6 +232,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 mode="arrival",
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
+                min_alpha=float(min_alpha),
+                fade_curve=str(curve),
             )
             return
         if len(self._signals) >= int(max_signals):
@@ -227,6 +266,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 "linger_ms": int(linger_ms),
                 "fade_ms": int(fade_ms),
                 "color": color,
+                "min_alpha": float(min_alpha),
+                "fade_curve": str(curve),
             }
         )
         if not self._signal_timer.isActive():
@@ -279,6 +320,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                     mode="arrival",
                     linger_ms=int(state.get("linger_ms", 300)),
                     fade_ms=int(state.get("fade_ms", 500)),
+                    min_alpha=float(state.get("min_alpha", 0.1)),
+                    fade_curve=str(state.get("fade_curve", "linear")),
                 )
                 continue
             start = state.get("start")
@@ -310,6 +353,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
         duration_ms: int = 500,
         linger_ms: int = 0,
         fade_ms: int = 0,
+        min_alpha: float = 0.0,
+        fade_curve: str = "linear",
     ) -> None:
         if node_id not in self._nodes:
             return
@@ -320,6 +365,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
             "duration": max(0.05, float(duration_ms) / 1000.0),
             "linger": max(0.0, float(linger_ms) / 1000.0),
             "fade": max(0.0, float(fade_ms) / 1000.0),
+            "min_alpha": max(0.0, min(1.0, float(min_alpha))),
+            "curve": str(fade_curve or "linear"),
         }
         if not self._signal_timer.isActive():
             self._signal_timer.start()
@@ -360,6 +407,16 @@ class GraphScene(QtWidgets.QGraphicsScene):
         if isinstance(dot, SignalDotItem):
             self.removeItem(dot)
 
+    def _apply_span_tints(self) -> None:
+        if not self._nodes:
+            return
+        for node_id, item in self._nodes.items():
+            tint = self._span_tints.get(node_id)
+            if tint:
+                item.set_tint(float(tint.get("strength", 0.0)), tint.get("color"))
+            else:
+                item.set_tint(0.0, None)
+
 
 def _setting_value(settings, key: str, default):
     if settings is None:
@@ -379,22 +436,32 @@ def _distance(start: QtCore.QPointF, end: QtCore.QPointF) -> float:
 
 def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
     mode = state.get("mode")
+    curve = str(state.get("curve") or "linear")
+    min_alpha = max(0.0, min(1.0, float(state.get("min_alpha", 0.0))))
     if mode == "arrival":
         linger = float(state.get("linger", 0.0))
         fade = float(state.get("fade", 0.0))
         if elapsed <= linger:
-            return 1.0, False
+            return max(1.0, min_alpha), False
         if fade <= 0:
             return 0.0, True
         fade_elapsed = elapsed - linger
         if fade_elapsed >= fade:
             return 0.0, True
-        strength = 1.0 - (fade_elapsed / fade)
+        progress = fade_elapsed / fade
+        strength = 1.0 - progress
+        if curve == "ease":
+            strength = strength * strength
+        strength = max(min_alpha, strength)
         return max(0.0, strength), False
     duration = float(state.get("duration", 0.5))
     if elapsed >= duration:
         return 0.0, True
-    strength = 1.0 - (elapsed / max(duration, 0.001))
+    progress = elapsed / max(duration, 0.001)
+    strength = 1.0 - progress
+    if curve == "ease":
+        strength = strength * strength
+    strength = max(min_alpha, strength)
     return max(0.0, strength), False
 
 

@@ -26,9 +26,13 @@ class PulseSettings:
     travel_speed_px_per_s: int = 900
     arrive_linger_ms: int = 300
     fade_ms: int = 500
+    pulse_duration_ms: int = 650
     pulse_radius_px: int = 8
     pulse_alpha: float = 0.6
+    pulse_min_alpha: float = 0.12
+    fade_curve: str = "linear"
     max_concurrent_signals: int = 6
+    tint_active_spans: bool = False
 
 
 _CATEGORY_DEFAULTS = {
@@ -196,7 +200,10 @@ def _merge_pulse_settings(defaults: PulseSettings, raw) -> PulseSettings:
         if field_name not in raw:
             continue
         value = raw.get(field_name)
-        if isinstance(getattr(merged, field_name), float):
+        if isinstance(getattr(merged, field_name), bool):
+            if isinstance(value, bool):
+                setattr(merged, field_name, value)
+        elif isinstance(getattr(merged, field_name), float):
             try:
                 setattr(merged, field_name, float(value))
             except Exception:
@@ -206,6 +213,9 @@ def _merge_pulse_settings(defaults: PulseSettings, raw) -> PulseSettings:
                 setattr(merged, field_name, int(value))
             except Exception:
                 continue
+        elif isinstance(getattr(merged, field_name), str):
+            if isinstance(value, str) and value.strip():
+                setattr(merged, field_name, value.strip())
     return merged
 
 
@@ -223,9 +233,13 @@ def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:
         "travel_speed_px_per_s": int(settings.travel_speed_px_per_s),
         "arrive_linger_ms": int(settings.arrive_linger_ms),
         "fade_ms": int(settings.fade_ms),
+        "pulse_duration_ms": int(settings.pulse_duration_ms),
         "pulse_radius_px": int(settings.pulse_radius_px),
         "pulse_alpha": float(settings.pulse_alpha),
+        "pulse_min_alpha": float(settings.pulse_min_alpha),
+        "fade_curve": str(settings.fade_curve),
         "max_concurrent_signals": int(settings.max_concurrent_signals),
+        "tint_active_spans": bool(settings.tint_active_spans),
     }
 
 
