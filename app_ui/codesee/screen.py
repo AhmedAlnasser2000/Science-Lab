@@ -1241,6 +1241,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         speed.setValue(int(self._pulse_settings.travel_speed_px_per_s))
         form.addRow("Travel speed (px/s)", speed)
 
+        travel_duration = QtWidgets.QSpinBox()
+        travel_duration.setRange(0, 5000)
+        travel_duration.setValue(int(self._pulse_settings.travel_duration_ms))
+        form.addRow("Travel duration (ms, 0=auto)", travel_duration)
+
         duration = QtWidgets.QSpinBox()
         duration.setRange(150, 2000)
         duration.setValue(int(self._pulse_settings.pulse_duration_ms))
@@ -1249,7 +1254,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         linger = QtWidgets.QSpinBox()
         linger.setRange(0, 2000)
         linger.setValue(int(self._pulse_settings.arrive_linger_ms))
-        form.addRow("Arrive linger (ms)", linger)
+        form.addRow("Node sticky (ms)", linger)
 
         fade = QtWidgets.QSpinBox()
         fade.setRange(100, 3000)
@@ -1283,6 +1288,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         min_alpha.setValue(float(self._pulse_settings.pulse_min_alpha))
         form.addRow("Min intensity", min_alpha)
 
+        intensity = QtWidgets.QDoubleSpinBox()
+        intensity.setRange(0.2, 2.0)
+        intensity.setSingleStep(0.1)
+        intensity.setDecimals(2)
+        intensity.setValue(float(self._pulse_settings.intensity_multiplier))
+        form.addRow("Intensity multiplier", intensity)
+
         tint_active = QtWidgets.QCheckBox("Tint node while active span runs")
         tint_active.setChecked(bool(self._pulse_settings.tint_active_spans))
         form.addRow(tint_active)
@@ -1305,12 +1317,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         self._pulse_settings = view_config.PulseSettings(
             travel_speed_px_per_s=int(speed.value()),
+            travel_duration_ms=int(travel_duration.value()),
             arrive_linger_ms=int(linger.value()),
             fade_ms=int(fade.value()),
             pulse_duration_ms=int(duration.value()),
             pulse_radius_px=int(radius.value()),
             pulse_alpha=float(alpha.value()),
             pulse_min_alpha=float(min_alpha.value()),
+            intensity_multiplier=float(intensity.value()),
             fade_curve=str(curve.currentData() or "linear"),
             max_concurrent_signals=int(max_signals.value()),
             tint_active_spans=bool(tint_active.isChecked()),

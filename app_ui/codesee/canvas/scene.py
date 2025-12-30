@@ -149,6 +149,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         fade_ms = _setting_value(settings, "fade_ms", 300)
         duration_ms = _setting_value(settings, "pulse_duration_ms", 500)
         min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
+        intensity = _setting_value(settings, "intensity_multiplier", 1.0)
         curve = _setting_value(settings, "fade_curve", "linear")
         if self._reduced_motion:
             self._queue_pulse(
@@ -158,6 +159,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
                 min_alpha=float(min_alpha),
+                intensity=float(intensity),
                 fade_curve=str(curve),
             )
             return
@@ -167,6 +169,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
             mode="flash",
             duration_ms=int(duration_ms),
             min_alpha=float(min_alpha),
+            intensity=float(intensity),
             fade_curve=str(curve),
         )
 
@@ -207,11 +210,13 @@ class GraphScene(QtWidgets.QGraphicsScene):
         if not target_item:
             return
         speed = _setting_value(settings, "travel_speed_px_per_s", 900)
+        travel_duration_ms = _setting_value(settings, "travel_duration_ms", 0)
         linger_ms = _setting_value(settings, "arrive_linger_ms", 300)
         fade_ms = _setting_value(settings, "fade_ms", 500)
         radius = _setting_value(settings, "pulse_radius_px", 8)
         alpha = _setting_value(settings, "pulse_alpha", 0.6)
         min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
+        intensity = _setting_value(settings, "intensity_multiplier", 1.0)
         curve = _setting_value(settings, "fade_curve", "linear")
         max_signals = _setting_value(settings, "max_concurrent_signals", 6)
         if self._reduced_motion:
@@ -222,6 +227,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
                 min_alpha=float(min_alpha),
+                intensity=float(intensity),
                 fade_curve=str(curve),
             )
             return
@@ -233,6 +239,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
                 min_alpha=float(min_alpha),
+                intensity=float(intensity),
                 fade_curve=str(curve),
             )
             return
@@ -246,12 +253,18 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 mode="arrival",
                 linger_ms=int(linger_ms),
                 fade_ms=int(fade_ms),
+                intensity=float(intensity),
             )
             return
         start = src_item.center_pos()
         end = target_item.center_pos()
-        distance = max(1.0, _distance(start, end))
-        duration = max(0.15, distance / max(1.0, float(speed)))
+        if travel_duration_ms:
+            duration = max(0.15, float(travel_duration_ms) / 1000.0)
+        else:
+            distance = max(1.0, _distance(start, end))
+            duration = max(0.15, distance / max(1.0, float(speed)))
+        intensity = max(0.1, float(intensity))
+        alpha = min(1.0, max(0.05, float(alpha) * intensity))
         dot = SignalDotItem(radius=float(radius), color=color, alpha=float(alpha))
         dot.setPos(start)
         self.addItem(dot)
@@ -267,6 +280,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 "fade_ms": int(fade_ms),
                 "color": color,
                 "min_alpha": float(min_alpha),
+                "intensity": float(intensity),
                 "fade_curve": str(curve),
             }
         )
@@ -321,6 +335,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                     linger_ms=int(state.get("linger_ms", 300)),
                     fade_ms=int(state.get("fade_ms", 500)),
                     min_alpha=float(state.get("min_alpha", 0.1)),
+                    intensity=float(state.get("intensity", 1.0)),
                     fade_curve=str(state.get("fade_curve", "linear")),
                 )
                 continue
@@ -354,6 +369,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         linger_ms: int = 0,
         fade_ms: int = 0,
         min_alpha: float = 0.0,
+        intensity: float = 1.0,
         fade_curve: str = "linear",
     ) -> None:
         if node_id not in self._nodes:
@@ -366,6 +382,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
             "linger": max(0.0, float(linger_ms) / 1000.0),
             "fade": max(0.0, float(fade_ms) / 1000.0),
             "min_alpha": max(0.0, min(1.0, float(min_alpha))),
+            "intensity": max(0.1, float(intensity)),
             "curve": str(fade_curve or "linear"),
         }
         if not self._signal_timer.isActive():
@@ -438,11 +455,12 @@ def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
     mode = state.get("mode")
     curve = str(state.get("curve") or "linear")
     min_alpha = max(0.0, min(1.0, float(state.get("min_alpha", 0.0))))
+    intensity = max(0.1, float(state.get("intensity", 1.0)))
     if mode == "arrival":
         linger = float(state.get("linger", 0.0))
         fade = float(state.get("fade", 0.0))
         if elapsed <= linger:
-            return max(1.0, min_alpha), False
+            return max(1.0, min_alpha) * intensity, False
         if fade <= 0:
             return 0.0, True
         fade_elapsed = elapsed - linger
@@ -452,7 +470,7 @@ def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
         strength = 1.0 - progress
         if curve == "ease":
             strength = strength * strength
-        strength = max(min_alpha, strength)
+        strength = max(min_alpha, strength) * intensity
         return max(0.0, strength), False
     duration = float(state.get("duration", 0.5))
     if elapsed >= duration:
@@ -461,7 +479,7 @@ def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
     strength = 1.0 - progress
     if curve == "ease":
         strength = strength * strength
-    strength = max(min_alpha, strength)
+    strength = max(min_alpha, strength) * intensity
     return max(0.0, strength), False
 
 

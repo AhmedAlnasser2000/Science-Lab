@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 import json
 from pathlib import Path
+import threading
 import time
 from typing import Deque, Dict, List, Optional
 
@@ -27,86 +28,95 @@ from .events import (
 from ..expectations import EVACheck, check_to_dict
 
 _MAX_CHECKS = 200
+_CHECK_LOCK = threading.Lock()
 _RECENT_CHECKS: Deque[EVACheck] = deque(maxlen=_MAX_CHECKS)
 _MAX_SPANS = 200
+_SPAN_LOCK = threading.Lock()
 _ACTIVE_SPANS: Dict[str, SpanRecord] = {}
 _RECENT_SPANS: Deque[SpanRecord] = deque(maxlen=_MAX_SPANS)
 
 
 def _record_check(check: EVACheck) -> None:
-    _RECENT_CHECKS.append(check)
+    with _CHECK_LOCK:
+        _RECENT_CHECKS.append(check)
 
 
 def recent_checks(limit: int = _MAX_CHECKS) -> List[EVACheck]:
     if limit <= 0:
         return []
-    return list(_RECENT_CHECKS)[-limit:]
+    with _CHECK_LOCK:
+        return list(_RECENT_CHECKS)[-limit:]
 
 
 def active_spans() -> List[SpanRecord]:
-    return list(_ACTIVE_SPANS.values())
+    with _SPAN_LOCK:
+        return list(_ACTIVE_SPANS.values())
 
 
 def recent_spans(limit: int = _MAX_SPANS) -> List[SpanRecord]:
     if limit <= 0:
         return []
-    return list(_RECENT_SPANS)[-limit:]
+    with _SPAN_LOCK:
+        return list(_RECENT_SPANS)[-limit:]
 
 
 def _record_span_start(start: SpanStart) -> SpanRecord:
     ts = start.ts or time.time()
-    record = SpanRecord(
-        span_id=start.span_id,
-        label=start.label,
-        node_id=start.node_id,
-        source_id=start.source_id,
-        severity=start.severity,
-        status="active",
-        started_ts=ts,
-        updated_ts=ts,
-    )
-    _ACTIVE_SPANS[start.span_id] = record
-    return record
-
-
-def _record_span_update(update: SpanUpdate) -> SpanRecord:
-    ts = update.ts or time.time()
-    record = _ACTIVE_SPANS.get(update.span_id)
-    if not record:
+    with _SPAN_LOCK:
         record = SpanRecord(
-            span_id=update.span_id,
-            label=update.span_id,
+            span_id=start.span_id,
+            label=start.label,
+            node_id=start.node_id,
+            source_id=start.source_id,
+            severity=start.severity,
             status="active",
             started_ts=ts,
             updated_ts=ts,
         )
-        _ACTIVE_SPANS[update.span_id] = record
-    record.updated_ts = ts
-    if update.progress is not None:
-        record.progress = update.progress
-    if update.message:
-        record.message = update.message
-    return record
+        _ACTIVE_SPANS[start.span_id] = record
+        return record
+
+
+def _record_span_update(update: SpanUpdate) -> SpanRecord:
+    ts = update.ts or time.time()
+    with _SPAN_LOCK:
+        record = _ACTIVE_SPANS.get(update.span_id)
+        if not record:
+            record = SpanRecord(
+                span_id=update.span_id,
+                label=update.span_id,
+                status="active",
+                started_ts=ts,
+                updated_ts=ts,
+            )
+            _ACTIVE_SPANS[update.span_id] = record
+        record.updated_ts = ts
+        if update.progress is not None:
+            record.progress = update.progress
+        if update.message:
+            record.message = update.message
+        return record
 
 
 def _record_span_end(end: SpanEnd) -> SpanRecord:
     ts = end.ts or time.time()
-    record = _ACTIVE_SPANS.pop(end.span_id, None)
-    if not record:
-        record = SpanRecord(
-            span_id=end.span_id,
-            label=end.span_id,
-            status=end.status or "completed",
-            started_ts=ts,
-            updated_ts=ts,
-        )
-    record.status = end.status or "completed"
-    record.updated_ts = ts
-    record.ended_ts = ts
-    if end.message:
-        record.message = end.message
-    _RECENT_SPANS.append(record)
-    return record
+    with _SPAN_LOCK:
+        record = _ACTIVE_SPANS.pop(end.span_id, None)
+        if not record:
+            record = SpanRecord(
+                span_id=end.span_id,
+                label=end.span_id,
+                status=end.status or "completed",
+                started_ts=ts,
+                updated_ts=ts,
+            )
+        record.status = end.status or "completed"
+        record.updated_ts = ts
+        record.ended_ts = ts
+        if end.message:
+            record.message = end.message
+        _RECENT_SPANS.append(record)
+        return record
 
 
 class CodeSeeRuntimeHub(QtCore.QObject):
@@ -115,12 +125,18 @@ class CodeSeeRuntimeHub(QtCore.QObject):
     def __init__(self, *, max_events: int = 500) -> None:
         super().__init__()
         self._events: Deque[CodeSeeEvent] = deque(maxlen=max_events)
+        self._pending_events: Deque[CodeSeeEvent] = deque()
+        self._pending_lock = threading.Lock()
         self._event_count = 0
         self._last_event_ts: Optional[str] = None
         self._workspace_id: Optional[str] = None
         self._persist_timer = QtCore.QTimer(self)
         self._persist_timer.setSingleShot(True)
         self._persist_timer.timeout.connect(self._persist_activity)
+        self._ingest_timer = QtCore.QTimer(self)
+        self._ingest_timer.setInterval(50)
+        self._ingest_timer.timeout.connect(self._drain_pending)
+        self._ingest_timer.start()
         self._bus_connected = False
 
     def set_workspace_id(self, workspace_id: str) -> None:
@@ -140,11 +156,7 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         self._schedule_persist()
 
     def publish(self, event: CodeSeeEvent) -> None:
-        self._events.append(event)
-        self._event_count += 1
-        self._last_event_ts = event.ts
-        self.event_emitted.emit(event)
-        self._schedule_persist()
+        self._enqueue_event(event)
 
     def query(self, node_id: str, limit: int = 20) -> List[CodeSeeEvent]:
         results: List[CodeSeeEvent] = []
@@ -264,6 +276,8 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         self.publish(event)
 
     def flush_activity(self) -> None:
+        if QtCore.QThread.currentThread() == self.thread():
+            self._drain_pending()
         self._persist_activity()
 
     def activity_path(self) -> Optional[Path]:
@@ -274,9 +288,32 @@ class CodeSeeRuntimeHub(QtCore.QObject):
     def _schedule_persist(self) -> None:
         if not self._workspace_id:
             return
+        if QtCore.QThread.currentThread() != self.thread():
+            return
         if self._persist_timer.isActive():
             return
         self._persist_timer.start(350)
+
+    def _enqueue_event(self, event: CodeSeeEvent) -> None:
+        with self._pending_lock:
+            self._pending_events.append(event)
+
+    def _drain_pending(self) -> None:
+        pending: List[CodeSeeEvent] = []
+        with self._pending_lock:
+            if not self._pending_events:
+                return
+            pending = list(self._pending_events)
+            self._pending_events.clear()
+        for event in pending:
+            self._apply_event(event)
+
+    def _apply_event(self, event: CodeSeeEvent) -> None:
+        self._events.append(event)
+        self._event_count += 1
+        self._last_event_ts = event.ts
+        self.event_emitted.emit(event)
+        self._schedule_persist()
 
     def _persist_activity(self) -> None:
         if not self._workspace_id:
@@ -311,8 +348,9 @@ class CodeSeeRuntimeHub(QtCore.QObject):
         active_raw = payload.get("active_spans") if isinstance(payload, dict) else None
         recent_raw = payload.get("recent_spans") if isinstance(payload, dict) else None
         self._events.clear()
-        _ACTIVE_SPANS.clear()
-        _RECENT_SPANS.clear()
+        with _SPAN_LOCK:
+            _ACTIVE_SPANS.clear()
+            _RECENT_SPANS.clear()
         if isinstance(events_raw, list):
             for entry in events_raw:
                 event = event_from_dict(entry)
@@ -322,12 +360,14 @@ class CodeSeeRuntimeHub(QtCore.QObject):
             for entry in active_raw:
                 span = span_from_dict(entry)
                 if span:
-                    _ACTIVE_SPANS[span.span_id] = span
+                    with _SPAN_LOCK:
+                        _ACTIVE_SPANS[span.span_id] = span
         if isinstance(recent_raw, list):
             for entry in recent_raw:
                 span = span_from_dict(entry)
                 if span:
-                    _RECENT_SPANS.append(span)
+                    with _SPAN_LOCK:
+                        _RECENT_SPANS.append(span)
         if self._events:
             self._event_count = len(self._events)
             self._last_event_ts = self._events[-1].ts
@@ -397,3 +437,32 @@ def _sanitize_workspace_id(workspace_id: str) -> str:
 def _activity_path(workspace_id: str) -> Path:
     safe_id = _sanitize_workspace_id(workspace_id)
     return Path("data") / "workspaces" / safe_id / "codesee" / "activity_latest.json"
+
+
+def run_threadsafe_hub_smoke_test() -> None:
+    from PyQt6 import QtWidgets, QtCore
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    hub = CodeSeeRuntimeHub()
+    hub.set_workspace_id("codesee_threadsafe")
+
+    def _worker():
+        for idx in range(5):
+            event = CodeSeeEvent(
+                ts=_format_ts(time.time()),
+                kind=EVENT_TEST_PULSE,
+                severity="info",
+                message=f"threaded {idx}",
+                node_ids=["system:app_ui"],
+                source="thread",
+            )
+            hub.publish(event)
+            time.sleep(0.01)
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    QtCore.QTimer.singleShot(400, app.quit)
+    app.exec()
+    thread.join(timeout=1)
+    if hub.event_count() < 5:
+        raise AssertionError("expected threaded events to be ingested")

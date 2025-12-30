@@ -315,8 +315,10 @@ def _node_for_job(job_type: str) -> str:
 
 
 def run_bus_bridge_smoke_test() -> None:
+    from PyQt6 import QtCore, QtWidgets
     from runtime_bus.bus import RuntimeBus
 
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     bus = RuntimeBus()
     hub = CodeSeeRuntimeHub()
     hub.set_workspace_id("codesee_smoke")
@@ -325,6 +327,8 @@ def run_bus_bridge_smoke_test() -> None:
     bus.publish(TOPIC_JOB_STARTED, {"job_id": "demo", "job_type": "core.cleanup.cache"}, source="core_center")
     bus.publish(TOPIC_JOB_PROGRESS, {"job_id": "demo", "job_type": "core.cleanup.cache", "percent": 50}, source="core_center")
     bus.publish(TOPIC_JOB_COMPLETED, {"job_id": "demo", "job_type": "core.cleanup.cache", "ok": True}, source="core_center")
+    QtCore.QTimer.singleShot(250, app.quit)
+    app.exec()
     hub.flush_activity()
     if hub.event_count() <= 0:
         raise AssertionError("expected bus bridge to record events")

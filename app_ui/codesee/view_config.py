@@ -24,12 +24,14 @@ class ViewConfig:
 @dataclass
 class PulseSettings:
     travel_speed_px_per_s: int = 900
+    travel_duration_ms: int = 0
     arrive_linger_ms: int = 300
     fade_ms: int = 500
     pulse_duration_ms: int = 650
     pulse_radius_px: int = 8
     pulse_alpha: float = 0.6
     pulse_min_alpha: float = 0.12
+    intensity_multiplier: float = 1.0
     fade_curve: str = "linear"
     max_concurrent_signals: int = 6
     tint_active_spans: bool = False
@@ -231,12 +233,14 @@ def _merge_int_setting(raw, default: int) -> int:
 def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:
     return {
         "travel_speed_px_per_s": int(settings.travel_speed_px_per_s),
+        "travel_duration_ms": int(settings.travel_duration_ms),
         "arrive_linger_ms": int(settings.arrive_linger_ms),
         "fade_ms": int(settings.fade_ms),
         "pulse_duration_ms": int(settings.pulse_duration_ms),
         "pulse_radius_px": int(settings.pulse_radius_px),
         "pulse_alpha": float(settings.pulse_alpha),
         "pulse_min_alpha": float(settings.pulse_min_alpha),
+        "intensity_multiplier": float(settings.intensity_multiplier),
         "fade_curve": str(settings.fade_curve),
         "max_concurrent_signals": int(settings.max_concurrent_signals),
         "tint_active_spans": bool(settings.tint_active_spans),
