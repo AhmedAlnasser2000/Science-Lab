@@ -112,6 +112,27 @@ class NodeItem(QtWidgets.QGraphicsItem):
         for delay, strength in steps:
             QtCore.QTimer.singleShot(delay, lambda s=strength, t=token: self._set_highlight(t, s))
 
+    def pulse(
+        self,
+        color: Optional[QtGui.QColor],
+        *,
+        duration_ms: int = 800,
+        reduced_motion: bool,
+    ) -> None:
+        if reduced_motion:
+            self.flash(color, reduced_motion=True)
+            return
+        if color is not None:
+            self._highlight_color = color
+        self._highlight_token += 1
+        token = self._highlight_token
+        steps = 6
+        duration_ms = max(200, int(duration_ms))
+        for idx in range(steps + 1):
+            delay = int(duration_ms * (idx / steps))
+            strength = max(0.0, 1.0 - (idx / steps))
+            QtCore.QTimer.singleShot(delay, lambda s=strength, t=token: self._set_highlight(t, s))
+
     def _set_highlight(self, token: int, strength: float) -> None:
         if token != self._highlight_token:
             return

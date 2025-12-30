@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Callable, Dict, Optional, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -29,6 +30,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._reduced_motion = False
         self._nodes: Dict[str, NodeItem] = {}
         self._edges: list[EdgeItem] = []
+        self._pulses: Dict[str, Dict[str, float | str]] = {}
         self.setSceneRect(-5000.0, -5000.0, 10000.0, 10000.0)
 
     def build_graph(
@@ -106,6 +108,24 @@ class GraphScene(QtWidgets.QGraphicsScene):
         if not item:
             return
         item.flash(color, reduced_motion=self._reduced_motion)
+
+    def pulse_node(
+        self,
+        node_id: str,
+        *,
+        kind: str,
+        color: Optional[QtGui.QColor] = None,
+        duration_ms: int = 800,
+    ) -> None:
+        item = self._nodes.get(node_id)
+        if not item:
+            return
+        self._pulses[node_id] = {
+            "kind": str(kind),
+            "t0": time.monotonic(),
+            "duration": max(0.2, duration_ms / 1000.0),
+        }
+        item.pulse(color, duration_ms=duration_ms, reduced_motion=self._reduced_motion)
 
     def set_empty_message(self, message: Optional[str]) -> None:
         self._empty_message = message

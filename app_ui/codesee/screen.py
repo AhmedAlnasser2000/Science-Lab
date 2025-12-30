@@ -32,6 +32,7 @@ from .runtime.events import (
 )
 from .runtime.hub import CodeSeeRuntimeHub
 from app_ui import ui_scale
+from app_ui import versioning
 
 DEFAULT_LENS = LENS_ATLAS
 SOURCE_DEMO = "Demo"
@@ -75,6 +76,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._reduced_motion = ui_config.get_reduced_motion()
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
         self._icon_style = self._view_config.icon_style
+        self._build_info = versioning.get_build_info()
 
         self._demo_root = build_demo_root_graph()
         self._demo_subgraphs = build_demo_subgraphs()
@@ -875,7 +877,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _flash_node(self, node_id: str, event: CodeSeeEvent) -> None:
         color = _event_color(event)
-        self.scene.flash_node(node_id, color)
+        self.scene.pulse_node(node_id, kind=event.kind, color=color, duration_ms=800)
 
     def _load_snapshot_by_path(self, path_value: str) -> Optional[ArchitectureGraph]:
         try:
@@ -926,8 +928,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         elif node.node_id in self._events_by_node:
             events = list(self._events_by_node[node.node_id])
         crash_record = None
+        crash_build = None
         if self._crash_view and self._crash_record and node.node_id == self._crash_node_id:
             crash_record = self._crash_record
+            if isinstance(crash_record, dict):
+                crash_build = crash_record.get("build")
         dialog = CodeSeeInspectorDialog(
             node,
             graph,
@@ -936,6 +941,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             diff_change,
             events,
             crash_record,
+            self._build_info,
+            crash_build,
             parent=self,
         )
         dialog.exec()
@@ -1213,7 +1220,7 @@ def _event_color(event: CodeSeeEvent) -> QtGui.QColor:
 
 
 def _category_keys() -> list[str]:
-    return ["Workspace", "Pack", "Block", "Topic", "Unit", "Lesson", "Activity", "System"]
+    return ["Workspace", "Pack", "Block", "Lab", "Topic", "Unit", "Lesson", "Activity", "System"]
 
 
 def _badge_layer_labels() -> Dict[str, str]:
@@ -1284,6 +1291,8 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         diff_change: Optional[NodeChange],
         events: list[CodeSeeEvent],
         crash_record: Optional[dict],
+        build_info: Optional[dict],
+        crash_build_info: Optional[dict],
         parent: Optional[QtWidgets.QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -1298,6 +1307,14 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         meta = QtWidgets.QLabel(f"ID: {node.node_id} | Type: {node.node_type}")
         meta.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(meta)
+
+        build_label = QtWidgets.QLabel("Build")
+        build_label.setStyleSheet("color: #444;")
+        layout.addWidget(build_label)
+        build_text = QtWidgets.QPlainTextEdit()
+        build_text.setReadOnly(True)
+        build_text.setPlainText(_format_build_info(build_info, crash_build_info))
+        layout.addWidget(build_text)
 
         if selected_badge:
             selected = QtWidgets.QLabel(f"Selected badge: {_format_badge_line(selected_badge)}")
@@ -1476,6 +1493,20 @@ def _format_events(events: list[CodeSeeEvent]) -> str:
         if event.detail:
             line = f"{line}\n  {event.detail}"
         lines.append(line)
+    return "\n".join(lines)
+
+
+def _format_build_info(build: Optional[dict], crash_build: Optional[dict]) -> str:
+    build = build if isinstance(build, dict) else {}
+    crash_build = crash_build if isinstance(crash_build, dict) else {}
+    app_version = build.get("app_version") or "unknown"
+    build_id = build.get("build_id") or "unknown"
+    lines = [f"Current: {app_version} ({build_id})"]
+    if crash_build:
+        crash_version = crash_build.get("app_version") or "unknown"
+        crash_id = crash_build.get("build_id") or "unknown"
+        if crash_version != app_version or crash_id != build_id:
+            lines.append(f"Crash: {crash_version} ({crash_id})")
     return "\n".join(lines)
 
 

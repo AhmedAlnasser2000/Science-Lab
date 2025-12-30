@@ -23,6 +23,7 @@ def write_latest_crash(workspace_id: Optional[str], record: Dict[str, Any]) -> P
     root = _crash_root(workspace_id)
     root.mkdir(parents=True, exist_ok=True)
     record = dict(record or {})
+    _ensure_build_info(record)
     record.setdefault("format_version", 1)
     record["workspace_id"] = _safe_workspace_id(workspace_id)
     path = root / "latest.json"
@@ -36,6 +37,7 @@ def write_history_crash(workspace_id: Optional[str], record: Dict[str, Any]) -> 
         root.mkdir(parents=True, exist_ok=True)
     except Exception:
         return None
+    _ensure_build_info(record)
     ts = str(record.get("ts") or "0")
     exc_type = str(record.get("exception_type") or "crash").replace(" ", "_")
     name = f"{ts}_{exc_type}.json"
@@ -69,6 +71,17 @@ def clear_latest_crash(workspace_id: Optional[str]) -> bool:
         return True
     except Exception:
         return False
+
+
+def _ensure_build_info(record: Dict[str, Any]) -> None:
+    if "build" in record:
+        return
+    try:
+        from app_ui import versioning
+
+        record["build"] = versioning.get_build_info()
+    except Exception:
+        record["build"] = {"app_version": "unknown", "build_id": "unknown"}
 
 
 def best_effort_workspace_id() -> str:

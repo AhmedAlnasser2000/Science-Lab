@@ -22,6 +22,7 @@ _CATEGORY_DEFAULTS = {
     "Workspace": True,
     "Pack": True,
     "Block": True,
+    "Lab": True,
     "Topic": True,
     "Unit": True,
     "Lesson": True,

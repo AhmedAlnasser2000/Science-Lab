@@ -47,6 +47,7 @@ from app_ui.codesee.runtime.hub import CodeSeeRuntimeHub, get_global_hub, set_gl
 from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.codesee.window import CodeSeeWindow
 from app_ui import ui_scale
+from app_ui import versioning
 from app_ui.window_state import restore_geometry as restore_window_geometry
 from app_ui.window_state import save_geometry as save_window_geometry
 from app_ui.screens.component_management import ComponentManagementScreen
@@ -2757,7 +2758,10 @@ class MainWindow(QtWidgets.QMainWindow):
     # --- [NAV-90A] ctor / wiring
     def __init__(self, initial_profile: str):
         super().__init__()
-        self.setWindowTitle("PhysicsLab V1")
+        build = versioning.get_build_info()
+        self.setWindowTitle(
+            f"PhysicsLab V1 - {build.get('app_version', 'unknown')} ({build.get('build_id', 'unknown')})"
+        )
         self.resize(900, 600)
         self.adapter = ContentSystemAdapter()
         self.current_profile = initial_profile
@@ -3719,6 +3723,7 @@ def main():
             from app_ui.codesee import crash_io
 
             workspace_id = crash_io.best_effort_workspace_id()
+            build_info = versioning.get_build_info()
             record = {
                 "format_version": 1,
                 "ts": time.time(),
@@ -3727,6 +3732,7 @@ def main():
                 "exception_type": type(exc).__name__,
                 "message": str(exc),
                 "traceback": traceback.format_exc(),
+                "build": build_info,
                 "app": {
                     "python": sys.version,
                     "platform": platform.platform(),

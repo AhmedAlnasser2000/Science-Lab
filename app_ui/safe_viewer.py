@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from PyQt6 import QtCore, QtWidgets
 
 from app_ui.codesee import crash_io
+from app_ui import versioning
 from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
@@ -96,7 +97,10 @@ class CodeSeeViewerWindow(QtWidgets.QMainWindow):
 class SafeViewerWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("PhysicsLab Safe Viewer")
+        build = versioning.get_build_info()
+        self.setWindowTitle(
+            f"PhysicsLab Safe Viewer - {build.get('app_version', 'unknown')} ({build.get('build_id', 'unknown')})"
+        )
         self.resize(640, 360)
         self._active_workspace_id = "default"
         self._workspace_map: Dict[str, Dict[str, Any]] = {}
@@ -116,6 +120,11 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
         )
         summary.setStyleSheet("color: #555;")
         layout.addWidget(summary)
+        build_info = QtWidgets.QLabel(
+            f"Build: {build.get('app_version', 'unknown')} ({build.get('build_id', 'unknown')})"
+        )
+        build_info.setStyleSheet("color: #666;")
+        layout.addWidget(build_info)
 
         selector = WorkspaceSelector(
             list_workspaces=self._list_workspaces,

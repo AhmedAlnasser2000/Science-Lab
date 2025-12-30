@@ -8,15 +8,20 @@ from .badges import badge_from_dict, badge_from_key, badge_to_dict
 from .expectations import check_from_dict, check_to_dict
 from . import snapshot_index
 from .graph_model import ArchitectureGraph, Edge, Node
+from app_ui import versioning
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 
 
 def write_snapshot(graph: ArchitectureGraph, path: Path, metadata: Dict[str, Any]) -> None:
+    build_info = versioning.get_build_info()
+    meta = dict(metadata or {})
+    meta.setdefault("build", build_info)
     payload = {
         "format_version": FORMAT_VERSION,
         "graph": _graph_to_dict(graph),
-        "metadata": metadata or {},
+        "metadata": meta,
+        "build": build_info,
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -30,7 +35,7 @@ def read_snapshot(path: Path) -> ArchitectureGraph:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("snapshot payload not a dict")
-    if data.get("format_version") not in (1, FORMAT_VERSION):
+    if data.get("format_version") not in (1, 2, FORMAT_VERSION):
         raise ValueError("unsupported snapshot format")
     graph = data.get("graph")
     if not isinstance(graph, dict):

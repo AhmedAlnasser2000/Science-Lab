@@ -9,6 +9,7 @@ from ..runtime.hub import recent_checks
 from .base import CollectorContext, CollectorResult
 from .content_collector import collect_content
 from .inventory_collector import collect_inventory
+from .lab_collector import collect_labs
 from .platform_collector import collect_platform
 
 
@@ -34,6 +35,7 @@ def build_atlas_graph(ctx: CollectorContext) -> tuple[ArchitectureGraph, Dict[st
         collect_platform(ctx),
         collect_inventory(ctx),
         collect_content(ctx),
+        collect_labs(ctx),
     ]
 
     node_map: Dict[str, Node] = {workspace_node.node_id: workspace_node}
@@ -50,7 +52,7 @@ def build_atlas_graph(ctx: CollectorContext) -> tuple[ArchitectureGraph, Dict[st
     for node in node_map.values():
         if node is workspace_node:
             continue
-        if node.node_type in ("Pack", "Topic"):
+        if node.node_type in ("Pack", "Topic", "Lab"):
             edges.append(
                 Edge(
                     f"edge:{workspace_node.node_id}:{node.node_id}",

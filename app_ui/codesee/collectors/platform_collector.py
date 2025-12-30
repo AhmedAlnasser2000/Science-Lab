@@ -25,6 +25,7 @@ def collect_platform(ctx: CollectorContext) -> CollectorResult:
             Node("system:core_center", "core_center", "System", badges=badges_from_keys(bottom=["optional"]))
         )
         edges.append(Edge("edge:core:bus", "system:core_center", "system:runtime_bus", "depends"))
+        edges.append(Edge("edge:app_ui:core_center", "system:app_ui", "system:core_center", "depends"))
 
     return CollectorResult(nodes=nodes, edges=edges, subgraphs={})
 
