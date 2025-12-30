@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .badges import Badge, badge_from_dict, badge_from_key, sort_by_priority, severity_for_badge
 from .expectations import EVACheck, check_from_dict
@@ -14,6 +14,7 @@ class Node:
     title: str
     node_type: str
     subgraph_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
     badges: List[Badge] = field(default_factory=list)
     severity_state: Optional[str] = None
     checks: List[EVACheck] = field(default_factory=list)
@@ -53,6 +54,9 @@ class Node:
                 if parsed:
                     spans.append(parsed)
         object.__setattr__(self, "spans", spans)
+
+        meta = self.metadata if isinstance(self.metadata, dict) else {}
+        object.__setattr__(self, "metadata", dict(meta))
 
     @property
     def id(self) -> str:

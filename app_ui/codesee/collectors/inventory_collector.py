@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ..badges import badges_from_keys
 from ..graph_model import ArchitectureGraph, Edge, Node
@@ -28,21 +28,25 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
     block_nodes: List[Node] = []
     pack_edges: List[Edge] = []
     pack_subgraphs: Dict[str, ArchitectureGraph] = {}
+    block_subgraphs: Dict[str, ArchitectureGraph] = {}
+    subcomponent_subgraphs: Dict[str, ArchitectureGraph] = {}
 
     component_packs_data = _collect_component_packs(inventory)
     component_ids_in_packs = set()
     for pack in component_packs_data:
         pack_id = pack["pack_id"]
         graph_id = f"pack:component:{pack_id}"
+        pack_root = pack.get("pack_root")
         node = Node(
             node_id=graph_id,
             title=pack.get("name") or pack_id,
             node_type="Pack",
             subgraph_id=graph_id,
             badges=badges_from_keys(top=["component"], bottom=["blocks"]),
+            metadata=_pack_metadata(pack, pack_root),
         )
         pack_nodes.append(node)
-        subgraph_nodes: List[Node] = [node]
+        subgraph_nodes: List[Node] = [_node_copy(node, subgraph_id=None)]
         subgraph_edges: List[Edge] = []
         for component in pack.get("components", []):
             component_id = component.get("component_id")
@@ -50,20 +54,40 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
                 continue
             component_ids_in_packs.add(component_id)
             block_id = f"block:{component_id}"
+            block_graph_id = _block_graph_id(component_id)
             block_node = Node(
                 node_id=block_id,
                 title=component.get("display_name") or component_id,
                 node_type="Block",
+                subgraph_id=block_graph_id,
                 badges=badges_from_keys(bottom=["block"]),
+                metadata=_block_metadata(component, pack_id, pack_root),
             )
             block_nodes.append(block_node)
             pack_edges.append(
                 Edge(f"edge:{graph_id}:{block_id}", graph_id, block_id, "contains")
             )
-            subgraph_nodes.append(block_node)
+            pack_edges.append(
+                Edge(f"edge:{graph_id}:{block_id}:provides", graph_id, block_id, "provides")
+            )
+            subgraph_nodes.append(_node_copy(block_node, subgraph_id=None))
             subgraph_edges.append(
                 Edge(f"edge:{graph_id}:{block_id}", graph_id, block_id, "contains")
             )
+            subgraph_edges.append(
+                Edge(f"edge:{graph_id}:{block_id}:provides", graph_id, block_id, "provides")
+            )
+            deps, dep_edges = _dependency_edges(block_id, component)
+            pack_edges.extend(dep_edges)
+            subgraph_edges.extend(dep_edges)
+            block_graph, subgraphs = _build_block_subgraph(
+                block_graph_id,
+                block_node,
+                component,
+                pack_root,
+            )
+            block_subgraphs[block_graph_id] = block_graph
+            subcomponent_subgraphs.update(subgraphs)
         pack_subgraphs[graph_id] = ArchitectureGraph(
             graph_id=graph_id,
             title=node.title,
@@ -80,26 +104,38 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
             node_type="Pack",
             subgraph_id=built_in_id,
             badges=badges_from_keys(top=["builtin"], bottom=["blocks"]),
+            metadata={"pack_id": "built_in", "source": "component_registry"},
         )
         pack_nodes.append(built_in_node)
-        subgraph_nodes = [built_in_node]
+        subgraph_nodes = [_node_copy(built_in_node, subgraph_id=None)]
         subgraph_edges = []
         for block in built_in:
             block_id = f"block:{block['component_id']}"
+            block_graph_id = _block_graph_id(block["component_id"])
             block_node = Node(
                 node_id=block_id,
                 title=block.get("display_name") or block["component_id"],
                 node_type="Block",
+                subgraph_id=block_graph_id,
                 badges=badges_from_keys(bottom=["block"]),
+                metadata={"component_id": block.get("component_id"), "source": "component_registry"},
             )
             block_nodes.append(block_node)
             pack_edges.append(
                 Edge(f"edge:{built_in_id}:{block_id}", built_in_id, block_id, "contains")
             )
-            subgraph_nodes.append(block_node)
+            subgraph_nodes.append(_node_copy(block_node, subgraph_id=None))
             subgraph_edges.append(
                 Edge(f"edge:{built_in_id}:{block_id}", built_in_id, block_id, "contains")
             )
+            block_graph, subgraphs = _build_block_subgraph(
+                block_graph_id,
+                block_node,
+                {"component_id": block.get("component_id")},
+                None,
+            )
+            block_subgraphs[block_graph_id] = block_graph
+            subcomponent_subgraphs.update(subgraphs)
         pack_subgraphs[built_in_id] = ArchitectureGraph(
             graph_id=built_in_id,
             title=built_in_node.title,
@@ -114,6 +150,8 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
     result.nodes.extend(block_nodes)
     result.edges.extend(pack_edges)
     result.subgraphs.update(pack_subgraphs)
+    result.subgraphs.update(block_subgraphs)
+    result.subgraphs.update(subcomponent_subgraphs)
     return result
 
 
@@ -142,6 +180,8 @@ def _collect_component_packs(inventory: Optional[Dict]) -> List[Dict]:
                         "name": manifest.get("display_name") or pack_id,
                         "version": manifest.get("version"),
                         "components": manifest.get("components") or [],
+                        "pack_root": entry.get("pack_root"),
+                        "manifest": manifest,
                     }
                 )
         except Exception:
@@ -151,6 +191,176 @@ def _collect_component_packs(inventory: Optional[Dict]) -> List[Dict]:
     if inventory_ids:
         return [{"pack_id": pack_id, "name": pack_id, "components": []} for pack_id in inventory_ids]
     return []
+
+
+def _safe_graph_id(value: Optional[str]) -> str:
+    text = str(value or "").strip() or "graph"
+    return text.replace(":", "_").replace("/", "_").replace("\\", "_")
+
+
+def _block_graph_id(component_id: str) -> str:
+    return f"block:{_safe_graph_id(component_id)}"
+
+
+def _subcomponent_graph_id(component_id: str, token: str) -> str:
+    return f"subcomponent:{_safe_graph_id(component_id)}:{_safe_graph_id(token)}"
+
+
+def _pack_metadata(pack: Dict, pack_root: Optional[Path]) -> Dict:
+    metadata = {
+        "pack_id": pack.get("pack_id"),
+        "version": pack.get("version"),
+        "source": "component_store",
+    }
+    if pack_root:
+        metadata["pack_root"] = str(Path(pack_root))
+        metadata["manifest_path"] = str(Path(pack_root) / "component_pack_manifest.json")
+    components = pack.get("components")
+    if isinstance(components, list):
+        metadata["component_count"] = len(components)
+    return metadata
+
+
+def _block_metadata(component: Dict, pack_id: Optional[str], pack_root: Optional[Path]) -> Dict:
+    metadata: Dict[str, object] = {
+        "component_id": component.get("component_id"),
+        "pack_id": pack_id,
+        "kind": component.get("kind"),
+        "impl": component.get("impl"),
+        "declared_by": "component_pack_manifest",
+    }
+    if pack_root:
+        metadata["manifest_path"] = str(Path(pack_root) / "component_pack_manifest.json")
+    assets = component.get("assets")
+    if isinstance(assets, dict):
+        metadata["assets"] = sorted(str(key) for key in assets.keys())
+    params = component.get("params")
+    if isinstance(params, dict):
+        metadata["params"] = sorted(str(key) for key in params.keys())
+    deps = _component_dependencies(component)
+    if deps:
+        metadata["dependencies"] = deps
+    return metadata
+
+
+def _component_dependencies(component: Dict) -> List[str]:
+    deps = ["system:component_runtime", "system:app_ui"]
+    params = component.get("params")
+    if isinstance(params, dict):
+        lab_id = params.get("lab_id")
+        if isinstance(lab_id, str) and lab_id:
+            deps.append(f"lab:{lab_id}")
+    return deps
+
+
+def _dependency_edges(block_id: str, component: Dict) -> Tuple[List[str], List[Edge]]:
+    deps = _component_dependencies(component)
+    edges = []
+    for dep in deps:
+        edges.append(Edge(f"edge:{block_id}:{dep}:depends", block_id, dep, "depends"))
+    return deps, edges
+
+
+def _build_block_subgraph(
+    graph_id: str,
+    block_node: Node,
+    component: Dict,
+    pack_root: Optional[Path],
+) -> Tuple[ArchitectureGraph, Dict[str, ArchitectureGraph]]:
+    subgraphs: Dict[str, ArchitectureGraph] = {}
+    sub_nodes: List[Node] = [_node_copy(block_node, subgraph_id=None)]
+    sub_edges: List[Edge] = []
+
+    token = component.get("impl") or "component"
+    subgraph_id = _subcomponent_graph_id(block_node.node_id, token)
+    sub_node = Node(
+        node_id=subgraph_id,
+        title="Implementation",
+        node_type="Subcomponent",
+        subgraph_id=subgraph_id,
+        metadata={
+            "component_id": component.get("component_id"),
+            "impl": component.get("impl"),
+            "kind": component.get("kind"),
+        },
+    )
+    sub_nodes.append(sub_node)
+    sub_edges.append(Edge(f"edge:{block_node.node_id}:{sub_node.node_id}", block_node.node_id, sub_node.node_id, "contains"))
+
+    artifact_nodes, artifact_edges = _build_artifacts(sub_node, component, pack_root)
+    artifact_nodes.insert(0, _node_copy(sub_node, subgraph_id=None))
+    subgraphs[subgraph_id] = ArchitectureGraph(
+        graph_id=subgraph_id,
+        title=f"{block_node.title} • Implementation",
+        nodes=artifact_nodes,
+        edges=artifact_edges,
+    )
+
+    graph = ArchitectureGraph(
+        graph_id=graph_id,
+        title=block_node.title,
+        nodes=sub_nodes,
+        edges=sub_edges,
+    )
+    return graph, subgraphs
+
+
+def _build_artifacts(
+    sub_node: Node,
+    component: Dict,
+    pack_root: Optional[Path],
+) -> Tuple[List[Node], List[Edge]]:
+    nodes: List[Node] = []
+    edges: List[Edge] = []
+    assets = component.get("assets") if isinstance(component, dict) else None
+    if isinstance(assets, dict):
+        for key, value in assets.items():
+            node_id = f"artifact:{_safe_graph_id(sub_node.node_id)}:{_safe_graph_id(key)}"
+            metadata = {"asset_key": key, "path": str(value)}
+            if pack_root and isinstance(value, str):
+                metadata["resolved_path"] = str(Path(pack_root) / value)
+            nodes.append(
+                Node(
+                    node_id=node_id,
+                    title=f"Asset: {key}",
+                    node_type="Artifact",
+                    metadata=metadata,
+                )
+            )
+            edges.append(Edge(f"edge:{sub_node.node_id}:{node_id}", sub_node.node_id, node_id, "contains"))
+    if pack_root:
+        manifest_path = Path(pack_root) / "component_pack_manifest.json"
+        manifest_node = Node(
+            node_id=f"artifact:{_safe_graph_id(sub_node.node_id)}:manifest",
+            title="Manifest: component_pack_manifest.json",
+            node_type="Artifact",
+            metadata={"path": str(manifest_path)},
+        )
+        nodes.append(manifest_node)
+        edges.append(Edge(f"edge:{sub_node.node_id}:{manifest_node.node_id}", sub_node.node_id, manifest_node.node_id, "contains"))
+    if not nodes:
+        placeholder = Node(
+            node_id=f"artifact:{_safe_graph_id(sub_node.node_id)}:none",
+            title="No artifacts found",
+            node_type="Artifact",
+        )
+        nodes.append(placeholder)
+        edges.append(Edge(f"edge:{sub_node.node_id}:{placeholder.node_id}", sub_node.node_id, placeholder.node_id, "contains"))
+    return nodes, edges
+
+
+def _node_copy(node: Node, *, subgraph_id: Optional[str]) -> Node:
+    return Node(
+        node_id=node.node_id,
+        title=node.title,
+        node_type=node.node_type,
+        subgraph_id=subgraph_id,
+        badges=list(node.badges),
+        severity_state=node.severity_state,
+        checks=list(node.checks),
+        spans=list(node.spans),
+        metadata=dict(node.metadata or {}),
+    )
 
 
 def _collect_ui_packs(inventory: Optional[Dict]) -> List[Node]:
@@ -184,6 +394,7 @@ def _collect_ui_packs(inventory: Optional[Dict]) -> List[Node]:
                     title=pack.name,
                     node_type="Pack",
                     badges=badges_from_keys(top=["ui"], bottom=["theme"]),
+                    metadata={"pack_id": pack.id, "pack_kind": "ui", "source": pack.source},
                 )
             )
     else:
@@ -195,6 +406,7 @@ def _collect_ui_packs(inventory: Optional[Dict]) -> List[Node]:
                     title=pack_id,
                     node_type="Pack",
                     badges=badges_from_keys(top=["ui"], bottom=["theme"]),
+                    metadata={"pack_id": pack_id, "pack_kind": "ui", "source": "inventory"},
                 )
             )
 

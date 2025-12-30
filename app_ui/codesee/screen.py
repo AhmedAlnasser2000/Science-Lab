@@ -21,7 +21,7 @@ from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
 from .diff import DiffResult, NodeChange, diff_snapshots
 from .expectations import EVACheck, check_from_dict
 from .graph_model import ArchitectureGraph, Node
-from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, get_lens, get_lenses
+from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, LensSpec, get_lens, get_lenses
 from .runtime.events import (
     CodeSeeEvent,
     EVENT_APP_ACTIVITY,
@@ -42,6 +42,7 @@ from app_ui import ui_scale
 from app_ui import versioning
 
 DEFAULT_LENS = LENS_ATLAS
+LENS_EXT = "extensibility"
 SOURCE_DEMO = "Demo"
 SOURCE_ATLAS = "Atlas"
 SOURCE_SNAPSHOT = "Snapshot (Latest)"
@@ -143,7 +144,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addWidget(QtWidgets.QLabel("Lens:"))
         self.lens_combo = QtWidgets.QComboBox()
         self._lens_map = get_lenses()
-        for lens_id in [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS]:
+        self._lens_map[LENS_EXT] = LensSpec(LENS_EXT, "Extensibility/Dependencies", _ext_nodes, _ext_edges)
+        for lens_id in [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS, LENS_EXT]:
             lens = self._lens_map.get(lens_id)
             if lens:
                 self.lens_combo.addItem(lens.title, lens_id)
@@ -737,7 +739,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_mode_status(0, 0)
 
     def _filtered_graph(self, graph: ArchitectureGraph) -> ArchitectureGraph:
-        lens = get_lens(self._lens)
+        lens = self._active_lens()
         now = time.time()
         stuck_threshold = max(1, int(self._view_config.span_stuck_seconds))
         nodes = []
@@ -771,6 +773,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
             nodes=nodes,
             edges=edges,
         )
+
+    def _active_lens(self) -> LensSpec:
+        lens = self._lens_map.get(self._lens)
+        if lens:
+            return lens
+        return get_lens(self._lens)
 
     def _apply_runtime_overlay(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         if not self._live_enabled or not self._overlay_badges:
@@ -1716,7 +1724,21 @@ def _event_color(event: CodeSeeEvent) -> QtGui.QColor:
 
 
 def _category_keys() -> list[str]:
-    return ["Workspace", "Pack", "Block", "Lab", "Topic", "Unit", "Lesson", "Activity", "System"]
+    return [
+        "Workspace",
+        "Pack",
+        "Block",
+        "Subcomponent",
+        "Artifact",
+        "Lab",
+        "Extension",
+        "Plugin",
+        "Topic",
+        "Unit",
+        "Lesson",
+        "Activity",
+        "System",
+    ]
 
 
 def _badge_layer_labels() -> Dict[str, str]:
@@ -1806,6 +1828,25 @@ def _node_has_mismatch(node: Node) -> bool:
         if not check.passed:
             return True
     return False
+
+
+def _ext_nodes(node: Node) -> bool:
+    node_type = (node.node_type or "").strip()
+    return node_type in (
+        "Workspace",
+        "Pack",
+        "Block",
+        "Subcomponent",
+        "Artifact",
+        "Lab",
+        "Extension",
+        "Plugin",
+        "System",
+    )
+
+
+def _ext_edges(edge, src: Node, dst: Node) -> bool:
+    return edge.kind in ("depends", "provides", "consumes", "loads", "contains")
 
 
 def _node_has_active_span(node: Node) -> bool:
@@ -1943,6 +1984,14 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         meta = QtWidgets.QLabel(f"ID: {node.node_id} | Type: {node.node_type}")
         meta.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(meta)
+
+        meta_label = QtWidgets.QLabel("Extensions & Metadata")
+        meta_label.setStyleSheet("color: #444;")
+        layout.addWidget(meta_label)
+        meta_text = QtWidgets.QPlainTextEdit()
+        meta_text.setReadOnly(True)
+        meta_text.setPlainText(_format_metadata(node.metadata))
+        layout.addWidget(meta_text)
 
         build_label = QtWidgets.QLabel("Build")
         build_label.setStyleSheet("color: #444;")
@@ -2137,6 +2186,26 @@ def _format_events(events: list[CodeSeeEvent]) -> str:
         if event.detail:
             line = f"{line}\n  {event.detail}"
         lines.append(line)
+    return "\n".join(lines)
+
+
+def _format_metadata(metadata: dict) -> str:
+    if not metadata:
+        return "No metadata."
+    lines = []
+    for key in sorted(metadata.keys()):
+        value = metadata.get(key)
+        if isinstance(value, dict):
+            lines.append(f"{key}:")
+            for sub_key in sorted(value.keys()):
+                lines.append(f"  {sub_key}: {value.get(sub_key)}")
+            continue
+        if isinstance(value, list):
+            lines.append(f"{key}:")
+            for item in value:
+                lines.append(f"  - {item}")
+            continue
+        lines.append(f"{key}: {value}")
     return "\n".join(lines)
 
 
