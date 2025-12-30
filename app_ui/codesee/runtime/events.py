@@ -24,3 +24,5 @@ class CodeSeeEvent:
     detail: Optional[str] = None
     source: Optional[str] = None
     payload: Optional[dict] = None
+    source_node_id: Optional[str] = None
+    target_node_id: Optional[str] = None

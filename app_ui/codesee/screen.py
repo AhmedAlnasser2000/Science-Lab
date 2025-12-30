@@ -76,6 +76,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._reduced_motion = ui_config.get_reduced_motion()
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
         self._icon_style = self._view_config.icon_style
+        self._node_theme = self._view_config.node_theme
+        self._pulse_settings = self._view_config.pulse_settings
         self._build_info = versioning.get_build_info()
 
         self._demo_root = build_demo_root_graph()
@@ -213,6 +215,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.style_combo.addItems(list(ICON_STYLE_LABELS.values()))
         self.style_combo.currentTextChanged.connect(self._on_icon_style_changed)
         source_row.addWidget(self.style_combo)
+        source_row.addWidget(QtWidgets.QLabel("Theme:"))
+        self.theme_combo = QtWidgets.QComboBox()
+        self.theme_combo.addItem("Neutral", "neutral")
+        self.theme_combo.addItem("Categorical", "categorical")
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        source_row.addWidget(self.theme_combo)
+        self.pulse_btn = QtWidgets.QToolButton()
+        self.pulse_btn.setText("Pulse...")
+        self.pulse_btn.clicked.connect(self._open_pulse_settings)
+        source_row.addWidget(self.pulse_btn)
         source_row.addStretch()
         layout.addLayout(source_row)
 
@@ -261,6 +273,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             on_layout_changed=self._save_layout,
             on_inspect=self._inspect_node,
             icon_style=self._resolved_icon_style(),
+            node_theme=self._node_theme,
         )
         self.scene.set_reduced_motion(self._reduced_motion)
         self.view = GraphView(self.scene)
@@ -301,6 +314,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
         self._icon_style = self._view_config.icon_style
+        self._node_theme = self._view_config.node_theme
+        self._pulse_settings = self._view_config.pulse_settings
         self._diff_mode = False
         self._diff_result = None
         self._diff_baseline_graph = None
@@ -314,6 +329,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._sync_style_combo()
         self._sync_view_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
+        self.scene.set_node_theme(self._node_theme)
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
         self._refresh_snapshot_history()
         self.diff_toggle.blockSignals(True)
@@ -517,6 +533,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.blockSignals(True)
             action.setChecked(self._view_config.show_badge_layers.get(layer_id, True))
             action.blockSignals(False)
+        self.theme_combo.blockSignals(True)
+        idx = self.theme_combo.findData(self._view_config.node_theme or "neutral")
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
+        self.theme_combo.blockSignals(False)
         self._only_errors_btn.blockSignals(True)
         self._only_errors_btn.setChecked(self._view_config.quick_filters.get("only_errors", False))
         self._only_errors_btn.blockSignals(False)
@@ -553,10 +574,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens = str(lens_id)
         self._view_config = view_config.load_view_config(self._workspace_id(), self._lens)
         self._icon_style = self._view_config.icon_style
+        self._node_theme = self._view_config.node_theme
+        self._pulse_settings = self._view_config.pulse_settings
         self._sync_style_combo()
         self._sync_view_controls()
+        self.scene.set_node_theme(self._node_theme)
         self._render_current_graph()
         self._refresh_breadcrumb()
+        self._update_mode_status(0, 0)
 
     def _on_category_toggled(self, _checked: bool) -> None:
         for category, action in self._category_actions.items():
@@ -590,7 +615,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
 
     def _clear_all_filters(self) -> None:
+        current_theme = self._node_theme
+        current_pulse = self._pulse_settings
         self._view_config = view_config.reset_to_defaults(self._lens, icon_style=self._icon_style)
+        self._view_config.node_theme = current_theme
+        self._view_config.pulse_settings = current_pulse
+        self._node_theme = current_theme
+        self._pulse_settings = current_pulse
         self._sync_view_controls()
         self._persist_view_config()
         self._render_current_graph()
@@ -851,8 +882,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self._add_overlay_check(node_id, event)
         if self._live_enabled:
             self._render_current_graph()
-            for node_id in event.node_ids or []:
-                self._flash_node(node_id, event)
+            self._emit_live_signal(event)
 
     def _add_overlay_badge(self, node_id: str, event: CodeSeeEvent) -> None:
         key = _badge_key_for_event(event)
@@ -875,9 +905,25 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if len(overlay) > self._overlay_limit:
             self._overlay_checks[node_id] = overlay[-self._overlay_limit :]
 
-    def _flash_node(self, node_id: str, event: CodeSeeEvent) -> None:
+    def _emit_live_signal(self, event: CodeSeeEvent) -> None:
+        node_ids = event.node_ids or []
+        target_id = event.target_node_id or (node_ids[-1] if node_ids else None)
+        source_id = event.source_node_id
+        if not source_id and len(node_ids) > 1:
+            source_id = node_ids[0]
+        if not source_id and isinstance(event.source, str):
+            if event.source in ("app_ui", "codesee", "ui"):
+                source_id = "system:app_ui"
+        if not target_id:
+            return
         color = _event_color(event)
-        self.scene.pulse_node(node_id, kind=event.kind, color=color, duration_ms=800)
+        self.scene.emit_signal(
+            source_id=source_id,
+            target_id=target_id,
+            kind=event.kind,
+            color=color,
+            settings=self._pulse_settings,
+        )
 
     def _load_snapshot_by_path(self, path_value: str) -> Optional[ArchitectureGraph]:
         try:
@@ -907,6 +953,76 @@ class CodeSeeScreen(QtWidgets.QWidget):
         icon_pack.save_style(self._workspace_id(), style)
         self._persist_view_config()
         self.scene.set_icon_style(self._resolved_icon_style())
+
+    def _on_theme_changed(self, index: int) -> None:
+        theme = self.theme_combo.itemData(index)
+        if not theme:
+            return
+        self._node_theme = str(theme)
+        self._view_config.node_theme = self._node_theme
+        self._persist_view_config()
+        self.scene.set_node_theme(self._node_theme)
+        self.scene.update()
+
+    def _open_pulse_settings(self) -> None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Pulse Settings")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        form = QtWidgets.QFormLayout()
+
+        speed = QtWidgets.QSpinBox()
+        speed.setRange(100, 5000)
+        speed.setValue(int(self._pulse_settings.travel_speed_px_per_s))
+        form.addRow("Travel speed (px/s)", speed)
+
+        linger = QtWidgets.QSpinBox()
+        linger.setRange(0, 2000)
+        linger.setValue(int(self._pulse_settings.arrive_linger_ms))
+        form.addRow("Arrive linger (ms)", linger)
+
+        fade = QtWidgets.QSpinBox()
+        fade.setRange(100, 3000)
+        fade.setValue(int(self._pulse_settings.fade_ms))
+        form.addRow("Fade (ms)", fade)
+
+        radius = QtWidgets.QSpinBox()
+        radius.setRange(4, 24)
+        radius.setValue(int(self._pulse_settings.pulse_radius_px))
+        form.addRow("Pulse radius (px)", radius)
+
+        alpha = QtWidgets.QDoubleSpinBox()
+        alpha.setRange(0.1, 1.0)
+        alpha.setSingleStep(0.05)
+        alpha.setDecimals(2)
+        alpha.setValue(float(self._pulse_settings.pulse_alpha))
+        form.addRow("Pulse alpha", alpha)
+
+        max_signals = QtWidgets.QSpinBox()
+        max_signals.setRange(1, 20)
+        max_signals.setValue(int(self._pulse_settings.max_concurrent_signals))
+        form.addRow("Max concurrent", max_signals)
+
+        layout.addLayout(form)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+        self._pulse_settings = view_config.PulseSettings(
+            travel_speed_px_per_s=int(speed.value()),
+            arrive_linger_ms=int(linger.value()),
+            fade_ms=int(fade.value()),
+            pulse_radius_px=int(radius.value()),
+            pulse_alpha=float(alpha.value()),
+            max_concurrent_signals=int(max_signals.value()),
+        )
+        self._view_config.pulse_settings = self._pulse_settings
+        self._persist_view_config()
 
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
         graph = self._current_graph

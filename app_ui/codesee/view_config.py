@@ -16,6 +16,18 @@ class ViewConfig:
     show_badge_layers: Dict[str, bool] = field(default_factory=dict)
     quick_filters: Dict[str, bool] = field(default_factory=dict)
     icon_style: str = ICON_STYLE_AUTO
+    node_theme: str = "neutral"
+    pulse_settings: "PulseSettings" = field(default_factory=lambda: default_pulse_settings())
+
+
+@dataclass
+class PulseSettings:
+    travel_speed_px_per_s: int = 900
+    arrive_linger_ms: int = 300
+    fade_ms: int = 500
+    pulse_radius_px: int = 8
+    pulse_alpha: float = 0.6
+    max_concurrent_signals: int = 6
 
 
 _CATEGORY_DEFAULTS = {
@@ -54,7 +66,13 @@ def default_view_config(lens_id: str, *, icon_style: str = ICON_STYLE_AUTO) -> V
         show_badge_layers=_BADGE_LAYER_DEFAULTS.copy(),
         quick_filters=_QUICK_FILTER_DEFAULTS.copy(),
         icon_style=icon_style,
+        node_theme="neutral",
+        pulse_settings=default_pulse_settings(),
     )
+
+
+def default_pulse_settings() -> PulseSettings:
+    return PulseSettings()
 
 
 def reset_to_defaults(lens_id: str, *, icon_style: str = ICON_STYLE_AUTO) -> ViewConfig:
@@ -115,6 +133,10 @@ def load_view_config(workspace_id: str, lens_id: str) -> ViewConfig:
     config.show_badge_layers = _merge_bool_map(config.show_badge_layers, raw_config.get("show_badge_layers"))
     config.quick_filters = _merge_bool_map(config.quick_filters, raw_config.get("quick_filters"))
     config.icon_style = icon_style
+    raw_theme = settings.get("node_theme")
+    if isinstance(raw_theme, str) and raw_theme.strip():
+        config.node_theme = raw_theme.strip()
+    config.pulse_settings = _merge_pulse_settings(config.pulse_settings, settings.get("pulse_settings"))
     return config
 
 
@@ -136,6 +158,9 @@ def save_view_config(
         settings["icon_style"] = icon_style
     if last_lens_id:
         settings["last_lens_id"] = last_lens_id
+    if config.node_theme:
+        settings["node_theme"] = config.node_theme
+    settings["pulse_settings"] = _pulse_settings_to_dict(config.pulse_settings)
     lenses = settings.get("lenses")
     if not isinstance(lenses, dict):
         lenses = {}
@@ -155,6 +180,38 @@ def _merge_bool_map(defaults: Dict[str, bool], raw) -> Dict[str, bool]:
             if isinstance(value, bool):
                 merged[str(key)] = value
     return merged
+
+
+def _merge_pulse_settings(defaults: PulseSettings, raw) -> PulseSettings:
+    if not isinstance(raw, dict):
+        return defaults
+    merged = PulseSettings(**defaults.__dict__)
+    for field_name in merged.__dict__.keys():
+        if field_name not in raw:
+            continue
+        value = raw.get(field_name)
+        if isinstance(getattr(merged, field_name), float):
+            try:
+                setattr(merged, field_name, float(value))
+            except Exception:
+                continue
+        elif isinstance(getattr(merged, field_name), int):
+            try:
+                setattr(merged, field_name, int(value))
+            except Exception:
+                continue
+    return merged
+
+
+def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:
+    return {
+        "travel_speed_px_per_s": int(settings.travel_speed_px_per_s),
+        "arrive_linger_ms": int(settings.arrive_linger_ms),
+        "fade_ms": int(settings.fade_ms),
+        "pulse_radius_px": int(settings.pulse_radius_px),
+        "pulse_alpha": float(settings.pulse_alpha),
+        "max_concurrent_signals": int(settings.max_concurrent_signals),
+    }
 
 
 def _settings_path(workspace_id: str) -> Path:

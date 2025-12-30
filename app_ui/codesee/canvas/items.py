@@ -53,6 +53,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         on_layout_changed: Optional[Callable[[], None]] = None,
         on_inspect: Optional[Callable[[Node, Optional[Badge]], None]] = None,
         icon_style: str = "color",
+        node_theme: str = "neutral",
         show_badge_layers: Optional[Dict[str, bool]] = None,
         diff_state: Optional[str] = None,
     ) -> None:
@@ -62,6 +63,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.on_layout_changed = on_layout_changed
         self.on_inspect = on_inspect
         self._icon_style = icon_style
+        self._node_theme = node_theme or "neutral"
         self._show_badge_layers = show_badge_layers or {}
         self._diff_state = diff_state
         self._edges: List[EdgeItem] = []
@@ -88,6 +90,10 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def set_icon_style(self, style: str) -> None:
         self._icon_style = style
+        self.update()
+
+    def set_node_theme(self, theme: str) -> None:
+        self._node_theme = theme or "neutral"
         self.update()
 
     def set_badge_layers(self, layers: Dict[str, bool]) -> None:
@@ -133,6 +139,38 @@ class NodeItem(QtWidgets.QGraphicsItem):
             strength = max(0.0, 1.0 - (idx / steps))
             QtCore.QTimer.singleShot(delay, lambda s=strength, t=token: self._set_highlight(t, s))
 
+    def arrival_pulse(
+        self,
+        color: Optional[QtGui.QColor],
+        *,
+        linger_ms: int,
+        fade_ms: int,
+        reduced_motion: bool,
+    ) -> None:
+        if color is not None:
+            self._highlight_color = color
+        self._highlight_token += 1
+        token = self._highlight_token
+        self._highlight_strength = 1.0
+        self.update()
+        linger_ms = max(0, int(linger_ms))
+        fade_ms = max(0, int(fade_ms))
+
+        def _start_fade() -> None:
+            if fade_ms <= 0:
+                self._clear_highlight(token)
+                return
+            steps = 2 if reduced_motion else 6
+            for idx in range(steps):
+                delay = int(fade_ms * ((idx + 1) / steps))
+                strength = max(0.0, 1.0 - ((idx + 1) / steps))
+                QtCore.QTimer.singleShot(
+                    delay,
+                    lambda s=strength, t=token: self._set_highlight(t, s),
+                )
+
+        QtCore.QTimer.singleShot(linger_ms, _start_fade)
+
     def _set_highlight(self, token: int, strength: float) -> None:
         if token != self._highlight_token:
             return
@@ -151,6 +189,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
         painter.setBrush(QtGui.QColor("#f7f7f7"))
         painter.setPen(QtGui.QPen(_severity_color(self.node.effective_severity()), 2.0))
         painter.drawRoundedRect(rect, NODE_RADIUS, NODE_RADIUS)
+
+        _paint_theme_marker(painter, rect, self.node.node_type, self._icon_style, self._node_theme)
 
         rail_color = QtGui.QColor("#e9e9e9")
         rail_height = _rail_height()
@@ -308,6 +348,16 @@ class NodeItem(QtWidgets.QGraphicsItem):
         return self._show_badge_layers.get(layer, True)
 
 
+class SignalDotItem(QtWidgets.QGraphicsEllipseItem):
+    def __init__(self, *, radius: float, color: Optional[QtGui.QColor], alpha: float) -> None:
+        super().__init__(-radius, -radius, radius * 2.0, radius * 2.0)
+        tint = QtGui.QColor(color) if isinstance(color, QtGui.QColor) else QtGui.QColor("#4c6ef5")
+        tint.setAlphaF(max(0.1, min(1.0, float(alpha))))
+        self.setBrush(tint)
+        self.setPen(QtCore.Qt.PenStyle.NoPen)
+        self.setZValue(2.0)
+
+
 def _severity_color(state: str) -> QtGui.QColor:
     if state in ("probe.fail", "correctness", "failure"):
         return QtGui.QColor("#7b3fb3")
@@ -318,6 +368,65 @@ def _severity_color(state: str) -> QtGui.QColor:
     if state == "crash":
         return QtGui.QColor("#111")
     return QtGui.QColor("#444")
+
+
+def _paint_theme_marker(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRectF,
+    node_type: str,
+    icon_style: str,
+    theme: str,
+) -> None:
+    if theme != "categorical":
+        return
+    node_type = (node_type or "").strip()
+    if icon_style == "mono":
+        pen_style, width = _mono_theme_style(node_type)
+        pen = QtGui.QPen(QtGui.QColor("#666"), width, pen_style)
+        painter.setPen(pen)
+        y = rect.top() + 3.0
+        painter.drawLine(
+            QtCore.QPointF(rect.left() + 6.0, y),
+            QtCore.QPointF(rect.right() - 6.0, y),
+        )
+        return
+    color = _theme_color(node_type)
+    color.setAlphaF(0.35)
+    stripe = QtCore.QRectF(rect.left() + 2.0, rect.top() + 2.0, rect.width() - 4.0, 4.0)
+    painter.fillRect(stripe, color)
+
+
+def _theme_color(node_type: str) -> QtGui.QColor:
+    return QtGui.QColor(
+        {
+            "Workspace": "#6c757d",
+            "Pack": "#2b8a3e",
+            "Block": "#1971c2",
+            "Lab": "#e8590c",
+            "Topic": "#845ef7",
+            "Unit": "#7048e8",
+            "Lesson": "#5f3dc4",
+            "Activity": "#4c6ef5",
+            "System": "#2f9e44",
+        }.get(node_type or "", "#6c757d")
+    )
+
+
+def _mono_theme_style(node_type: str) -> tuple[QtCore.Qt.PenStyle, float]:
+    styles = {
+        "Workspace": QtCore.Qt.PenStyle.SolidLine,
+        "Pack": QtCore.Qt.PenStyle.DashLine,
+        "Block": QtCore.Qt.PenStyle.DotLine,
+        "Lab": QtCore.Qt.PenStyle.DashDotLine,
+        "Topic": QtCore.Qt.PenStyle.SolidLine,
+        "Unit": QtCore.Qt.PenStyle.DashLine,
+        "Lesson": QtCore.Qt.PenStyle.DotLine,
+        "Activity": QtCore.Qt.PenStyle.DashDotLine,
+        "System": QtCore.Qt.PenStyle.SolidLine,
+    }
+    style = styles.get(node_type or "", QtCore.Qt.PenStyle.SolidLine)
+    width = 2.0 if node_type in ("Lab", "Block") else 1.5
+    return style, width
 
 
 def _edge_pen(kind: str, diff_state: Optional[str]) -> QtGui.QPen:
