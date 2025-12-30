@@ -185,26 +185,32 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addWidget(self.live_toggle)
         toggle_style = _toggle_style()
         _apply_toggle_style([self.live_toggle], toggle_style)
+        self.icon_style_combo = QtWidgets.QComboBox()
+        for style, label in ICON_STYLE_LABELS.items():
+            self.icon_style_combo.addItem(label, style)
+        self.icon_style_combo.currentIndexChanged.connect(self._on_icon_style_changed)
+        source_row.addWidget(QtWidgets.QLabel("Icon:"))
+        source_row.addWidget(self.icon_style_combo)
+        self.refresh_btn = QtWidgets.QToolButton()
+        self.refresh_btn.setText("Refresh")
+        self.refresh_btn.clicked.connect(self._refresh_current_graph)
+        source_row.addWidget(self.refresh_btn)
+        self.open_window_button = QtWidgets.QToolButton()
+        self.open_window_button.setText("Open in Window")
+        self.open_window_button.clicked.connect(self._open_in_window)
+        source_row.addWidget(self.open_window_button)
         self.open_window_btn = QtGui.QAction("Open in Window", self)
         self.open_window_btn.triggered.connect(self._open_in_window)
-        self.view_button = QtWidgets.QToolButton()
-        self.view_button.setText("View")
-        self.view_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.view_menu = QtWidgets.QMenu(self.view_button)
-        self.view_button.setMenu(self.view_menu)
-        source_row.addWidget(self.view_button)
-        self.filters_button = QtWidgets.QToolButton()
-        self.filters_button.setText("Filters")
-        self.filters_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.filters_menu = QtWidgets.QMenu(self.filters_button)
-        self.filters_button.setMenu(self.filters_menu)
-        source_row.addWidget(self.filters_button)
-        self.live_menu_button = QtWidgets.QToolButton()
-        self.live_menu_button.setText("Live")
-        self.live_menu_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.live_menu = QtWidgets.QMenu(self.live_menu_button)
-        self.live_menu_button.setMenu(self.live_menu)
-        source_row.addWidget(self.live_menu_button)
+        self.view_menu = QtWidgets.QMenu(self)
+        self.filters_menu = QtWidgets.QMenu(self)
+        self.live_menu = QtWidgets.QMenu(self)
+        self.presets_menu = QtWidgets.QMenu(self)
+        self.more_button = QtWidgets.QToolButton()
+        self.more_button.setText("More")
+        self.more_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_menu = QtWidgets.QMenu(self.more_button)
+        self.more_button.setMenu(self.more_menu)
+        source_row.addWidget(self.more_button)
         source_row.addStretch()
         layout.addLayout(source_row)
 
@@ -214,6 +220,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._build_badge_menu()
         self._build_snapshot_menu()
         self._build_live_menu()
+        self._build_presets_menu()
+        self._build_more_menu()
 
         self.mode_status_row = QtWidgets.QWidget()
         mode_layout = QtWidgets.QHBoxLayout(self.mode_status_row)
@@ -529,6 +537,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         for action in getattr(self, "_diff_filter_actions", {}).values():
             action.setEnabled(self._diff_mode and self._diff_result is not None)
         self.open_window_btn.setEnabled(bool(self._allow_detach and self._on_open_window))
+        if hasattr(self, "open_window_button"):
+            self.open_window_button.setEnabled(bool(self._allow_detach and self._on_open_window))
         diff_visible = bool(self._diff_mode)
         if hasattr(self, "baseline_action"):
             self.baseline_action.setVisible(diff_visible)
@@ -553,26 +563,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.toggled.connect(lambda checked=False, k=key: self._set_diff_filter(k, checked))
             diff_filters_menu.addAction(action)
             self._diff_filter_actions[key] = action
-        if self._allow_detach and self._on_open_window:
-            self.view_menu.addSeparator()
-            self.view_menu.addAction(self.open_window_btn)
         self.view_menu.addSeparator()
 
         self.layers_menu = self.view_menu.addMenu("Layers")
         self.category_menu = self.layers_menu.addMenu("Categories")
         self.badge_layer_menu = self.layers_menu.addMenu("Badge Layers")
-
-        style_menu = self.view_menu.addMenu("Icon Style")
-        self._style_actions: Dict[str, QtGui.QAction] = {}
-        style_group = QtGui.QActionGroup(style_menu)
-        style_group.setExclusive(True)
-        for style, label in ICON_STYLE_LABELS.items():
-            action = QtGui.QAction(label, style_menu)
-            action.setCheckable(True)
-            action.setActionGroup(style_group)
-            action.triggered.connect(lambda _checked=False, value=style: self._set_icon_style(value))
-            style_menu.addAction(action)
-            self._style_actions[style] = action
 
         theme_menu = self.view_menu.addMenu("Theme")
         self._theme_actions: Dict[str, QtGui.QAction] = {}
@@ -636,6 +631,30 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.test_pulse_action.triggered.connect(self._emit_test_pulse)
         debug_menu.addAction(self.test_pulse_action)
 
+    def _build_presets_menu(self) -> None:
+        self.presets_menu.clear()
+        save_action = QtGui.QAction("Save Preset...", self.presets_menu)
+        save_action.triggered.connect(self._save_preset)
+        self.presets_menu.addAction(save_action)
+        self.presets_menu.addSeparator()
+        presets = view_config.load_view_presets(self._workspace_id())
+        if not presets:
+            empty = QtGui.QAction("No presets", self.presets_menu)
+            empty.setEnabled(False)
+            self.presets_menu.addAction(empty)
+            return
+        for name in sorted(presets.keys()):
+            action = QtGui.QAction(name, self.presets_menu)
+            action.triggered.connect(lambda _checked=False, n=name: self._apply_preset(n))
+            self.presets_menu.addAction(action)
+
+    def _build_more_menu(self) -> None:
+        self.more_menu.clear()
+        self.more_menu.addMenu(self.view_menu).setText("View")
+        self.more_menu.addMenu(self.filters_menu).setText("Filters")
+        self.more_menu.addMenu(self.live_menu).setText("Live")
+        self.more_menu.addMenu(self.presets_menu).setText("Presets")
+
     def _sync_view_controls(self) -> None:
         self._sync_lens_combo()
         self.live_toggle.blockSignals(True)
@@ -657,6 +676,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.blockSignals(True)
             action.setChecked(style == self._icon_style)
             action.blockSignals(False)
+        self._sync_icon_style_combo()
         for theme_id, action in getattr(self, "_theme_actions", {}).items():
             action.blockSignals(True)
             action.setChecked(theme_id == (self._view_config.node_theme or "neutral"))
@@ -669,6 +689,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.blockSignals(True)
             action.setChecked(self._diff_filters.get(key, False))
             action.blockSignals(False)
+        self._build_presets_menu()
+        self._build_more_menu()
 
     @staticmethod
     def _make_combo_action(
@@ -695,6 +717,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self.lens_combo.blockSignals(False)
                 return
 
+    def _sync_icon_style_combo(self) -> None:
+        for idx in range(self.icon_style_combo.count()):
+            style = self.icon_style_combo.itemData(idx)
+            if style == self._icon_style:
+                self.icon_style_combo.blockSignals(True)
+                self.icon_style_combo.setCurrentIndex(idx)
+                self.icon_style_combo.blockSignals(False)
+                return
+
     def _on_lens_changed(self, index: int) -> None:
         lens_id = self.lens_combo.itemData(index)
         if not lens_id or lens_id == self._lens:
@@ -716,6 +747,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
         self._refresh_breadcrumb()
         self._update_mode_status(0, 0)
+
+    def _on_icon_style_changed(self, _index: int) -> None:
+        style = self.icon_style_combo.currentData()
+        if not style or style == self._icon_style:
+            return
+        self._set_icon_style(str(style))
 
     def _on_category_toggled(self, _checked: bool) -> None:
         for category, action in self._category_actions.items():
@@ -1150,6 +1187,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._on_open_window:
             self._on_open_window()
 
+    def _refresh_current_graph(self) -> None:
+        if self._source == SOURCE_ATLAS:
+            self._build_atlas()
+            return
+        if self._source == SOURCE_SNAPSHOT:
+            self._load_latest_snapshot(show_status=True)
+            return
+        if self._source == SOURCE_DEMO:
+            self._set_active_graphs(self._demo_root, self._demo_subgraphs)
+            return
+
     def _emit_test_pulse(self) -> None:
         target_id, source_id = self._select_pulse_nodes()
         if not target_id:
@@ -1449,6 +1497,46 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.pulse_settings = self._pulse_settings
         self._persist_view_config()
         self._render_current_graph()
+
+    def _save_preset(self) -> None:
+        name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", "Preset name:")
+        if not ok:
+            return
+        preset_name = (name or "").strip()
+        if not preset_name:
+            return
+        preset = view_config.build_view_preset(
+            self._view_config,
+            lens_id=self._lens,
+            icon_style=self._icon_style,
+            node_theme=self._node_theme,
+        )
+        view_config.save_view_preset(self._workspace_id(), preset_name, preset)
+        self._build_presets_menu()
+        self._build_more_menu()
+
+    def _apply_preset(self, name: str) -> None:
+        presets = view_config.load_view_presets(self._workspace_id())
+        preset = presets.get(name)
+        if not isinstance(preset, dict):
+            return
+        lens_id = preset.get("lens_id") or self._lens
+        self._lens = str(lens_id)
+        self._view_config = view_config.default_view_config(self._lens, icon_style=self._icon_style)
+        self._view_config = view_config.apply_view_preset(self._view_config, preset)
+        icon_style = preset.get("icon_style")
+        if isinstance(icon_style, str) and icon_style:
+            self._icon_style = icon_style
+        node_theme = preset.get("node_theme")
+        if isinstance(node_theme, str) and node_theme:
+            self._node_theme = node_theme
+            self._view_config.node_theme = node_theme
+        self._pulse_settings = self._view_config.pulse_settings
+        self._sync_view_controls()
+        self.scene.set_node_theme(self._node_theme)
+        self.scene.set_icon_style(self._resolved_icon_style())
+        self._render_current_graph()
+        self._update_mode_status(0, 0)
 
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
         graph = self._current_graph

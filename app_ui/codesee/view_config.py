@@ -195,6 +195,59 @@ def save_view_config(
     _save_settings(workspace_id, settings)
 
 
+def build_view_preset(
+    config: ViewConfig,
+    *,
+    lens_id: str,
+    icon_style: str,
+    node_theme: str,
+) -> Dict[str, object]:
+    return {
+        "lens_id": lens_id,
+        "icon_style": icon_style,
+        "node_theme": node_theme,
+        "show_categories": dict(config.show_categories),
+        "show_badge_layers": dict(config.show_badge_layers),
+        "quick_filters": dict(config.quick_filters),
+        "pulse_settings": _pulse_settings_to_dict(config.pulse_settings),
+        "span_stuck_seconds": int(config.span_stuck_seconds),
+        "live_enabled": bool(config.live_enabled),
+    }
+
+
+def apply_view_preset(config: ViewConfig, preset: Dict[str, object]) -> ViewConfig:
+    config.show_categories = _merge_bool_map(config.show_categories, preset.get("show_categories"))
+    config.show_badge_layers = _merge_bool_map(config.show_badge_layers, preset.get("show_badge_layers"))
+    config.quick_filters = _merge_bool_map(config.quick_filters, preset.get("quick_filters"))
+    config.pulse_settings = _merge_pulse_settings(config.pulse_settings, preset.get("pulse_settings"))
+    config.span_stuck_seconds = _merge_int_setting(
+        preset.get("span_stuck_seconds"),
+        config.span_stuck_seconds,
+    )
+    config.live_enabled = bool(preset.get("live_enabled", config.live_enabled))
+    return config
+
+
+def load_view_presets(workspace_id: str) -> Dict[str, Dict]:
+    settings = _load_settings(workspace_id)
+    presets = settings.get("view_presets")
+    if not isinstance(presets, dict):
+        return {}
+    return {str(key): value for key, value in presets.items() if isinstance(value, dict)}
+
+
+def save_view_preset(workspace_id: str, name: str, preset: Dict[str, object]) -> None:
+    if not name:
+        return
+    settings = _load_settings(workspace_id)
+    presets = settings.get("view_presets")
+    if not isinstance(presets, dict):
+        presets = {}
+    presets[str(name)] = preset
+    settings["view_presets"] = presets
+    _save_settings(workspace_id, settings)
+
+
 def _merge_bool_map(defaults: Dict[str, bool], raw) -> Dict[str, bool]:
     merged = dict(defaults)
     if isinstance(raw, dict):
