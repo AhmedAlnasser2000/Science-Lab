@@ -35,6 +35,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._signals: list[dict] = []
         self._pulses: Dict[str, dict] = {}
         self._span_tints: Dict[str, dict] = {}
+        self._activity_glow: Dict[str, dict] = {}
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -52,6 +53,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._empty_item = None
         self._signals = []
         self._pulses = {}
+        self._activity_glow = {}
         if self._signal_timer.isActive():
             self._signal_timer.stop()
 
@@ -87,7 +89,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 item.setPos(x, y)
             self._nodes[node.node_id] = item
 
-        self._apply_span_tints()
+        self._apply_tints()
 
         for edge in graph.edges:
             src = self._nodes.get(edge.src_node_id)
@@ -133,7 +135,28 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._span_tints = {}
         for node_id in node_ids:
             self._span_tints[str(node_id)] = {"color": color, "strength": strength}
-        self._apply_span_tints()
+        self._apply_tints()
+
+    def bump_activity(
+        self,
+        node_id: str,
+        *,
+        color: Optional[QtGui.QColor],
+        strength: float,
+        linger_ms: int,
+        fade_ms: int,
+    ) -> None:
+        if node_id not in self._nodes:
+            return
+        self._activity_glow[node_id] = {
+            "t0": time.monotonic(),
+            "linger": max(0.0, float(linger_ms) / 1000.0),
+            "fade": max(0.0, float(fade_ms) / 1000.0),
+            "strength": max(0.05, min(1.0, float(strength))),
+            "color": color,
+        }
+        if not self._signal_timer.isActive():
+            self._signal_timer.start()
 
     def flash_node(self, node_id: str, color: Optional[QtGui.QColor] = None) -> None:
         self.flash_node_with_settings(node_id, color=color, settings=None)
@@ -213,7 +236,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         travel_duration_ms = _setting_value(settings, "travel_duration_ms", 0)
         linger_ms = _setting_value(settings, "arrive_linger_ms", 300)
         fade_ms = _setting_value(settings, "fade_ms", 500)
-        radius = _setting_value(settings, "pulse_radius_px", 8)
+        radius = max(4.0, float(_setting_value(settings, "pulse_radius_px", 8)))
         alpha = _setting_value(settings, "pulse_alpha", 0.6)
         min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
         intensity = _setting_value(settings, "intensity_multiplier", 1.0)
@@ -264,7 +287,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
             distance = max(1.0, _distance(start, end))
             duration = max(0.15, distance / max(1.0, float(speed)))
         intensity = max(0.1, float(intensity))
-        alpha = min(1.0, max(0.05, float(alpha) * intensity))
+        alpha = min(1.0, max(0.25, float(alpha) * intensity))
         dot = SignalDotItem(radius=float(radius), color=color, alpha=float(alpha))
         dot.setPos(start)
         self.addItem(dot)
@@ -295,6 +318,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
     def pulse_state_count(self) -> int:
         return len(self._pulses)
+
+    def active_pulse_count(self) -> int:
+        return len(self._signals) + len(self._pulses)
 
     def clear_pulses(self) -> None:
         if not self._pulses:
@@ -347,7 +373,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
             remaining.append(state)
         self._signals = remaining
         self._tick_pulses(now)
-        if not self._signals and not self._pulses:
+        self._tick_activity(now)
+        if not self._signals and not self._pulses and not self._activity_glow:
             if self._signal_timer.isActive():
                 self._signal_timer.stop()
 
@@ -424,15 +451,48 @@ class GraphScene(QtWidgets.QGraphicsScene):
         if isinstance(dot, SignalDotItem):
             self.removeItem(dot)
 
-    def _apply_span_tints(self) -> None:
+    def _tick_activity(self, now: float) -> None:
+        if not self._activity_glow:
+            return
+        remove_ids = []
+        for node_id, state in list(self._activity_glow.items()):
+            t0 = float(state.get("t0", now))
+            linger = float(state.get("linger", 0.0))
+            fade = float(state.get("fade", 0.0))
+            strength = float(state.get("strength", 0.2))
+            elapsed = max(0.0, now - t0)
+            if elapsed <= linger:
+                state["current"] = strength
+                continue
+            if fade <= 0.0:
+                remove_ids.append(node_id)
+                continue
+            progress = (elapsed - linger) / fade
+            if progress >= 1.0:
+                remove_ids.append(node_id)
+                continue
+            state["current"] = max(0.0, strength * (1.0 - progress))
+        for node_id in remove_ids:
+            self._activity_glow.pop(node_id, None)
+        self._apply_tints()
+
+    def _apply_tints(self) -> None:
         if not self._nodes:
             return
         for node_id, item in self._nodes.items():
-            tint = self._span_tints.get(node_id)
-            if tint:
-                item.set_tint(float(tint.get("strength", 0.0)), tint.get("color"))
+            base = self._span_tints.get(node_id)
+            active = self._activity_glow.get(node_id)
+            base_strength = float(base.get("strength", 0.0)) if base else 0.0
+            active_strength = float(active.get("current", 0.0)) if active else 0.0
+            if active and active_strength >= base_strength:
+                item.set_tint(active_strength, active.get("color"))
+            elif base and base_strength > 0.0:
+                item.set_tint(base_strength, base.get("color"))
             else:
                 item.set_tint(0.0, None)
+
+    def _apply_span_tints(self) -> None:
+        self._apply_tints()
 
 
 def _setting_value(settings, key: str, default):

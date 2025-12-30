@@ -19,6 +19,7 @@ class ViewConfig:
     node_theme: str = "neutral"
     pulse_settings: "PulseSettings" = field(default_factory=lambda: default_pulse_settings())
     span_stuck_seconds: int = 10
+    live_enabled: bool = False
 
 
 @dataclass
@@ -148,6 +149,7 @@ def load_view_config(workspace_id: str, lens_id: str) -> ViewConfig:
         config.node_theme = raw_theme.strip()
     config.pulse_settings = _merge_pulse_settings(config.pulse_settings, settings.get("pulse_settings"))
     config.span_stuck_seconds = _merge_int_setting(settings.get("span_stuck_seconds"), config.span_stuck_seconds)
+    config.live_enabled = bool(settings.get("live_enabled", False))
     return config
 
 
@@ -173,6 +175,7 @@ def save_view_config(
         settings["node_theme"] = config.node_theme
     settings["pulse_settings"] = _pulse_settings_to_dict(config.pulse_settings)
     settings["span_stuck_seconds"] = int(config.span_stuck_seconds)
+    settings["live_enabled"] = bool(config.live_enabled)
     lenses = settings.get("lenses")
     if not isinstance(lenses, dict):
         lenses = {}

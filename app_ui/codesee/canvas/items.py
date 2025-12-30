@@ -317,11 +317,14 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
 class SignalDotItem(QtWidgets.QGraphicsEllipseItem):
     def __init__(self, *, radius: float, color: Optional[QtGui.QColor], alpha: float) -> None:
+        radius = max(3.0, float(radius))
         super().__init__(-radius, -radius, radius * 2.0, radius * 2.0)
         tint = QtGui.QColor(color) if isinstance(color, QtGui.QColor) else QtGui.QColor("#4c6ef5")
-        tint.setAlphaF(max(0.1, min(1.0, float(alpha))))
+        tint.setAlphaF(max(0.2, min(1.0, float(alpha))))
         self.setBrush(tint)
-        self.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
+        outline = QtGui.QColor("#111")
+        outline.setAlphaF(0.35)
+        self.setPen(QtGui.QPen(outline, 1.0))
         self.setZValue(2.0)
 
 

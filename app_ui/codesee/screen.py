@@ -107,7 +107,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diff_result: Optional[DiffResult] = None
         self._diff_baseline_graph: Optional[ArchitectureGraph] = None
         self._diff_compare_graph: Optional[ArchitectureGraph] = None
-        self._live_enabled = False
+        self._live_enabled = bool(self._view_config.live_enabled)
         self._events_by_node: Dict[str, list[CodeSeeEvent]] = {}
         self._overlay_badges: Dict[str, list[Badge]] = {}
         self._overlay_limit = 8
@@ -157,22 +157,20 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.source_combo.setCurrentText(self._source)
         self.source_combo.blockSignals(False)
         source_row.addWidget(self.source_combo)
-        self.capture_btn = QtWidgets.QPushButton("Capture Snapshot")
-        self.capture_btn.clicked.connect(self._capture_snapshot)
-        source_row.addWidget(self.capture_btn)
-        self.load_btn = QtWidgets.QPushButton("Load Latest Snapshot")
-        self.load_btn.clicked.connect(self._load_latest_snapshot_action)
-        source_row.addWidget(self.load_btn)
-        self.baseline_label = QtWidgets.QLabel("Baseline:")
+        self.snapshot_button = QtWidgets.QToolButton()
+        self.snapshot_button.setText("Snapshots")
+        self.snapshot_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.snapshot_menu = QtWidgets.QMenu(self.snapshot_button)
+        self.snapshot_button.setMenu(self.snapshot_menu)
+        source_row.addWidget(self.snapshot_button)
+        self.capture_btn = QtGui.QAction("Capture Snapshot", self.snapshot_menu)
+        self.capture_btn.triggered.connect(self._capture_snapshot)
+        self.load_btn = QtGui.QAction("Load Latest Snapshot", self.snapshot_menu)
+        self.load_btn.triggered.connect(self._load_latest_snapshot_action)
         self.baseline_combo = QtWidgets.QComboBox()
         self.baseline_combo.currentIndexChanged.connect(self._on_baseline_changed)
-        source_row.addWidget(self.baseline_label)
-        source_row.addWidget(self.baseline_combo)
-        self.compare_label = QtWidgets.QLabel("Compare:")
         self.compare_combo = QtWidgets.QComboBox()
         self.compare_combo.currentIndexChanged.connect(self._on_compare_changed)
-        source_row.addWidget(self.compare_label)
-        source_row.addWidget(self.compare_combo)
         self.live_toggle = QtWidgets.QToolButton()
         self.live_toggle.setText("Live")
         self.live_toggle.setCheckable(True)
@@ -180,12 +178,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addWidget(self.live_toggle)
         toggle_style = _toggle_style()
         _apply_toggle_style([self.live_toggle], toggle_style)
-        self.open_window_btn = QtWidgets.QToolButton()
-        self.open_window_btn.setText("Open in Window")
-        self.open_window_btn.clicked.connect(self._open_in_window)
-        if not self._allow_detach or not self._on_open_window:
-            self.open_window_btn.setVisible(False)
-        source_row.addWidget(self.open_window_btn)
+        self.open_window_btn = QtGui.QAction("Open in Window", self)
+        self.open_window_btn.triggered.connect(self._open_in_window)
         self.view_button = QtWidgets.QToolButton()
         self.view_button.setText("View")
         self.view_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -198,20 +192,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.filters_menu = QtWidgets.QMenu(self.filters_button)
         self.filters_button.setMenu(self.filters_menu)
         source_row.addWidget(self.filters_button)
-        self.layers_button = QtWidgets.QToolButton()
-        self.layers_button.setText("Layers")
-        self.layers_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.layers_menu = QtWidgets.QMenu(self.layers_button)
-        self.layers_button.setMenu(self.layers_menu)
-        self.category_menu = self.layers_menu.addMenu("Categories")
-        self.badge_layer_menu = self.layers_menu.addMenu("Badge Layers")
-        source_row.addWidget(self.layers_button)
-        self.more_button = QtWidgets.QToolButton()
-        self.more_button.setText("More")
-        self.more_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.more_menu = QtWidgets.QMenu(self.more_button)
-        self.more_button.setMenu(self.more_menu)
-        source_row.addWidget(self.more_button)
+        self.live_menu_button = QtWidgets.QToolButton()
+        self.live_menu_button.setText("Live")
+        self.live_menu_button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.live_menu = QtWidgets.QMenu(self.live_menu_button)
+        self.live_menu_button.setMenu(self.live_menu)
+        source_row.addWidget(self.live_menu_button)
         source_row.addStretch()
         layout.addLayout(source_row)
 
@@ -219,7 +205,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._build_filter_menu()
         self._build_layer_menu()
         self._build_badge_menu()
-        self._build_more_menu()
+        self._build_snapshot_menu()
+        self._build_live_menu()
 
         self.mode_status_row = QtWidgets.QWidget()
         mode_layout = QtWidgets.QHBoxLayout(self.mode_status_row)
@@ -326,7 +313,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diff_result = None
         self._diff_baseline_graph = None
         self._diff_compare_graph = None
-        self._live_enabled = False
+        self._live_enabled = bool(self._view_config.live_enabled)
         self._events_by_node.clear()
         self._overlay_badges.clear()
         self._overlay_checks.clear()
@@ -342,7 +329,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.diff_action.setChecked(False)
             self.diff_action.blockSignals(False)
         self.live_toggle.blockSignals(True)
-        self.live_toggle.setChecked(False)
+        self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)
         self._update_action_state()
         if self._runtime_hub:
@@ -523,18 +510,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _update_action_state(self) -> None:
         self.capture_btn.setEnabled(self._source in (SOURCE_DEMO, SOURCE_ATLAS))
+        self.load_btn.setEnabled(True)
         if hasattr(self, "removed_action"):
             self.removed_action.setEnabled(self._diff_mode and self._diff_result is not None)
         self.open_window_btn.setEnabled(bool(self._allow_detach and self._on_open_window))
         diff_visible = bool(self._diff_mode)
-        if hasattr(self, "baseline_label"):
-            self.baseline_label.setVisible(diff_visible)
-        if hasattr(self, "baseline_combo"):
-            self.baseline_combo.setVisible(diff_visible)
-        if hasattr(self, "compare_label"):
-            self.compare_label.setVisible(diff_visible)
-        if hasattr(self, "compare_combo"):
-            self.compare_combo.setVisible(diff_visible)
+        if hasattr(self, "baseline_action"):
+            self.baseline_action.setVisible(diff_visible)
+        if hasattr(self, "compare_action"):
+            self.compare_action.setVisible(diff_visible)
         self._update_mode_status(0, 0)
 
     def _build_view_menu(self) -> None:
@@ -546,7 +530,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.removed_action = QtGui.QAction("Removed Items...", self.view_menu)
         self.removed_action.triggered.connect(self._open_removed_dialog)
         self.view_menu.addAction(self.removed_action)
+        if self._allow_detach and self._on_open_window:
+            self.view_menu.addSeparator()
+            self.view_menu.addAction(self.open_window_btn)
         self.view_menu.addSeparator()
+
+        self.layers_menu = self.view_menu.addMenu("Layers")
+        self.category_menu = self.layers_menu.addMenu("Categories")
+        self.badge_layer_menu = self.layers_menu.addMenu("Badge Layers")
 
         style_menu = self.view_menu.addMenu("Icon Style")
         self._style_actions: Dict[str, QtGui.QAction] = {}
@@ -571,11 +562,6 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.triggered.connect(lambda _checked=False, value=theme_id: self._set_node_theme(value))
             theme_menu.addAction(action)
             self._theme_actions[theme_id] = action
-
-        self.view_menu.addSeparator()
-        self.pulse_settings_action = QtGui.QAction("Pulse Settings...", self.view_menu)
-        self.pulse_settings_action.triggered.connect(self._open_pulse_settings)
-        self.view_menu.addAction(self.pulse_settings_action)
 
     def _build_filter_menu(self) -> None:
         self.filters_menu.clear()
@@ -607,15 +593,31 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.badge_layer_menu.addAction(action)
             self._badge_actions[layer_id] = action
 
-    def _build_more_menu(self) -> None:
-        self.more_menu.clear()
-        debug_menu = self.more_menu.addMenu("Debug")
+    def _build_snapshot_menu(self) -> None:
+        self.snapshot_menu.clear()
+        self.snapshot_menu.addAction(self.capture_btn)
+        self.snapshot_menu.addAction(self.load_btn)
+        self.snapshot_menu.addSeparator()
+        self.baseline_action = self._make_combo_action("Baseline:", self.baseline_combo, parent=self.snapshot_menu)
+        self.compare_action = self._make_combo_action("Compare:", self.compare_combo, parent=self.snapshot_menu)
+        self.snapshot_menu.addAction(self.baseline_action)
+        self.snapshot_menu.addAction(self.compare_action)
+
+    def _build_live_menu(self) -> None:
+        self.live_menu.clear()
+        self.pulse_settings_action = QtGui.QAction("Pulse Settings...", self.live_menu)
+        self.pulse_settings_action.triggered.connect(self._open_pulse_settings)
+        self.live_menu.addAction(self.pulse_settings_action)
+        debug_menu = self.live_menu.addMenu("Debug")
         self.test_pulse_action = QtGui.QAction("Emit Test Pulse", debug_menu)
         self.test_pulse_action.triggered.connect(self._emit_test_pulse)
         debug_menu.addAction(self.test_pulse_action)
 
     def _sync_view_controls(self) -> None:
         self._sync_lens_combo()
+        self.live_toggle.blockSignals(True)
+        self.live_toggle.setChecked(self._live_enabled)
+        self.live_toggle.blockSignals(False)
         if hasattr(self, "diff_action"):
             self.diff_action.blockSignals(True)
             self.diff_action.setChecked(self._diff_mode)
@@ -640,6 +642,22 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.blockSignals(True)
             action.setChecked(self._view_config.quick_filters.get(key, False))
             action.blockSignals(False)
+
+    @staticmethod
+    def _make_combo_action(
+        label: str,
+        combo: QtWidgets.QComboBox,
+        *,
+        parent: QtWidgets.QMenu,
+    ) -> QtWidgets.QWidgetAction:
+        container = QtWidgets.QWidget(parent)
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.addWidget(QtWidgets.QLabel(label))
+        layout.addWidget(combo, stretch=1)
+        action = QtWidgets.QWidgetAction(parent)
+        action.setDefaultWidget(container)
+        return action
 
     def _sync_lens_combo(self) -> None:
         for idx in range(self.lens_combo.count()):
@@ -695,6 +713,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_mode_status(0, 0)
 
     def _persist_view_config(self) -> None:
+        self._view_config.live_enabled = bool(self._live_enabled)
         view_config.save_view_config(
             self._workspace_id(),
             self._view_config,
@@ -955,10 +974,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         event_count = self._runtime_hub.event_count()
         last_ts = self._runtime_hub.last_event_ts() or "n/a"
         signals = self.scene.signals_active_count() if self.scene else 0
+        pulses = self.scene.active_pulse_count() if self.scene else 0
         spans = self._runtime_hub.active_span_count()
         bus_state = "bus:on" if self._runtime_hub.bus_connected() else "bus:off"
         self.debug_status_label.setText(
-            f"{bus_state} | Events: {event_count} (last {last_ts}) | Signals: {signals} | Spans: {spans}"
+            f"{bus_state} | Events: {event_count} (last {last_ts}) | Signals: {signals} | Pulses: {pulses} | Spans: {spans}"
         )
         self.debug_status_row.setVisible(True)
 
@@ -986,6 +1006,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if not active_spans:
             return
         self._render_current_graph()
+        if self._pulse_settings.tint_active_spans:
+            nodes = _active_span_node_ids(active_spans, limit=8)
+            for node_id in nodes:
+                self.scene.bump_activity(
+                    node_id,
+                    color=QtGui.QColor("#4c6ef5"),
+                    strength=0.3,
+                    linger_ms=int(self._pulse_settings.arrive_linger_ms),
+                    fade_ms=int(self._pulse_settings.fade_ms),
+                )
         if self._reduced_motion:
             return
         now = time.monotonic()
@@ -1058,6 +1088,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.live_toggle.blockSignals(False)
             return
         self._live_enabled = checked
+        self._persist_view_config()
         self._update_action_state()
         self._render_current_graph()
         self._update_debug_status()
@@ -1195,6 +1226,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
             kind=event.kind,
             color=color,
             settings=self._pulse_settings,
+        )
+        self.scene.bump_activity(
+            target_id,
+            color=color,
+            strength=float(self._pulse_settings.pulse_alpha),
+            linger_ms=int(self._pulse_settings.arrive_linger_ms),
+            fade_ms=int(self._pulse_settings.fade_ms),
         )
 
     def _load_snapshot_by_path(self, path_value: str) -> Optional[ArchitectureGraph]:
@@ -1536,11 +1574,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         filter_count = len(view_config.build_active_filter_chips(self._view_config))
         bus_state = "Disconnected"
         active_spans = 0
+        active_pulses = 0
         last_event = "n/a"
         if self._runtime_hub:
             bus_state = "Connected" if self._runtime_hub.bus_connected() else "Disconnected"
             active_spans = self._runtime_hub.active_span_count()
             last_event = self._runtime_hub.last_event_ts() or "n/a"
+            active_pulses = self.scene.active_pulse_count() if self.scene else 0
         parts = [
             f"Source: {self._source}",
             f"Lens: {lens_title}",
@@ -1548,9 +1588,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
             f"Diff: {diff_state}",
             f"Bus: {bus_state}",
             f"Spans: {active_spans}",
-            f"Last: {last_event}",
+            f"Last activity: {last_event}",
             f"Filters: {filter_count}",
         ]
+        if self._live_enabled:
+            parts.insert(6, f"Active pulses: {active_pulses}")
         if total_nodes > 0:
             parts.append(f"Showing: {shown_nodes}/{total_nodes}")
         if self._crash_view:
@@ -1613,6 +1655,17 @@ def _apply_toggle_style(buttons: list[QtWidgets.QToolButton], style: str) -> Non
     for button in buttons:
         button.setProperty("codesee_toggle", True)
         button.setStyleSheet(style)
+
+
+def _combo_action(label: str, combo: QtWidgets.QComboBox, *, parent: QtWidgets.QMenu) -> QtWidgets.QWidgetAction:
+    container = QtWidgets.QWidget(parent)
+    layout = QtWidgets.QHBoxLayout(container)
+    layout.setContentsMargins(6, 2, 6, 2)
+    layout.addWidget(QtWidgets.QLabel(label))
+    layout.addWidget(combo, stretch=1)
+    action = QtWidgets.QWidgetAction(parent)
+    action.setDefaultWidget(container)
+    return action
 
 
 def _snapshot_label(entry: dict) -> str:
