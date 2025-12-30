@@ -10,7 +10,7 @@ from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
-from . import crash_io, icon_pack, layout_store, snapshot_index, snapshot_io, view_config
+from . import crash_io, harness, icon_pack, layout_store, snapshot_index, snapshot_io, view_config
 from .badges import Badge, badge_from_key, sort_by_priority
 from .canvas.items import clear_icon_cache
 from .canvas.scene import GraphScene
@@ -311,6 +311,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._load_crash_record()
         self._update_mode_status(0, 0)
         self._update_debug_status()
+        if harness.is_enabled() and self.status_label:
+            self.status_label.setText("Harness enabled (PHYSICSLAB_CODESEE_HARNESS=1).")
 
     def open_root(self) -> None:
         if not self._active_root:
@@ -654,6 +656,20 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.more_menu.addMenu(self.filters_menu).setText("Filters")
         self.more_menu.addMenu(self.live_menu).setText("Live")
         self.more_menu.addMenu(self.presets_menu).setText("Presets")
+        if harness.is_enabled():
+            harness_menu = self.more_menu.addMenu("Harness")
+            self.harness_activity_action = QtGui.QAction("Emit test activity", harness_menu)
+            self.harness_activity_action.triggered.connect(self._emit_harness_activity)
+            harness_menu.addAction(self.harness_activity_action)
+            self.harness_mismatch_action = QtGui.QAction("Emit EVA mismatch", harness_menu)
+            self.harness_mismatch_action.triggered.connect(self._emit_harness_mismatch)
+            harness_menu.addAction(self.harness_mismatch_action)
+            self.harness_crash_action = QtGui.QAction("Write fake crash record", harness_menu)
+            self.harness_crash_action.triggered.connect(self._emit_harness_crash)
+            harness_menu.addAction(self.harness_crash_action)
+            self.harness_toggle_inventory = QtGui.QAction("Toggle fake pack", harness_menu)
+            self.harness_toggle_inventory.triggered.connect(self._toggle_harness_pack)
+            harness_menu.addAction(self.harness_toggle_inventory)
 
     def _sync_view_controls(self) -> None:
         self._sync_lens_combo()
@@ -1537,6 +1553,51 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.set_icon_style(self._resolved_icon_style())
         self._render_current_graph()
         self._update_mode_status(0, 0)
+
+    def _emit_harness_activity(self) -> None:
+        if not harness.is_enabled() or not self._runtime_hub:
+            return
+        graph = self._current_graph
+        if self._diff_mode and self._diff_compare_graph:
+            graph = self._diff_compare_graph
+        node_ids = [node.node_id for node in graph.nodes] if graph else []
+        source_id, target_id, ids = harness.pick_pulse_nodes(node_ids)
+        harness.emit_test_activity(
+            self._runtime_hub,
+            source_id=source_id,
+            target_id=target_id,
+            node_ids=ids,
+        )
+
+    def _emit_harness_mismatch(self) -> None:
+        if not harness.is_enabled() or not self._runtime_hub:
+            return
+        graph = self._current_graph
+        if self._diff_mode and self._diff_compare_graph:
+            graph = self._diff_compare_graph
+        node_ids = [node.node_id for node in graph.nodes] if graph else []
+        target = "system:content_system" if "system:content_system" in node_ids else (node_ids[0] if node_ids else None)
+        if not target:
+            return
+        harness.emit_mismatch(self._runtime_hub, node_id=target)
+        self._render_current_graph()
+
+    def _emit_harness_crash(self) -> None:
+        if not harness.is_enabled():
+            return
+        path = harness.write_fake_crash(self._workspace_id())
+        if path:
+            self._crash_record = crash_io.read_latest_crash(self._workspace_id())
+            self._render_current_graph()
+
+    def _toggle_harness_pack(self) -> None:
+        if not harness.is_enabled():
+            return
+        state = harness.toggle_fake_pack()
+        if self._source == SOURCE_ATLAS:
+            self._build_atlas()
+        else:
+            self.status_label.setText(f"Harness pack {'enabled' if state else 'disabled'} (switch to Atlas).")
 
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
         graph = self._current_graph

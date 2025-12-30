@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ..badges import badges_from_keys
+from .. import harness
 from ..graph_model import ArchitectureGraph, Edge, Node
 from .base import CollectorContext, CollectorResult
 
@@ -34,6 +35,8 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
     subcomponent_subgraphs: Dict[str, ArchitectureGraph] = {}
 
     component_packs_data = _collect_component_packs(inventory, enabled_pack_ids)
+    if harness.is_enabled() and harness.fake_pack_enabled():
+        component_packs_data.append(_harness_pack_stub())
     component_ids_in_packs = set()
     for pack in component_packs_data:
         pack_id = pack["pack_id"]
@@ -200,6 +203,25 @@ def _collect_component_packs(
             inventory_ids = {pack_id for pack_id in inventory_ids if pack_id in enabled_pack_ids}
         return [{"pack_id": pack_id, "name": pack_id, "components": []} for pack_id in inventory_ids]
     return []
+
+
+def _harness_pack_stub() -> Dict:
+    return {
+        "pack_id": "harness_pack",
+        "name": "Harness Pack",
+        "version": "0.0.1",
+        "components": [
+            {
+                "component_id": "harness.block",
+                "display_name": "Harness Block",
+                "kind": "demo",
+                "impl": "harness.impl",
+                "params": {"lab_id": "harness"},
+            }
+        ],
+        "pack_root": None,
+        "manifest": {},
+    }
 
 
 def _safe_graph_id(value: Optional[str]) -> str:
