@@ -548,6 +548,8 @@ def _node_diff_state(node_id: str, diff_result: Optional[DiffResult]) -> Optiona
         return None
     if node_id in diff_result.nodes_added:
         return "added"
+    if node_id in diff_result.nodes_removed:
+        return "removed"
     if node_id in diff_result.nodes_changed:
         return "changed"
     return None

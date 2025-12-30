@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Dict, List, Set, Tuple
 
 from .badges import Badge
@@ -122,4 +123,15 @@ def _node_changed_fields(before: Node, after: Node) -> List[str]:
     after_spans = sorted(_span_signature(span) for span in after.spans)
     if before_spans != after_spans:
         changed.append("spans")
+    if _metadata_signature(before.metadata) != _metadata_signature(after.metadata):
+        changed.append("metadata")
     return changed
+
+
+def _metadata_signature(metadata: dict) -> str:
+    if not isinstance(metadata, dict):
+        return ""
+    try:
+        return json.dumps(metadata, sort_keys=True, default=str)
+    except Exception:
+        return str(metadata)

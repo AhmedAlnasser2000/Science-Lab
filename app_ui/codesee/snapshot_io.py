@@ -63,6 +63,7 @@ def _node_to_dict(node: Node) -> Dict[str, Any]:
         "checks": [_check_to_dict(check) for check in node.checks],
         "spans": [_span_to_dict(span) for span in node.spans],
         "subgraph_id": node.subgraph_id,
+        "metadata": _normalize_metadata(node.metadata),
     }
 
 
@@ -96,6 +97,7 @@ def _graph_from_dict(graph: Dict[str, Any]) -> ArchitectureGraph:
                 subgraph_id=raw.get("subgraph_id"),
                 checks=_checks_from_raw(raw),
                 spans=_spans_from_raw(raw),
+                metadata=_normalize_metadata(raw.get("metadata")),
             )
         )
     edges = []
@@ -176,3 +178,19 @@ def _optional_str(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_metadata(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return _sanitize_json_value(value)
+
+
+def _sanitize_json_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _sanitize_json_value(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_json_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -23,6 +24,7 @@ except Exception:  # pragma: no cover
 def collect_inventory(ctx: CollectorContext) -> CollectorResult:
     result = CollectorResult()
     inventory = _request_inventory(ctx)
+    enabled_pack_ids = _load_enabled_component_packs(ctx)
 
     pack_nodes: List[Node] = []
     block_nodes: List[Node] = []
@@ -31,7 +33,7 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
     block_subgraphs: Dict[str, ArchitectureGraph] = {}
     subcomponent_subgraphs: Dict[str, ArchitectureGraph] = {}
 
-    component_packs_data = _collect_component_packs(inventory)
+    component_packs_data = _collect_component_packs(inventory, enabled_pack_ids)
     component_ids_in_packs = set()
     for pack in component_packs_data:
         pack_id = pack["pack_id"]
@@ -155,7 +157,10 @@ def collect_inventory(ctx: CollectorContext) -> CollectorResult:
     return result
 
 
-def _collect_component_packs(inventory: Optional[Dict]) -> List[Dict]:
+def _collect_component_packs(
+    inventory: Optional[Dict],
+    enabled_pack_ids: Optional[set[str]],
+) -> List[Dict]:
     packs: List[Dict] = []
     inventory_ids = set()
     if isinstance(inventory, dict):
@@ -174,6 +179,8 @@ def _collect_component_packs(inventory: Optional[Dict]) -> List[Dict]:
                     continue
                 if inventory_ids and pack_id not in inventory_ids:
                     continue
+                if enabled_pack_ids is not None and pack_id not in enabled_pack_ids:
+                    continue
                 packs.append(
                     {
                         "pack_id": pack_id,
@@ -189,6 +196,8 @@ def _collect_component_packs(inventory: Optional[Dict]) -> List[Dict]:
     if packs:
         return packs
     if inventory_ids:
+        if enabled_pack_ids is not None:
+            inventory_ids = {pack_id for pack_id in inventory_ids if pack_id in enabled_pack_ids}
         return [{"pack_id": pack_id, "name": pack_id, "components": []} for pack_id in inventory_ids]
     return []
 
@@ -446,3 +455,36 @@ def _request_inventory(ctx: CollectorContext) -> Optional[Dict]:
         return None
     inventory = response.get("inventory")
     return inventory if isinstance(inventory, dict) else None
+
+
+def _load_enabled_component_packs(ctx: CollectorContext) -> Optional[set[str]]:
+    prefs_root = _workspace_prefs_root(ctx)
+    if not prefs_root:
+        return None
+    config_path = prefs_root / "workspace_config.json"
+    if not config_path.exists():
+        return None
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    enabled = config.get("enabled_component_packs")
+    if not isinstance(enabled, list):
+        return None
+    normalized = {str(item).strip() for item in enabled if str(item).strip()}
+    return normalized
+
+
+def _workspace_prefs_root(ctx: CollectorContext) -> Optional[Path]:
+    info = ctx.workspace_info or {}
+    if isinstance(info, dict):
+        paths = info.get("paths")
+        if isinstance(paths, dict):
+            prefs = paths.get("prefs")
+            if prefs:
+                return Path(prefs)
+        direct = info.get("path")
+        if direct:
+            return Path(direct) / "prefs"
+    workspace_id = (info.get("id") if isinstance(info, dict) else None) or ctx.workspace_id or "default"
+    return Path("data") / "workspaces" / str(workspace_id) / "prefs"

@@ -108,6 +108,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diff_result: Optional[DiffResult] = None
         self._diff_baseline_graph: Optional[ArchitectureGraph] = None
         self._diff_compare_graph: Optional[ArchitectureGraph] = None
+        self._diff_filters: Dict[str, bool] = {
+            "only_added": False,
+            "only_removed": False,
+            "only_changed": False,
+        }
         self._live_enabled = bool(self._view_config.live_enabled)
         self._events_by_node: Dict[str, list[CodeSeeEvent]] = {}
         self._overlay_badges: Dict[str, list[Badge]] = {}
@@ -315,6 +320,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diff_result = None
         self._diff_baseline_graph = None
         self._diff_compare_graph = None
+        self._diff_filters = {key: False for key in self._diff_filters}
         self._live_enabled = bool(self._view_config.live_enabled)
         self._events_by_node.clear()
         self._overlay_badges.clear()
@@ -416,6 +422,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if not self._render_graph_id:
             return
         positions = self.scene.node_positions()
+        existing = layout_store.load_positions(self._workspace_id(), self._lens, self._render_graph_id)
+        if existing:
+            existing.update(positions)
+            positions = existing
         layout_store.save_positions(self._workspace_id(), self._lens, self._render_graph_id, positions)
 
     def _render_current_graph(self) -> None:
@@ -428,11 +438,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
             diff_result = self._diff_result
         self._render_graph_id = graph_to_render.graph_id
         positions = layout_store.load_positions(self._workspace_id(), self._lens, self._render_graph_id)
-        total_nodes = len(graph_to_render.nodes)
         overlay_graph = self._apply_runtime_overlay(graph_to_render)
         overlay_graph = self._apply_expectation_badges(overlay_graph)
         overlay_graph = self._apply_span_overlay(overlay_graph)
         overlay_graph = self._apply_crash_badge(overlay_graph)
+        overlay_graph = self._apply_diff_removed_nodes(overlay_graph)
+        total_nodes = len(overlay_graph.nodes)
         filtered = self._filtered_graph(overlay_graph)
         shown_nodes = len(filtered.nodes)
         empty_message = None
@@ -515,6 +526,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.load_btn.setEnabled(True)
         if hasattr(self, "removed_action"):
             self.removed_action.setEnabled(self._diff_mode and self._diff_result is not None)
+        for action in getattr(self, "_diff_filter_actions", {}).values():
+            action.setEnabled(self._diff_mode and self._diff_result is not None)
         self.open_window_btn.setEnabled(bool(self._allow_detach and self._on_open_window))
         diff_visible = bool(self._diff_mode)
         if hasattr(self, "baseline_action"):
@@ -532,6 +545,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.removed_action = QtGui.QAction("Removed Items...", self.view_menu)
         self.removed_action.triggered.connect(self._open_removed_dialog)
         self.view_menu.addAction(self.removed_action)
+        diff_filters_menu = self.view_menu.addMenu("Diff Filters")
+        self._diff_filter_actions: Dict[str, QtGui.QAction] = {}
+        for key, label in _diff_filter_labels().items():
+            action = QtGui.QAction(label, diff_filters_menu)
+            action.setCheckable(True)
+            action.toggled.connect(lambda checked=False, k=key: self._set_diff_filter(k, checked))
+            diff_filters_menu.addAction(action)
+            self._diff_filter_actions[key] = action
         if self._allow_detach and self._on_open_window:
             self.view_menu.addSeparator()
             self.view_menu.addAction(self.open_window_btn)
@@ -644,6 +665,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.blockSignals(True)
             action.setChecked(self._view_config.quick_filters.get(key, False))
             action.blockSignals(False)
+        for key, action in getattr(self, "_diff_filter_actions", {}).items():
+            action.blockSignals(True)
+            action.setChecked(self._diff_filters.get(key, False))
+            action.blockSignals(False)
 
     @staticmethod
     def _make_combo_action(
@@ -714,6 +739,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
         self._update_mode_status(0, 0)
 
+    def _set_diff_filter(self, key: str, checked: bool) -> None:
+        if key not in self._diff_filters:
+            return
+        self._diff_filters[key] = bool(checked)
+        self._render_current_graph()
+        self._update_mode_status(0, 0)
+
     def _persist_view_config(self) -> None:
         self._view_config.live_enabled = bool(self._live_enabled)
         view_config.save_view_config(
@@ -733,6 +765,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.span_stuck_seconds = current_stuck
         self._node_theme = current_theme
         self._pulse_settings = current_pulse
+        self._diff_filters = {key: False for key in self._diff_filters}
         self._sync_view_controls()
         self._persist_view_config()
         self._render_current_graph()
@@ -756,6 +789,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 stuck_threshold=stuck_threshold,
             ):
                 continue
+            if self._diff_mode and self._diff_result:
+                if not _passes_diff_filters(node.node_id, self._diff_result, self._diff_filters):
+                    continue
             node_map[node.node_id] = node
             nodes.append(node)
         edges = []
@@ -938,6 +974,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return True
         if self._lens != DEFAULT_LENS:
             return True
+        if any(self._diff_filters.values()):
+            return True
         if self._diff_mode:
             return True
         return False
@@ -948,15 +986,20 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if not active:
             return
         summary = _quick_filter_summary(self._view_config)
+        diff_summary = _diff_filter_summary(self._diff_filters)
         label = f"Showing {shown} / {total} nodes"
         if summary:
             label = f"{label} | Filters: {summary}"
+        if diff_summary:
+            label = f"{label} | Diff: {diff_summary}"
         self.filter_status_label.setText(label)
         chips = view_config.build_active_filter_chips(self._view_config)
         lens_title = self._lens_map.get(self._lens).title if self._lens in self._lens_map else self._lens
         chips.insert(0, f"Lens: {lens_title}")
         if self._diff_mode:
             chips.append("Diff Mode")
+        if diff_summary:
+            chips.append(f"Diff: {diff_summary}")
         self._set_filter_chips(chips)
 
     def _set_filter_chips(self, chips: list[str]) -> None:
@@ -1079,6 +1122,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._diff_result = None
             self._diff_baseline_graph = None
             self._diff_compare_graph = None
+            self._diff_filters = {key: False for key in self._diff_filters}
+            self._sync_view_controls()
         self._update_action_state()
         self._render_current_graph()
 
@@ -1575,11 +1620,53 @@ class CodeSeeScreen(QtWidgets.QWidget):
             edges=graph.edges,
         )
 
+    def _apply_diff_removed_nodes(self, graph: ArchitectureGraph) -> ArchitectureGraph:
+        if not self._diff_mode or not self._diff_result or not self._diff_baseline_graph:
+            return graph
+        if not self._diff_result.nodes_removed:
+            return graph
+        baseline_map = {node.node_id: node for node in self._diff_baseline_graph.nodes}
+        nodes = list(graph.nodes)
+        existing_ids = {node.node_id for node in nodes}
+        for node_id in sorted(self._diff_result.nodes_removed):
+            if node_id in existing_ids:
+                continue
+            baseline = baseline_map.get(node_id)
+            if not baseline:
+                continue
+            nodes.append(
+                Node(
+                    node_id=baseline.node_id,
+                    title=f"Removed: {baseline.title}",
+                    node_type=baseline.node_type,
+                    subgraph_id=None,
+                    badges=list(baseline.badges),
+                    severity_state=baseline.severity_state,
+                    checks=list(baseline.checks),
+                    spans=list(baseline.spans),
+                    metadata={**(baseline.metadata or {}), "diff_state": "removed"},
+                )
+            )
+        return ArchitectureGraph(
+            graph_id=graph.graph_id,
+            title=graph.title,
+            nodes=nodes,
+            edges=graph.edges,
+        )
+
     def _update_mode_status(self, total_nodes: int, shown_nodes: int) -> None:
         lens_title = self._lens_map.get(self._lens).title if self._lens in self._lens_map else self._lens
         live_state = "On" if self._live_enabled else "Off"
         diff_state = "On" if self._diff_mode else "Off"
         filter_count = len(view_config.build_active_filter_chips(self._view_config))
+        filter_count += sum(1 for value in self._diff_filters.values() if value)
+        diff_counts = None
+        if self._diff_mode and self._diff_result:
+            diff_counts = (
+                f"+{len(self._diff_result.nodes_added)} "
+                f"-{len(self._diff_result.nodes_removed)} "
+                f"Δ{len(self._diff_result.nodes_changed)}"
+            )
         bus_state = "Disconnected"
         active_spans = 0
         active_pulses = 0
@@ -1594,6 +1681,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             f"Lens: {lens_title}",
             f"Live: {live_state}",
             f"Diff: {diff_state}",
+            f"Delta: {diff_counts}" if diff_counts else None,
             f"Bus: {bus_state}",
             f"Spans: {active_spans}",
             f"Last activity: {last_event}",
@@ -1605,7 +1693,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             parts.append(f"Showing: {shown_nodes}/{total_nodes}")
         if self._crash_view:
             parts.append(f"Crash View: {_format_crash_timestamp(self._crash_record)}")
-        self.mode_status_label.setText(" | ".join(parts))
+        self.mode_status_label.setText(" | ".join([part for part in parts if part]))
         self._update_crash_actions()
 
     def _update_crash_actions(self) -> None:
@@ -1763,10 +1851,26 @@ def _quick_filter_labels() -> Dict[str, str]:
     }
 
 
+def _diff_filter_labels() -> Dict[str, str]:
+    return {
+        "only_added": "Only added",
+        "only_removed": "Only removed",
+        "only_changed": "Only changed",
+    }
+
+
 def _quick_filter_summary(config: view_config.ViewConfig) -> str:
     labels = []
     for key, label in _quick_filter_labels().items():
         if config.quick_filters.get(key):
+            labels.append(label.replace("Only ", "").strip())
+    return " + ".join(labels)
+
+
+def _diff_filter_summary(filters: Dict[str, bool]) -> str:
+    labels = []
+    for key, label in _diff_filter_labels().items():
+        if filters.get(key):
             labels.append(label.replace("Only ", "").strip())
     return " + ".join(labels)
 
@@ -1811,6 +1915,22 @@ def _passes_quick_filters(
         if not _node_has_stuck_span(node, now, stuck_threshold):
             return False
     return True
+
+
+def _passes_diff_filters(
+    node_id: str,
+    diff_result: DiffResult,
+    diff_filters: Dict[str, bool],
+) -> bool:
+    if not any(diff_filters.values()):
+        return True
+    if diff_filters.get("only_added") and node_id in diff_result.nodes_added:
+        return True
+    if diff_filters.get("only_removed") and node_id in diff_result.nodes_removed:
+        return True
+    if diff_filters.get("only_changed") and node_id in diff_result.nodes_changed:
+        return True
+    return False
 
 
 def _bus_nodes_present(graph: ArchitectureGraph) -> bool:
