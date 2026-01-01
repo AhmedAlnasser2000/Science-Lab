@@ -9,6 +9,12 @@ from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 from app_ui.ui_helpers import terms
+from app_ui.diagnostics.providers import (
+    DiagnosticsContext,
+    DiagnosticsProvider,
+    list_providers,
+    register_provider,
+)
 
 try:
     from runtime_bus import topics as BUS_TOPICS
@@ -243,6 +249,22 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.status_label = QtWidgets.QLabel()
         page_overview_layout.addWidget(self.status_label)
 
+        providers_panel = QtWidgets.QFrame()
+        providers_panel.setStyleSheet(
+            "QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 6px; }"
+        )
+        providers_layout = QtWidgets.QVBoxLayout(providers_panel)
+        providers_layout.setContentsMargins(8, 4, 8, 6)
+        header_row = QtWidgets.QHBoxLayout()
+        providers_title = QtWidgets.QLabel("Diagnostics Providers")
+        providers_title.setStyleSheet("font-weight: bold;")
+        header_row.addWidget(providers_title)
+        header_row.addStretch()
+        providers_layout.addLayout(header_row)
+        self._providers_list_layout = QtWidgets.QVBoxLayout()
+        providers_layout.addLayout(self._providers_list_layout)
+        page_overview_layout.addWidget(providers_panel)
+
         self.report_view = QtWidgets.QPlainTextEdit()
         self.report_view.setReadOnly(True)
         self.report_view.setPlaceholderText("Storage report will appear here.")
@@ -443,6 +465,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._set_control_enabled(True)
         self._init_bus_subscriptions()
         self._update_comm_controls()
+        self._ensure_default_providers()
+        self._render_providers()
 
     def prepare(self) -> None:
         if self.refresh_capability and self._pending_initial_refresh:
@@ -518,6 +542,86 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self._update_module_button_labels()
             self._set_control_enabled(True)
             return
+
+    def _ensure_default_providers(self) -> None:
+        if getattr(SystemHealthScreen, "_providers_registered", False):
+            return
+        provider = DiagnosticsProvider(
+            id="pillars_status",
+            title="Pillars Status",
+            is_available=lambda ctx: True,
+            create_widget=SystemHealthScreen._build_pillars_status_widget,
+        )
+        register_provider(provider)
+        SystemHealthScreen._providers_registered = True
+
+    def _render_providers(self) -> None:
+        if not hasattr(self, "_providers_list_layout"):
+            return
+        ctx = DiagnosticsContext(workspace_id="default", data_root=str(Path("data")))
+        layout = self._providers_list_layout
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for provider in list_providers(ctx):
+            card = QtWidgets.QFrame()
+            card.setStyleSheet(
+                "QFrame { border: 1px solid #e1e1e1; border-radius: 4px; padding: 6px; }"
+            )
+            card_layout = QtWidgets.QVBoxLayout(card)
+            title_row = QtWidgets.QHBoxLayout()
+            title_lbl = QtWidgets.QLabel(provider.title)
+            title_lbl.setStyleSheet("font-weight: bold;")
+            title_row.addWidget(title_lbl)
+            title_row.addStretch()
+            card_layout.addLayout(title_row)
+            widget = provider.create_widget(ctx) if provider.create_widget else None
+            if widget is not None:
+                card_layout.addWidget(widget)
+            else:
+                card_layout.addWidget(QtWidgets.QLabel("Provider unavailable."))
+            layout.addWidget(card)
+        layout.addStretch()
+
+    @staticmethod
+    def _find_latest_pillars_report() -> Optional[Path]:
+        candidates = []
+        base = Path("data/roaming")
+        candidates.append(base / "pillars_report.json")
+        candidates.append(base / "pillars_report_latest.json")
+        if base.exists():
+            candidates.extend(sorted(base.glob("pillars_report*.json"), key=lambda p: p.stat().st_mtime, reverse=True))
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
+
+    @staticmethod
+    def _build_pillars_status_widget(ctx: DiagnosticsContext) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        info_label = QtWidgets.QLabel()
+        info_label.setWordWrap(True)
+        report_path = SystemHealthScreen._find_latest_pillars_report()
+        if report_path:
+            info_label.setText(f"Latest pillars_report.json: {report_path}")
+            target_folder = report_path.parent
+        else:
+            info_label.setText("No pillars report found yet. Run the pillars harness to generate one.")
+            target_folder = Path(ctx.data_root) if ctx and ctx.data_root else Path("data/roaming")
+        layout.addWidget(info_label)
+        open_btn = QtWidgets.QPushButton("Open report folder")
+        open_btn.setEnabled(target_folder.exists())
+        open_btn.clicked.connect(
+            lambda: QtGui.QDesktopServices.openUrl(
+                QtCore.QUrl.fromLocalFile(str(target_folder.resolve()))
+            )
+        )
+        layout.addWidget(open_btn)
+        layout.addStretch()
+        return widget
         try:
             response = self.bus.request(
                 BUS_INVENTORY_REQUEST,

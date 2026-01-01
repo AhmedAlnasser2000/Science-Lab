@@ -21,3 +21,7 @@ This folder holds checkpoint summaries, plans, prompts, and overview notes for P
 1) Update `docs/app_summary_latest.md`.
 2) Copy the previous `docs/app_summary_latest.md` into `docs/checkpoints/history/` using date + git hash.
 3) Record verification commands and manual checks in the summary appendix.
+
+## Pillars harness (scaffold)
+- Run tests: `pytest -q tests/pillars`
+- Run CLI: `python tools/pillars_harness.py --out <folder>` (writes `pillars_report.json`)
