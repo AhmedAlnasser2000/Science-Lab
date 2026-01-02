@@ -31,3 +31,6 @@ python -m app_ui.main
 ```bash
 python -m pytest -q tests/pillars
 ```
+
+## CI note
+Windows CI runs `python -m pytest -q tests/pillars` and a compile pass on each push/PR.

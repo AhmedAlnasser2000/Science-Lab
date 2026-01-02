@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pillars-windows:
+    name: pillars-windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements-dev.txt
+      - name: Compile
+        run: >
+          python -c "import pathlib,compileall,sys;
+          paths=['app_ui','diagnostics','tools','core_center','runtime_bus','content_system','component_runtime'];
+          roots=[p for p in paths if pathlib.Path(p).exists()];
+          ok=all(compileall.compile_dir(p, quiet=1) for p in roots);
+          sys.exit(0 if ok else 1)"
+      - name: Pillars tests
+        run: python -m pytest -q tests/pillars
