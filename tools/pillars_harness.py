@@ -11,12 +11,12 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from diagnostics.pillars_report import build_report, run_smoke_checks, write_report
+from tools.pillars_report import build_report, run_pillar_checks, write_report
 
 
 def run_harness(output: Path) -> Path:
     start = time.monotonic()
-    results = run_smoke_checks()
+    results = run_pillar_checks()
     report = build_report(results)
     report["duration_ms"] = (time.monotonic() - start) * 1000
     written = write_report(report, output)
