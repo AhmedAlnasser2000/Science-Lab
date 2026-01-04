@@ -11,26 +11,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"    
+          python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: | 
-           requirements-dev.txt
+          cache-dependency-path: requirements-dev.txt
+
       - name: Install dependencies
         run: |
           python -m pip install -U pip
           python -m pip install -r requirements-dev.txt
+
       - name: Compile
         run: >
-          python -c "import pathlib,compileall,sys;
-          paths=['app_ui','diagnostics','tools','core_center','runtime_bus','content_system','component_runtime'];
-          roots=[p for p in paths if pathlib.Path(p).exists()];
-          ok=all(compileall.compile_dir(p, quiet=1) for p in roots);
-          sys.exit(0 if ok else 1)"
+          python -c "import pathlib,compileall,sys; paths=['app_ui','diagnostics','tools','core_center','runtime_bus','content_system','component_runtime']; roots=[p for p in paths if pathlib.Path(p).exists()]; ok=bool(roots) and all(compileall.compile_dir(p, quiet=1) for p in roots); (not roots) and print('No compile roots found'); sys.exit(0 if ok else 1)"
+
       - name: Pillars tests
         run: python -m pytest -q tests/pillars
