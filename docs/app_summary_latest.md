@@ -116,3 +116,5 @@ Manual UI verification checklist:
 - Labs: gravity, projectile, electric_field, lens_ray, vector_add rendering and interactions.
 - System Health: Overview/Runs/Maintenance/Modules/Jobs tabs; run delete/prune.
 - Workspace Management: list/create/switch/delete Projects, template list loads, pack toggles persist.
+
+
