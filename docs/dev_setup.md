@@ -32,5 +32,10 @@ python -m app_ui.main
 python -m pytest -q tests/pillars
 ```
 
+## Venv hygiene
+- Virtualenvs are local-only and should not be committed.
+- To reset: delete `.venv/` and recreate with `python -m venv .venv`.
+- CI uses Python 3.12; using 3.12 locally is recommended for consistency.
+
 ## CI note
 Windows CI runs `python -m pytest -q tests/pillars` and a compile pass on each push/PR.
