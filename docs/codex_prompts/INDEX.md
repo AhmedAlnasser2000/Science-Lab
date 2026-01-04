@@ -1,8 +1,14 @@
 # Codex Prompt Index
 
+Definition of Done:
+- Save prompt docs under `docs/codex_prompts/`.
+- Append an entry to this index in the same PR.
+- Update the commit hash after merge (use `TBD` until then).
+
 | Prompt file | Commit | Notes |
 | --- | --- | --- |
-| 2026-01-02__V5.4__pillars__harness_scaffold.md | (pending) | Pillars verification harness scaffold and diagnostics provider host |
-| 2026-01-03__V5.4c__pillars__checks_v1.md | (pending) | Add first actionable pillar checks (CI baseline + runtime data hygiene) and tighten CI compile step |
-| 2026-01-03__V5.4d__pillars__ui_view_and_run.md | (pending) | Add Pillars UI view + run harness inside System Health |
-| 2026-01-03__V5.4e__pillars__ui_polish_and_hygiene.md | (pending) | Pillars UI polish, filter toggle, and dev hygiene notes |
+| 2026-01-02__V5.4__pillars__harness_scaffold.md | TBD | Pillars verification harness scaffold and diagnostics provider host |
+| 2026-01-03__V5.4c__pillars__checks_v1.md | TBD | Add first actionable pillar checks (CI baseline + runtime data hygiene) and tighten CI compile step |
+| 2026-01-03__V5.4d__pillars__ui_view_and_run.md | TBD | Add Pillars UI view + run harness inside System Health |
+| 2026-01-03__V5.4e__pillars__ui_polish_and_hygiene.md | TBD | Pillars UI polish, filter toggle, and dev hygiene notes |
+| 2026-01-03__V5.4f__dev__codex_prompt_index_append.md | TBD | Codex prompt index workflow guardrails and backfill |
