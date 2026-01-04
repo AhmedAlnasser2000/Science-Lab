@@ -256,19 +256,3 @@ def write_report(report: Dict[str, Any], output_dir: Path) -> Path:
     target = output_dir / "pillars_report.json"
     target.write_text(json.dumps(report, indent=2))
     return target
-
-
-def load_report(path: Path) -> Dict[str, Any]:
-    return json.loads(path.read_text())
-
-
-def find_latest_report(report_dir: Path) -> Path | None:
-    candidates = []
-    latest = Path("data/roaming/pillars_report_latest.json")
-    if latest.exists():
-        candidates.append(latest)
-    if report_dir.exists():
-        candidates.extend(
-            sorted(report_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-        )
-    return candidates[0] if candidates else None
