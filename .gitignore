@@ -6,6 +6,10 @@ kernel/target/
 __pycache__/
 *.py[cod]
 .venv/
+.venv*/
+.venv312/
+.pytest_cache/
+.python/
 
 # IDE
 .vscode/

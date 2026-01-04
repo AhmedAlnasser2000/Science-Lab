@@ -198,6 +198,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._pillars_worker: Optional[TaskWorker] = None
         self._pillars_report_path: Optional[Path] = None
         self._pillars_report: Optional[Dict[str, Any]] = None
+        self._pillars_fail_only = False
         self._connect_ui_signals()
         self._bus_dispatch_bridge = _BusDispatchBridge(self)
 
@@ -305,27 +306,56 @@ class SystemHealthScreen(QtWidgets.QWidget):
         page_pillars_layout.addWidget(pillars_header)
 
         self.pillars_last_updated = QtWidgets.QLabel("Last updated: —")
+        self.pillars_report_path = QtWidgets.QLabel("Last report: —")
+        self.pillars_report_path.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         self.pillars_summary_line = QtWidgets.QLabel("PASS: 0  FAIL: 0  SKIP: 0")
         page_pillars_layout.addWidget(self.pillars_last_updated)
+        page_pillars_layout.addWidget(self.pillars_report_path)
         page_pillars_layout.addWidget(self.pillars_summary_line)
 
         pillars_toolbar = QtWidgets.QHBoxLayout()
+        self.pillars_filter_group = QtWidgets.QButtonGroup(self)
+        self.pillars_filter_all_btn = QtWidgets.QPushButton("All")
+        self.pillars_filter_all_btn.setCheckable(True)
+        self.pillars_filter_fail_btn = QtWidgets.QPushButton("Fail only")
+        self.pillars_filter_fail_btn.setCheckable(True)
+        self.pillars_filter_group.setExclusive(True)
+        self.pillars_filter_group.addButton(self.pillars_filter_all_btn)
+        self.pillars_filter_group.addButton(self.pillars_filter_fail_btn)
+        self.pillars_filter_all_btn.setChecked(True)
+        self.pillars_filter_all_btn.clicked.connect(lambda: self._set_pillars_filter(False))
+        self.pillars_filter_fail_btn.clicked.connect(lambda: self._set_pillars_filter(True))
+        pillars_toolbar.addWidget(self.pillars_filter_all_btn)
+        pillars_toolbar.addWidget(self.pillars_filter_fail_btn)
+        pillars_toolbar.addSpacing(12)
         self.pillars_open_folder_btn = QtWidgets.QPushButton("Open report folder")
         self.pillars_open_folder_btn.clicked.connect(self._open_pillars_folder)
         pillars_toolbar.addWidget(self.pillars_open_folder_btn)
         self.pillars_copy_path_btn = QtWidgets.QPushButton("Copy report path")
         self.pillars_copy_path_btn.clicked.connect(self._copy_pillars_path)
         pillars_toolbar.addWidget(self.pillars_copy_path_btn)
+        self.pillars_copy_summary_btn = QtWidgets.QPushButton("Copy summary")
+        self.pillars_copy_summary_btn.clicked.connect(self._copy_pillars_summary)
+        pillars_toolbar.addWidget(self.pillars_copy_summary_btn)
         self.pillars_run_btn = QtWidgets.QPushButton("Run pillars checks")
         self.pillars_run_btn.clicked.connect(self._run_pillars_checks)
         pillars_toolbar.addWidget(self.pillars_run_btn)
         pillars_toolbar.addStretch()
         page_pillars_layout.addLayout(pillars_toolbar)
 
-        self.pillars_empty_state = QtWidgets.QLabel(
-            "No pillars report found. Run the checks to generate one."
+        self.pillars_empty_state = QtWidgets.QFrame()
+        empty_layout = QtWidgets.QVBoxLayout(self.pillars_empty_state)
+        empty_label = QtWidgets.QLabel(
+            "No pillars report found yet. Run the checks to generate one."
         )
-        self.pillars_empty_state.setStyleSheet("color: #666;")
+        empty_label.setStyleSheet("color: #666;")
+        empty_layout.addWidget(empty_label)
+        self.pillars_empty_run_btn = QtWidgets.QPushButton("Run pillars checks")
+        self.pillars_empty_run_btn.clicked.connect(self._run_pillars_checks)
+        empty_layout.addWidget(self.pillars_empty_run_btn)
+        empty_layout.addStretch()
         page_pillars_layout.addWidget(self.pillars_empty_state)
 
         self.pillars_table = QtWidgets.QTableWidget(0, 4)
@@ -762,6 +792,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 self.pillars_run_btn.setToolTip("Available for Explorer and Educator profiles.")
             else:
                 self.pillars_run_btn.setToolTip("")
+        if hasattr(self, "pillars_empty_run_btn"):
+            self.pillars_empty_run_btn.setEnabled(bool(allow_run))
 
     def _refresh_pillars_view(self) -> None:
         report_dir = Path("data/roaming/pillars_reports")
@@ -778,6 +810,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._render_pillars_summary()
         self._render_pillars_table()
 
+    def _set_pillars_filter(self, fail_only: bool) -> None:
+        self._pillars_fail_only = bool(fail_only)
+        self._render_pillars_table()
+
     def _render_pillars_summary(self) -> None:
         report = self._pillars_report
         if report and self._pillars_report_path:
@@ -787,6 +823,11 @@ class SystemHealthScreen(QtWidgets.QWidget):
             timestamp = "—"
         if hasattr(self, "pillars_last_updated"):
             self.pillars_last_updated.setText(f"Last updated: {timestamp}")
+        if hasattr(self, "pillars_report_path"):
+            if self._pillars_report_path:
+                self.pillars_report_path.setText(f"Last report: {self._pillars_report_path}")
+            else:
+                self.pillars_report_path.setText("Last report: —")
 
         summary = {"PASS": 0, "FAIL": 0, "SKIP": 0}
         if report:
@@ -809,6 +850,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.pillars_open_folder_btn.setEnabled(bool(self._pillars_report_path))
         if hasattr(self, "pillars_copy_path_btn"):
             self.pillars_copy_path_btn.setEnabled(bool(self._pillars_report_path))
+        if hasattr(self, "pillars_copy_summary_btn"):
+            self.pillars_copy_summary_btn.setEnabled(bool(self._pillars_report_path))
 
     def _render_pillars_table(self) -> None:
         report = self._pillars_report
@@ -819,6 +862,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if not report:
             return
         results = report.get("results") or []
+        if self._pillars_fail_only:
+            results = [r for r in results if (r.get("status") or "").upper() == "FAIL"]
         table.setRowCount(len(results))
         for row, entry in enumerate(results):
             pillar_id = entry.get("id") or entry.get("pillar_id") or ""
@@ -831,6 +876,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
             reason_item = QtWidgets.QTableWidgetItem(str(reason))
             if reason:
                 reason_item.setToolTip(str(reason))
+            status_upper = str(status).upper()
+            if status_upper == "PASS":
+                status_item.setBackground(QtGui.QColor("#d7f2d7"))
+            elif status_upper == "FAIL":
+                status_item.setBackground(QtGui.QColor("#f6d4d4"))
+            elif status_upper == "SKIP":
+                status_item.setBackground(QtGui.QColor("#e8e8e8"))
             table.setItem(row, 0, id_item)
             table.setItem(row, 1, title_item)
             table.setItem(row, 2, status_item)
@@ -846,6 +898,18 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if not self._pillars_report_path:
             return
         QtWidgets.QApplication.clipboard().setText(str(self._pillars_report_path))
+
+    def _copy_pillars_summary(self) -> None:
+        report = self._pillars_report
+        if not report:
+            return
+        summary = {"PASS": 0, "FAIL": 0, "SKIP": 0}
+        for entry in report.get("results") or []:
+            status = (entry.get("status") or "").upper()
+            if status in summary:
+                summary[status] += 1
+        text = f"PASS: {summary['PASS']}  FAIL: {summary['FAIL']}  SKIP: {summary['SKIP']}"
+        QtWidgets.QApplication.clipboard().setText(text)
 
     def _run_pillars_checks(self) -> None:
         if self._pillars_thread is not None:
@@ -870,6 +934,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
             }
 
         self.pillars_log.setPlainText("Running pillars checks...\n")
+        if hasattr(self, "pillars_run_btn"):
+            self.pillars_run_btn.setEnabled(False)
+        if hasattr(self, "pillars_empty_run_btn"):
+            self.pillars_empty_run_btn.setEnabled(False)
         worker = TaskWorker(_run)
         thread = QtCore.QThread()
         worker.moveToThread(thread)
@@ -894,12 +962,14 @@ class SystemHealthScreen(QtWidgets.QWidget):
         if not text:
             text = "Pillars run completed."
         self.pillars_log.setPlainText(text)
+        self._update_pillars_controls()
         self._refresh_pillars_view()
 
     def _on_pillars_run_error(self, message: str) -> None:
         self._pillars_thread = None
         self._pillars_worker = None
         self.pillars_log.setPlainText(f"Pillars run failed: {message}")
+        self._update_pillars_controls()
     def _refresh_runs_list(self) -> None:
         if not self.bus:
             self.runs_status.setText("Runtime bus unavailable.")
