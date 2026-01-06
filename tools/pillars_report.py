@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib
 import json
+import logging
 import subprocess
 import time
 from dataclasses import asdict, dataclass, field
@@ -164,6 +166,114 @@ def _check_config_layering() -> PillarEntry:
             "files_read": files_read,
             "env_keys": [],
         },
+    )
+
+
+def _is_under_root(path: Path, root: Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except Exception:
+        return str(path.resolve()).startswith(str(root.resolve()))
+
+
+def _check_crash_capture(
+    *, base_dir: Path | None = None, viewer_symbol: str = "app_ui.screens.system_health.CrashViewerPanel"
+) -> PillarEntry:
+    try:
+        from diagnostics.crash_capture import get_crash_dir
+    except Exception as exc:
+        return PillarEntry(
+            id=5,
+            title=PILLAR_TITLES[4][1],
+            status="FAIL",
+            reason=f"Crash capture module import failed: {exc}",
+        )
+    crash_dir = get_crash_dir(base_dir)
+    root = base_dir or Path("data/roaming")
+    if not _is_under_root(crash_dir, root):
+        return PillarEntry(
+            id=5,
+            title=PILLAR_TITLES[4][1],
+            status="FAIL",
+            reason="Crash dir outside allowed data roots",
+            evidence=[str(crash_dir)],
+        )
+    try:
+        module_name, attr = viewer_symbol.rsplit(".", 1)
+        module = importlib.import_module(module_name)
+        viewer = getattr(module, attr, None)
+    except Exception as exc:
+        return PillarEntry(
+            id=5,
+            title=PILLAR_TITLES[4][1],
+            status="FAIL",
+            reason=f"Crash viewer import failed: {exc}",
+            evidence=[viewer_symbol],
+        )
+    if viewer is None:
+        return PillarEntry(
+            id=5,
+            title=PILLAR_TITLES[4][1],
+            status="FAIL",
+            reason="Crash viewer symbol missing",
+            evidence=[viewer_symbol],
+        )
+    return PillarEntry(
+        id=5,
+        title=PILLAR_TITLES[4][1],
+        status="PASS",
+        reason="Crash capture directory and viewer present",
+        evidence=[str(crash_dir), viewer_symbol],
+    )
+
+
+def _check_logging_baseline(*, base_dir: Path | None = None) -> PillarEntry:
+    try:
+        from diagnostics.logging_setup import configure_logging
+    except Exception as exc:
+        return PillarEntry(
+            id=6,
+            title=PILLAR_TITLES[5][1],
+            status="FAIL",
+            reason=f"Logging setup module import failed: {exc}",
+        )
+    info = configure_logging(base_dir)
+    log_path_value = info.get("log_path") if isinstance(info, dict) else None
+    if not log_path_value:
+        return PillarEntry(
+            id=6,
+            title=PILLAR_TITLES[5][1],
+            status="FAIL",
+            reason="Logging setup did not return log_path",
+        )
+    log_path = Path(log_path_value)
+    root = base_dir or Path("data/roaming")
+    if not _is_under_root(log_path, root):
+        return PillarEntry(
+            id=6,
+            title=PILLAR_TITLES[5][1],
+            status="FAIL",
+            reason="Log path outside allowed data roots",
+            evidence=[str(log_path)],
+        )
+    logger_name = info.get("logger_name", "physicslab")
+    logger = logging.getLogger(logger_name)
+    logger.info("pillars logging baseline check")
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        return PillarEntry(
+            id=6,
+            title=PILLAR_TITLES[5][1],
+            status="FAIL",
+            reason="Log file not written",
+            evidence=[str(log_path)],
+        )
+    return PillarEntry(
+        id=6,
+        title=PILLAR_TITLES[5][1],
+        status="PASS",
+        reason="Logging baseline configured and writable",
+        evidence=[str(log_path), info.get("format", "kv")],
+        details={"handlers": info.get("handlers", "")},
     )
 
 
@@ -347,18 +457,8 @@ def run_pillar_checks() -> List[PillarEntry]:
         status="SKIP",
         reason="Release pipeline checks not implemented yet",
     )
-    results[5] = PillarEntry(
-        id=5,
-        title=PILLAR_TITLES[4][1],
-        status="SKIP",
-        reason="Crash checks not implemented yet",
-    )
-    results[6] = PillarEntry(
-        id=6,
-        title=PILLAR_TITLES[5][1],
-        status="SKIP",
-        reason="Logging checks not implemented yet",
-    )
+    results[5] = _check_crash_capture()
+    results[6] = _check_logging_baseline()
     results[7] = PillarEntry(
         id=7,
         title=PILLAR_TITLES[6][1],

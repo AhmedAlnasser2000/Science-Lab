@@ -15,4 +15,5 @@ Definition of Done:
 | 2026-01-05__V5.4g__pillars__checks_v2_p1_p9_p2.md | TBD | Add real pillars checks for P1/P9 (+ optional P2) with unit tests |
 | 2026-01-05__V5.4g1__pillars__ui_run_freeze_quit_fix.md | TBD | Fix Pillars UI run action freeze/quit; harden harness invocation and error handling |
 | 2026-01-05__V5.4g2b__system_health__qthread_lifecycle_fix.md | TBD | Fix Qt abort by holding System Health Pillars QThread refs until thread.finished; safe teardown |
+| 2026-01-06__V5.4h__pillars__p5_crash_capture_p6_logging_baseline.md | TBD | Make P5/P6 real: crash capture dir + safe viewer entry point; structured logging baseline; pillars checks + tests |
 | 2026-01-06 — PR #18 merged: V5.4g (P1/P2/P9 checks) + V5.4g2b (QThread abort fix) |

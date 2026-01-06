@@ -112,3 +112,38 @@ def test_pillars_thread_ref_cleared_on_thread_finished_only() -> None:
     error_src = inspect.getsource(SystemHealthScreen._on_pillars_run_error)
     assert "self._pillars_thread = None" not in finished_src
     assert "self._pillars_thread = None" not in error_src
+
+
+def test_pillar_5_crash_capture_pass(tmp_path: Path) -> None:
+    result = pillars_report._check_crash_capture(
+        base_dir=tmp_path, viewer_symbol="app_ui.screens.system_health.CrashViewerPanel"
+    )
+    assert result.status == "PASS"
+
+
+def test_pillar_5_crash_capture_fail(tmp_path: Path) -> None:
+    result = pillars_report._check_crash_capture(
+        base_dir=tmp_path, viewer_symbol="missing.module.Symbol"
+    )
+    assert result.status == "FAIL"
+
+
+def test_pillar_6_logging_pass(tmp_path: Path) -> None:
+    result = pillars_report._check_logging_baseline(base_dir=tmp_path)
+    assert result.status == "PASS"
+
+
+def test_pillar_6_logging_fail(tmp_path: Path, monkeypatch) -> None:
+    from diagnostics import logging_setup
+
+    def fake_configure_logging(base_dir=None):
+        return {
+            "log_path": str(tmp_path.parent / "outside.log"),
+            "format": "kv",
+            "handlers": "file",
+            "logger_name": "physicslab",
+        }
+
+    monkeypatch.setattr(logging_setup, "configure_logging", fake_configure_logging)
+    result = pillars_report._check_logging_baseline(base_dir=tmp_path)
+    assert result.status == "FAIL"

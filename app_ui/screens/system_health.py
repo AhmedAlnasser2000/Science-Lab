@@ -14,6 +14,7 @@ from app_ui.widgets.workspace_selector import WorkspaceSelector
 from app_ui.ui_helpers import terms
 from tools.pillars_report import find_latest_report, load_report
 from tools.pillars_harness import run_pillars
+from diagnostics.crash_capture import get_crash_dir
 from app_ui.diagnostics.providers import (
     DiagnosticsContext,
     DiagnosticsProvider,
@@ -155,6 +156,71 @@ class TaskWorker(QtCore.QObject):
         except Exception as exc:  # pragma: no cover - defensive
             self.error.emit(str(exc))
 
+
+class CrashViewerPanel(QtWidgets.QWidget):
+    def __init__(self, *, base_dir: Optional[Path] = None):
+        super().__init__()
+        self._base_dir = base_dir
+        self._crash_dir = get_crash_dir(base_dir)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        self.path_label = QtWidgets.QLabel(f"Crash dir: {self._crash_dir}")
+        self.path_label.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        layout.addWidget(self.path_label)
+
+        toolbar = QtWidgets.QHBoxLayout()
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh)
+        toolbar.addWidget(refresh_btn)
+        open_folder_btn = QtWidgets.QPushButton("Open folder")
+        open_folder_btn.clicked.connect(self._open_folder)
+        toolbar.addWidget(open_folder_btn)
+        open_file_btn = QtWidgets.QPushButton("Open selected")
+        open_file_btn.clicked.connect(self._open_selected)
+        toolbar.addWidget(open_file_btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        self.empty_label = QtWidgets.QLabel("No crash files found.")
+        self.empty_label.setStyleSheet("color: #666;")
+        layout.addWidget(self.empty_label)
+
+        self.list_widget = QtWidgets.QListWidget()
+        layout.addWidget(self.list_widget, stretch=1)
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.list_widget.clear()
+        if not self._crash_dir.exists():
+            self.empty_label.setVisible(True)
+            return
+        files = sorted(
+            self._crash_dir.glob("*"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for path in files[:50]:
+            item = QtWidgets.QListWidgetItem(path.name)
+            item.setToolTip(str(path))
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, path)
+            self.list_widget.addItem(item)
+        self.empty_label.setVisible(len(files) == 0)
+
+    def _open_folder(self) -> None:
+        url = QtCore.QUrl.fromLocalFile(str(self._crash_dir.resolve()))
+        QtGui.QDesktopServices.openUrl(url)
+
+    def _open_selected(self) -> None:
+        item = self.list_widget.currentItem()
+        if not item:
+            return
+        path = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if isinstance(path, Path):
+            url = QtCore.QUrl.fromLocalFile(str(path.resolve()))
+            QtGui.QDesktopServices.openUrl(url)
+
 class SystemHealthScreen(QtWidgets.QWidget):
     # --- [NAV-32A] ctor / dependencies
     cleanup_event = QtCore.pyqtSignal(dict)
@@ -231,6 +297,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._segment_modules_btn = _make_segment(f"{terms.TOPIC}s", 4)
         self._segment_content_btn = _make_segment("Content", 5)
         self._segment_jobs_btn = _make_segment("Jobs", 6)
+        self._segment_crashes_btn = _make_segment("Crashes", 7)
         for btn in self._segment_buttons:
             segment_row.addWidget(btn)
         segment_row.addStretch()
@@ -562,6 +629,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
         page_jobs_layout.addWidget(self.comm_panel)
         page_jobs_layout.addStretch()
         self._stack.addWidget(page_jobs)
+
+        page_crashes = QtWidgets.QWidget()
+        page_crashes_layout = QtWidgets.QVBoxLayout(page_crashes)
+        page_crashes_layout.setContentsMargins(0, 0, 0, 0)
+        crash_panel = CrashViewerPanel()
+        page_crashes_layout.addWidget(crash_panel, stretch=1)
+        self._stack.addWidget(page_crashes)
 
         self._set_segment(0)
 
