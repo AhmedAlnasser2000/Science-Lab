@@ -147,3 +147,29 @@ def test_pillar_6_logging_fail(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(logging_setup, "configure_logging", fake_configure_logging)
     result = pillars_report._check_logging_baseline(base_dir=tmp_path)
     assert result.status == "FAIL"
+
+
+def test_pillar_7_telemetry_pass() -> None:
+    result = pillars_report._check_telemetry_opt_in()
+    assert result.status == "PASS"
+
+
+def test_pillar_7_telemetry_fail(tmp_path: Path, monkeypatch) -> None:
+    from diagnostics import telemetry
+
+    monkeypatch.setattr(telemetry, "is_telemetry_enabled", lambda base_dir=None: True)
+    result = pillars_report._check_telemetry_opt_in()
+    assert result.status == "FAIL"
+
+
+def test_pillar_8_tracing_pass() -> None:
+    result = pillars_report._check_tracing_contract()
+    assert result.status == "PASS"
+
+
+def test_pillar_8_tracing_fail(monkeypatch) -> None:
+    from diagnostics import tracing
+
+    monkeypatch.setattr(tracing, "get_recent_spans", lambda: [])
+    result = pillars_report._check_tracing_contract()
+    assert result.status == "FAIL"

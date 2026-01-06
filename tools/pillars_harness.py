@@ -12,11 +12,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.pillars_report import build_report, run_pillar_checks, write_report
+from diagnostics import tracing
 
 
 def run_pillars(output: Path) -> Path:
     start = time.monotonic()
-    results = run_pillar_checks()
+    with tracing.span("pillars.run"):
+        results = run_pillar_checks()
     report = build_report(results)
     report["duration_ms"] = (time.monotonic() - start) * 1000
     written = write_report(report, output)

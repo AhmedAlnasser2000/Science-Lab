@@ -277,6 +277,97 @@ def _check_logging_baseline(*, base_dir: Path | None = None) -> PillarEntry:
     )
 
 
+def _check_telemetry_opt_in() -> PillarEntry:
+    try:
+        from diagnostics import telemetry
+    except Exception as exc:
+        return PillarEntry(
+            id=7,
+            title=PILLAR_TITLES[6][1],
+            status="FAIL",
+            reason=f"Telemetry module import failed: {exc}",
+        )
+    base_dir = Path("data/roaming/telemetry_probe")
+    base_dir.mkdir(parents=True, exist_ok=True)
+    policy_path = base_dir / "policy.json"
+    policy_path.write_text(json.dumps({"telemetry_enabled": False}, indent=2))
+    telemetry.clear_metrics()
+    if telemetry.is_telemetry_enabled(base_dir):
+        return PillarEntry(
+            id=7,
+            title=PILLAR_TITLES[6][1],
+            status="FAIL",
+            reason="Telemetry enabled by default",
+            evidence=[str(policy_path)],
+        )
+    telemetry.emit_metric("pillars.disabled", base_dir=base_dir)
+    if telemetry.get_recent_metrics():
+        return PillarEntry(
+            id=7,
+            title=PILLAR_TITLES[6][1],
+            status="FAIL",
+            reason="Metrics recorded while telemetry disabled",
+            evidence=[str(policy_path)],
+        )
+    policy_path.write_text(json.dumps({"telemetry_enabled": True}, indent=2))
+    if not telemetry.is_telemetry_enabled(base_dir):
+        return PillarEntry(
+            id=7,
+            title=PILLAR_TITLES[6][1],
+            status="FAIL",
+            reason="Telemetry did not enable with opt-in",
+            evidence=[str(policy_path)],
+        )
+    telemetry.clear_metrics()
+    telemetry.emit_metric("pillars.enabled", base_dir=base_dir)
+    if not telemetry.get_recent_metrics():
+        return PillarEntry(
+            id=7,
+            title=PILLAR_TITLES[6][1],
+            status="FAIL",
+            reason="Metrics not recorded when telemetry enabled",
+            evidence=[str(policy_path)],
+        )
+    return PillarEntry(
+        id=7,
+        title=PILLAR_TITLES[6][1],
+        status="PASS",
+        reason="Telemetry is opt-in and gated",
+        evidence=[str(policy_path), "pillars.enabled"],
+    )
+
+
+def _check_tracing_contract() -> PillarEntry:
+    try:
+        from diagnostics import tracing
+    except Exception as exc:
+        return PillarEntry(
+            id=8,
+            title=PILLAR_TITLES[7][1],
+            status="FAIL",
+            reason=f"Tracing module import failed: {exc}",
+        )
+    tracing.clear_spans()
+    with tracing.span("pillars.contract"):
+        pass
+    spans = tracing.get_recent_spans()
+    names = [s.get("name") for s in spans if isinstance(s, dict)]
+    if not names or "pillars.contract" not in names:
+        return PillarEntry(
+            id=8,
+            title=PILLAR_TITLES[7][1],
+            status="FAIL",
+            reason="No spans recorded by tracing contract",
+        )
+    return PillarEntry(
+        id=8,
+        title=PILLAR_TITLES[7][1],
+        status="PASS",
+        reason="Tracing contract recorded spans",
+        evidence=names[:5],
+    )
+
+
 def _check_schema_manifest(base_dir: Path | None = None) -> PillarEntry:
     root = base_dir or Path(".")
     manifest_path = root / "schemas" / "schema_manifest.json"
@@ -459,18 +550,8 @@ def run_pillar_checks() -> List[PillarEntry]:
     )
     results[5] = _check_crash_capture()
     results[6] = _check_logging_baseline()
-    results[7] = PillarEntry(
-        id=7,
-        title=PILLAR_TITLES[6][1],
-        status="SKIP",
-        reason="Telemetry checks not implemented yet",
-    )
-    results[8] = PillarEntry(
-        id=8,
-        title=PILLAR_TITLES[7][1],
-        status="SKIP",
-        reason="Activity tracing checks not implemented yet",
-    )
+    results[7] = _check_telemetry_opt_in()
+    results[8] = _check_tracing_contract()
     results[9] = _check_config_layering()
     results[10] = _check_runtime_data_hygiene()
     results[11] = PillarEntry(
