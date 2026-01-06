@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://physicslab.dev/schemas/section_manifest.schema.json",
+  "title": "Section Manifest",
+  "description": "Groups packages under a module section.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "$ref": "common.schema.json#/$defs/schema_ref"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "content_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "module_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "section_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "title": {
+      "$ref": "common.schema.json#/$defs/title"
+    },
+    "description": {
+      "$ref": "common.schema.json#/$defs/summary"
+    },
+    "packages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "$ref": "common.schema.json#/$defs/identifier"
+          },
+          "title": {
+            "$ref": "common.schema.json#/$defs/title"
+          },
+          "manifest_path": {
+            "type": "string",
+            "description": "Relative path to the package manifest from this section manifest.",
+            "pattern": "^[^\\s]+$"
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "package_id",
+          "title",
+          "manifest_path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "x_extensions": {
+      "$ref": "common.schema.json#/$defs/x_extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "content_version",
+    "module_id",
+    "section_id",
+    "title",
+    "packages"
+  ],
+  "additionalProperties": false
+}

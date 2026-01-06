@@ -119,6 +119,56 @@ def _check_ci_baseline() -> PillarEntry:
     )
 
 
+def _check_release_pipeline(base_dir: Path | None = None) -> PillarEntry:
+    root = base_dir or Path(".")
+    required_paths = {
+        ".github/workflows/release-windows.yml": "release workflow",
+        "tools/release/build_windows.py": "build script",
+        "requirements-packaging.txt": "packaging requirements",
+        "build/pyinstaller/physicslab.spec": "pyinstaller spec",
+    }
+    missing = []
+    for rel, label in required_paths.items():
+        if not (root / rel).exists():
+            missing.append(label)
+    if missing:
+        return PillarEntry(
+            id=4,
+            title=PILLAR_TITLES[3][1],
+            status="FAIL",
+            reason="Release pipeline files missing",
+            evidence=missing,
+        )
+    workflow = (root / ".github/workflows/release-windows.yml").read_text(
+        encoding="utf-8", errors="ignore"
+    )
+    required_markers = {
+        "workflow_dispatch": "workflow_dispatch trigger",
+        "windows-latest": "windows runner",
+        "tools/release/build_windows.py": "build script call",
+        "upload-artifact": "artifact upload",
+    }
+    missing_markers = []
+    for token, label in required_markers.items():
+        if token not in workflow:
+            missing_markers.append(label)
+    if missing_markers:
+        return PillarEntry(
+            id=4,
+            title=PILLAR_TITLES[3][1],
+            status="FAIL",
+            reason="Release workflow missing required markers",
+            evidence=missing_markers,
+        )
+    return PillarEntry(
+        id=4,
+        title=PILLAR_TITLES[3][1],
+        status="PASS",
+        reason="Release pipeline assets present",
+        evidence=list(required_paths.keys()),
+    )
+
+
 def _check_config_layering() -> PillarEntry:
     try:
         import app_ui.config as config  # local import to keep scope small
@@ -737,12 +787,7 @@ def run_pillar_checks() -> List[PillarEntry]:
     results[1] = _check_build_identity()
     results[2] = _check_schema_manifest()
     results[3] = _check_ci_baseline()
-    results[4] = PillarEntry(
-        id=4,
-        title=PILLAR_TITLES[3][1],
-        status="SKIP",
-        reason="Release pipeline checks not implemented yet",
-    )
+    results[4] = _check_release_pipeline()
     results[5] = _check_crash_capture()
     results[6] = _check_logging_baseline()
     results[7] = _check_telemetry_opt_in()

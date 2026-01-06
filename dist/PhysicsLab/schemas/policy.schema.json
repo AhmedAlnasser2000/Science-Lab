@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://physicslab.dev/schemas/policy.schema.json",
+  "title": "PhysicsLab Policy Overrides",
+  "description": "Best-effort validation for optional policy overrides saved in data/roaming/policy.json.",
+  "type": "object",
+  "properties": {
+    "max_concurrent_sims": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of simulations allowed to run simultaneously."
+    },
+    "low_end_mode": {
+      "type": "boolean",
+      "description": "Hint to prefer low-end device settings."
+    },
+    "fps_cap": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional frame-rate cap for labs."
+    },
+    "runs_keep_last_n": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Retention window for lab run directories."
+    },
+    "exports_enabled": {
+      "type": "boolean",
+      "description": "Allows future export features when true."
+    },
+    "reduced_motion_enforced": {
+      "type": "boolean",
+      "description": "Forces reduced-motion mode even if the user preference is disabled."
+    }
+  },
+  "additionalProperties": true
+}

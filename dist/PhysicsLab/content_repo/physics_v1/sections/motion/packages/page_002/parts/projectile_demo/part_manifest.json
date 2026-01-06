@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../../../../../schemas/part_manifest.schema.json",
+  "schema_version": "1.0.0",
+  "content_version": "1.0.0",
+  "module_id": "physics",
+  "section_id": "motion",
+  "package_id": "page_002",
+  "part_id": "projectile_demo",
+  "component_id": "labhost:projectile",
+  "title": "Projectile Motion Lab",
+  "part_type": "simulation",
+  "content": {
+    "asset_path": "assets/projectile_demo.md",
+    "format": "markdown"
+  },
+  "behavior": {
+    "preset": "projectile-demo",
+    "parameters": {
+      "initial_speed_m_s": 15,
+      "launch_angle_deg": 45,
+      "gravity_m_s2": 9.81
+    }
+  },
+  "x_extensions": {
+    "guides": {
+      "learner": "assets/projectile_guide_learner.md",
+      "educator": "assets/projectile_guide_educator.md",
+      "explorer": "assets/projectile_guide_explorer.md"
+    },
+    "lab": {
+      "lab_id": "projectile"
+    }
+  }
+}

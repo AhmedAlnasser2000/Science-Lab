@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://physicslab.dev/schemas/mode_profile.schema.json",
+  "title": "PhysicsLab Mode Profile",
+  "description": "Describes the Primary Mode capabilities, limits, and security model.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "content_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "mode_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Features exposed by the Primary Mode.",
+      "properties": {
+        "supported_content_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "text",
+              "markdown",
+              "simulation",
+              "diagram"
+            ]
+          }
+        },
+        "supports_offline": {
+          "type": "boolean",
+          "default": true
+        },
+        "supports_touch": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "required": [
+        "supported_content_types"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "description": "Guardrails for package sizes and composition.",
+      "properties": {
+        "max_sections": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_packages_per_section": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_parts_per_package": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_asset_kb": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Upper size bound for individual assets in kilobytes."
+        }
+      },
+      "required": [
+        "max_sections",
+        "max_packages_per_section",
+        "max_parts_per_package",
+        "max_asset_kb"
+      ],
+      "additionalProperties": false
+    },
+    "security": {
+      "type": "object",
+      "description": "Runtime permissions for the Primary Mode.",
+      "properties": {
+        "sandboxed": {
+          "type": "boolean"
+        },
+        "network_access": {
+          "type": "string",
+          "enum": [
+            "blocked",
+            "diagnostics-only"
+          ]
+        },
+        "file_system_access": {
+          "type": "string",
+          "enum": [
+            "read-only",
+            "none"
+          ]
+        }
+      },
+      "required": [
+        "sandboxed",
+        "network_access",
+        "file_system_access"
+      ],
+      "additionalProperties": false
+    },
+    "x_extensions": {
+      "$ref": "common.schema.json#/$defs/x_extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "content_version",
+    "mode_id",
+    "display_name",
+    "capabilities",
+    "limits",
+    "security"
+  ],
+  "additionalProperties": false
+}
