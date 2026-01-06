@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "required": ["pack_id", "pack_type", "version"],
+  "properties": {
+    "pack_id": { "type": "string" },
+    "pack_type": { "type": "string" },
+    "version": { "type": "string" },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "min_version": { "type": "string" },
+              "version_range": { "type": "string" }
+            }
+          }
+        ]
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

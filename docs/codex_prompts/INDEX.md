@@ -17,5 +17,10 @@ Definition of Done:
 | 2026-01-05__V5.4g2b__system_health__qthread_lifecycle_fix.md | TBD | Fix Qt abort by holding System Health Pillars QThread refs until thread.finished; safe teardown |
 | 2026-01-06__V5.4h__pillars__p5_crash_capture_p6_logging_baseline.md | TBD | Make P5/P6 real: crash capture dir + safe viewer entry point; structured logging baseline; pillars checks + tests |
 | 2026-01-06__V5.4i__pillars__p8_tracing_contract_p7_telemetry_opt_in.md | TBD | Make P8/P7 real: tracing span contract + deterministic span emission; telemetry strictly opt-in; pillars checks + tests |
+<<<<<<< HEAD
+| 2026-01-06__V5.4j__pillars__p11_pack_metadata_p12_security_boundaries.md | TBD | Make P11/P12 real: pack manifests + dependency validation; strict path containment + capabilities concept; pillars checks + tests |
+| 2026-01-06__V5.4j1__pillars__add_pack_manifests_to_stores.md | TBD | Add missing pack manifests in store roots so P11 passes |
+=======
+>>>>>>> origin/main
 | 2026-01-06__V5.4i1__system_health__pillars_worker_deleted_guard.md | TBD | Fix System Health Pillars cleanup: avoid calling deleteLater on already-deleted TaskWorker |
 | 2026-01-06 — PR #18 merged: V5.4g (P1/P2/P9 checks) + V5.4g2b (QThread abort fix) |

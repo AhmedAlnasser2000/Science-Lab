@@ -368,6 +368,201 @@ def _check_tracing_contract() -> PillarEntry:
     )
 
 
+def _load_pack_manifest(path: Path) -> Dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _validate_pack_manifest(manifest: Dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    pack_id = manifest.get("pack_id")
+    pack_type = manifest.get("pack_type")
+    version = manifest.get("version")
+    if not isinstance(pack_id, str) or not pack_id.strip():
+        errors.append("pack_id")
+    if not isinstance(pack_type, str) or not pack_type.strip():
+        errors.append("pack_type")
+    if not isinstance(version, str) or not version.strip():
+        errors.append("version")
+    deps = manifest.get("dependencies") or manifest.get("requires") or []
+    if deps and not isinstance(deps, list):
+        errors.append("dependencies")
+    capabilities = manifest.get("capabilities") or []
+    if capabilities and not isinstance(capabilities, list):
+        errors.append("capabilities")
+    return errors
+
+
+def _collect_pack_manifests(roots: List[Path]) -> List[Path]:
+    manifests: List[Path] = []
+    for root in roots:
+        if root.exists():
+            manifests.extend(root.rglob("pack_manifest.json"))
+    return manifests
+
+
+def _detect_dependency_cycle(graph: Dict[str, List[str]]) -> List[str]:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node: str, stack: List[str]) -> List[str]:
+        if node in visiting:
+            return stack + [node]
+        if node in visited:
+            return []
+        visiting.add(node)
+        for dep in graph.get(node, []):
+            cycle = visit(dep, stack + [node])
+            if cycle:
+                return cycle
+        visiting.remove(node)
+        visited.add(node)
+        return []
+
+    for node in graph:
+        cycle = visit(node, [])
+        if cycle:
+            return cycle
+    return []
+
+
+def _check_pack_metadata(roots: List[Path] | None = None) -> PillarEntry:
+    from diagnostics.security_guard import validate_capabilities
+
+    if roots is None:
+        roots = [Path("component_store"), Path("content_store"), Path("ui_store")]
+    existing_roots = [root for root in roots if root.exists()]
+    if not existing_roots:
+        return PillarEntry(
+            id=11,
+            title=PILLAR_TITLES[10][1],
+            status="PASS",
+            reason="No pack stores found",
+        )
+    manifests = _collect_pack_manifests(existing_roots)
+    if not manifests:
+        has_entries = any(any(root.iterdir()) for root in existing_roots)
+        if has_entries:
+            return PillarEntry(
+                id=11,
+                title=PILLAR_TITLES[10][1],
+                status="FAIL",
+                reason="Pack store contains entries but no pack_manifest.json found",
+                evidence=[str(root) for root in existing_roots],
+            )
+        return PillarEntry(
+            id=11,
+            title=PILLAR_TITLES[10][1],
+            status="PASS",
+            reason="Pack stores are empty",
+        )
+    errors: List[str] = []
+    manifests_by_id: Dict[str, Dict[str, Any]] = {}
+    dependencies: Dict[str, List[str]] = {}
+    for path in manifests:
+        try:
+            data = _load_pack_manifest(path)
+        except Exception as exc:
+            errors.append(f"{path}: invalid json ({exc})")
+            continue
+        issues = _validate_pack_manifest(data)
+        if issues:
+            errors.append(f"{path}: missing {','.join(issues)}")
+            continue
+        pack_id = data["pack_id"]
+        manifests_by_id[pack_id] = data
+        deps = data.get("dependencies") or data.get("requires") or []
+        dep_ids = []
+        for dep in deps:
+            if isinstance(dep, dict) and isinstance(dep.get("id"), str):
+                dep_ids.append(dep["id"])
+            elif isinstance(dep, str):
+                dep_ids.append(dep)
+        dependencies[pack_id] = dep_ids
+        caps = data.get("capabilities") or []
+        if isinstance(caps, list):
+            unknown = validate_capabilities(caps)
+            if unknown:
+                errors.append(f"{pack_id}: unknown capabilities {unknown}")
+        if pack_id in dep_ids:
+            errors.append(f"{pack_id}: self-dependency")
+    missing_deps = []
+    for pack_id, deps in dependencies.items():
+        for dep in deps:
+            if dep not in manifests_by_id:
+                missing_deps.append(f"{pack_id} -> {dep}")
+    if missing_deps:
+        errors.append(f"missing deps: {missing_deps[:5]}")
+    cycle = _detect_dependency_cycle(dependencies)
+    if cycle:
+        errors.append(f"dependency cycle: {' -> '.join(cycle)}")
+    if errors:
+        return PillarEntry(
+            id=11,
+            title=PILLAR_TITLES[10][1],
+            status="FAIL",
+            reason="Pack manifest validation failed",
+            evidence=errors[:8],
+        )
+    return PillarEntry(
+        id=11,
+        title=PILLAR_TITLES[10][1],
+        status="PASS",
+        reason="All pack manifests valid",
+        evidence=list(manifests_by_id.keys())[:8],
+    )
+
+
+def _check_security_boundaries() -> PillarEntry:
+    from diagnostics.security_guard import KNOWN_CAPABILITIES, resolve_under_root, validate_capabilities
+
+    root = Path("data/roaming/security_probe")
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        ok_path = resolve_under_root(root, "safe/asset.json")
+    except Exception as exc:
+        return PillarEntry(
+            id=12,
+            title=PILLAR_TITLES[11][1],
+            status="FAIL",
+            reason=f"Path guard rejected safe path: {exc}",
+        )
+    rejected = []
+    for vector in ["../secret", "..\\secret", "C:\\Windows\\system32", "\\\\server\\share\\x"]:
+        try:
+            resolve_under_root(root, vector)
+        except Exception:
+            rejected.append(vector)
+    if len(rejected) < 4:
+        return PillarEntry(
+            id=12,
+            title=PILLAR_TITLES[11][1],
+            status="FAIL",
+            reason="Path guard did not reject all traversal vectors",
+            evidence=[v for v in ["../secret", "..\\secret", "C:\\Windows\\system32", "\\\\server\\share\\x"] if v not in rejected],
+        )
+    if not KNOWN_CAPABILITIES:
+        return PillarEntry(
+            id=12,
+            title=PILLAR_TITLES[11][1],
+            status="FAIL",
+            reason="Capability allowlist missing",
+        )
+    if not validate_capabilities(["unknown.capability"]):
+        return PillarEntry(
+            id=12,
+            title=PILLAR_TITLES[11][1],
+            status="FAIL",
+            reason="Unknown capabilities not rejected",
+        )
+    return PillarEntry(
+        id=12,
+        title=PILLAR_TITLES[11][1],
+        status="PASS",
+        reason="Security guard and capability allowlist present",
+        evidence=[str(ok_path), f"capabilities={len(KNOWN_CAPABILITIES)}"],
+    )
+
+
 def _check_schema_manifest(base_dir: Path | None = None) -> PillarEntry:
     root = base_dir or Path(".")
     manifest_path = root / "schemas" / "schema_manifest.json"
@@ -554,18 +749,8 @@ def run_pillar_checks() -> List[PillarEntry]:
     results[8] = _check_tracing_contract()
     results[9] = _check_config_layering()
     results[10] = _check_runtime_data_hygiene()
-    results[11] = PillarEntry(
-        id=11,
-        title=PILLAR_TITLES[10][1],
-        status="SKIP",
-        reason="Dependency metadata checks not implemented yet",
-    )
-    results[12] = PillarEntry(
-        id=12,
-        title=PILLAR_TITLES[11][1],
-        status="SKIP",
-        reason="Security boundary checks not implemented yet",
-    )
+    results[11] = _check_pack_metadata()
+    results[12] = _check_security_boundaries()
 
     return [results[i] for i, _ in PILLAR_TITLES]
 
