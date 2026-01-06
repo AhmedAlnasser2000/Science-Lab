@@ -1,0 +1,55 @@
+{
+  "manifest_version": 1,
+  "schemas": [
+    {
+      "path": "common.schema.json",
+      "schema_id": "common",
+      "schema_version": 1
+    },
+    {
+      "path": "component_pack_manifest.schema.json",
+      "schema_id": "component_pack_manifest",
+      "schema_version": 1
+    },
+    {
+      "path": "diagnostic_event.schema.json",
+      "schema_id": "diagnostic_event",
+      "schema_version": 1
+    },
+    {
+      "path": "mode_profile.schema.json",
+      "schema_id": "mode_profile",
+      "schema_version": 1
+    },
+    {
+      "path": "module_manifest.schema.json",
+      "schema_id": "module_manifest",
+      "schema_version": 1
+    },
+    {
+      "path": "package_manifest.schema.json",
+      "schema_id": "package_manifest",
+      "schema_version": 1
+    },
+    {
+      "path": "part_manifest.schema.json",
+      "schema_id": "part_manifest",
+      "schema_version": 1
+    },
+    {
+      "path": "policy.schema.json",
+      "schema_id": "policy",
+      "schema_version": 1
+    },
+    {
+      "path": "registry.schema.json",
+      "schema_id": "registry",
+      "schema_version": 1
+    },
+    {
+      "path": "section_manifest.schema.json",
+      "schema_id": "section_manifest",
+      "schema_version": 1
+    }
+  ]
+}

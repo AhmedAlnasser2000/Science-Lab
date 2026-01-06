@@ -44,6 +44,41 @@ class PillarEntry:
         return data
 
 
+def _check_build_identity() -> PillarEntry:
+    try:
+        build = get_build_info()
+    except Exception as exc:
+        return PillarEntry(
+            id=1,
+            title=PILLAR_TITLES[0][1],
+            status="FAIL",
+            reason=f"Build identity failed: {exc}",
+            evidence=["app_ui.versioning.get_build_info"],
+        )
+    app_version = (build or {}).get("app_version") or ""
+    build_id = (build or {}).get("build_id") or ""
+    if not app_version:
+        return PillarEntry(
+            id=1,
+            title=PILLAR_TITLES[0][1],
+            status="FAIL",
+            reason="Build identity missing app_version",
+            evidence=["app_ui.versioning.get_build_info"],
+        )
+    return PillarEntry(
+        id=1,
+        title=PILLAR_TITLES[0][1],
+        status="PASS",
+        reason="Build identity available",
+        evidence=[
+            "app_ui.versioning.get_build_info",
+            f"app_version={app_version}",
+            f"build_id={build_id or 'unknown'}",
+        ],
+        details=build,
+    )
+
+
 def _check_ci_baseline() -> PillarEntry:
     path = Path(".github/workflows/ci.yml")
     if not path.exists():
@@ -79,6 +114,137 @@ def _check_ci_baseline() -> PillarEntry:
         title=PILLAR_TITLES[2][1],
         status="PASS",
         reason="CI workflow enforces compile + pillars tests",
+    )
+
+
+def _check_config_layering() -> PillarEntry:
+    try:
+        import app_ui.config as config  # local import to keep scope small
+    except Exception as exc:
+        return PillarEntry(
+            id=9,
+            title=PILLAR_TITLES[8][1],
+            status="FAIL",
+            reason=f"Config module import failed: {exc}",
+        )
+    defaults = getattr(config, "_DEFAULT_UI_CONFIG", {})
+    config_path = getattr(config, "CONFIG_PATH", Path("data/roaming/ui_config.json"))
+    files_read: List[str] = []
+    sources = ["defaults"]
+    effective: Dict[str, Any] = {}
+    if isinstance(defaults, dict):
+        effective.update(defaults)
+    else:
+        defaults = {}
+    if Path(config_path).exists():
+        try:
+            data = json.loads(Path(config_path).read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                effective.update(data)
+                files_read.append(str(config_path))
+                sources.append("roaming")
+        except Exception:
+            pass
+    if not defaults or not effective:
+        return PillarEntry(
+            id=9,
+            title=PILLAR_TITLES[8][1],
+            status="FAIL",
+            reason="Effective config snapshot is empty",
+            evidence=[f"config_path={config_path}"],
+        )
+    return PillarEntry(
+        id=9,
+        title=PILLAR_TITLES[8][1],
+        status="PASS",
+        reason="Config snapshot available",
+        evidence=[f"config_path={config_path}", f"sources={sources}"],
+        details={
+            "sources": sources,
+            "files_read": files_read,
+            "env_keys": [],
+        },
+    )
+
+
+def _check_schema_manifest(base_dir: Path | None = None) -> PillarEntry:
+    root = base_dir or Path(".")
+    manifest_path = root / "schemas" / "schema_manifest.json"
+    migrations_path = root / "docs" / "migrations" / "README.md"
+    if not manifest_path.exists():
+        return PillarEntry(
+            id=2,
+            title=PILLAR_TITLES[1][1],
+            status="FAIL",
+            reason="schema_manifest.json missing",
+            evidence=[str(manifest_path)],
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return PillarEntry(
+            id=2,
+            title=PILLAR_TITLES[1][1],
+            status="FAIL",
+            reason=f"schema_manifest.json invalid: {exc}",
+        )
+    if not isinstance(manifest, dict):
+        return PillarEntry(
+            id=2,
+            title=PILLAR_TITLES[1][1],
+            status="FAIL",
+            reason="schema_manifest.json root is not an object",
+        )
+    if not isinstance(manifest.get("manifest_version"), int):
+        return PillarEntry(
+            id=2,
+            title=PILLAR_TITLES[1][1],
+            status="FAIL",
+            reason="manifest_version missing or not int",
+        )
+    entries = manifest.get("schemas")
+    if not isinstance(entries, list) or not entries:
+        return PillarEntry(
+            id=2,
+            title=PILLAR_TITLES[1][1],
+            status="FAIL",
+            reason="schemas list missing or empty",
+        )
+    missing = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            missing.append("entry-not-object")
+            continue
+        path = entry.get("path")
+        schema_id = entry.get("schema_id")
+        schema_version = entry.get("schema_version")
+        if not path or not schema_id or not isinstance(schema_version, int):
+            missing.append(str(path or "missing-path"))
+            continue
+        if not (root / "schemas" / path).exists():
+            missing.append(str(path))
+    if missing:
+        return PillarEntry(
+            id=2,
+            title=PILLAR_TITLES[1][1],
+            status="FAIL",
+            reason="Schema manifest entries invalid or missing files",
+            evidence=missing,
+        )
+    if not migrations_path.exists():
+        return PillarEntry(
+            id=2,
+            title=PILLAR_TITLES[1][1],
+            status="FAIL",
+            reason="Migrations README missing",
+            evidence=[str(migrations_path)],
+        )
+    return PillarEntry(
+        id=2,
+        title=PILLAR_TITLES[1][1],
+        status="PASS",
+        reason="Schema manifest and migrations note present",
+        evidence=[str(manifest_path), str(migrations_path)],
     )
 
 
@@ -170,22 +336,10 @@ def _run_git_status() -> str | None:
 
 
 def run_pillar_checks() -> List[PillarEntry]:
-    build = get_build_info()
     results: Dict[int, PillarEntry] = {}
 
-    results[1] = PillarEntry(
-        id=1,
-        title=PILLAR_TITLES[0][1],
-        status="PASS" if build.get("app_version") else "SKIP",
-        reason="Build identity available" if build.get("app_version") else "Build info missing",
-        details=build,
-    )
-    results[2] = PillarEntry(
-        id=2,
-        title=PILLAR_TITLES[1][1],
-        status="SKIP",
-        reason="Schema checks not implemented yet",
-    )
+    results[1] = _check_build_identity()
+    results[2] = _check_schema_manifest()
     results[3] = _check_ci_baseline()
     results[4] = PillarEntry(
         id=4,
@@ -217,12 +371,7 @@ def run_pillar_checks() -> List[PillarEntry]:
         status="SKIP",
         reason="Activity tracing checks not implemented yet",
     )
-    results[9] = PillarEntry(
-        id=9,
-        title=PILLAR_TITLES[8][1],
-        status="SKIP",
-        reason="Config checks not implemented yet",
-    )
+    results[9] = _check_config_layering()
     results[10] = _check_runtime_data_hygiene()
     results[11] = PillarEntry(
         id=11,
@@ -256,3 +405,19 @@ def write_report(report: Dict[str, Any], output_dir: Path) -> Path:
     target = output_dir / "pillars_report.json"
     target.write_text(json.dumps(report, indent=2))
     return target
+
+
+def load_report(path: Path) -> Dict[str, Any]:
+    return json.loads(path.read_text())
+
+
+def find_latest_report(report_dir: Path) -> Path | None:
+    candidates: List[Path] = []
+    latest = Path("data/roaming/pillars_report_latest.json")
+    if latest.exists():
+        candidates.append(latest)
+    if report_dir.exists():
+        candidates.extend(
+            sorted(report_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        )
+    return candidates[0] if candidates else None

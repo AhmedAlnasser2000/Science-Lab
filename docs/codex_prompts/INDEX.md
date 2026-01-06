@@ -12,3 +12,9 @@ Definition of Done:
 | 2026-01-03__V5.4d__pillars__ui_view_and_run.md | TBD | Add Pillars UI view + run harness inside System Health |
 | 2026-01-03__V5.4e__pillars__ui_polish_and_hygiene.md | TBD | Pillars UI polish, filter toggle, and dev hygiene notes |
 | 2026-01-03__V5.4f__dev__codex_prompt_index_append.md | TBD | Codex prompt index workflow guardrails and backfill |
+<<<<<<< HEAD
+| 2026-01-05__V5.4g__pillars__checks_v2_p1_p9_p2.md | TBD | Add real pillars checks for P1/P9 (+ optional P2) with unit tests |
+| 2026-01-05__V5.4g1__pillars__ui_run_freeze_quit_fix.md | TBD | Fix Pillars UI run action freeze/quit; harden harness invocation and error handling |
+| 2026-01-05__V5.4g2b__system_health__qthread_lifecycle_fix.md | TBD | Fix Qt abort by holding System Health Pillars QThread refs until thread.finished; safe teardown |
+=======
+>>>>>>> origin/main
