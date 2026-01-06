@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 from tools.pillars_report import build_report, run_pillar_checks, write_report
 
 
-def run_harness(output: Path) -> Path:
+def run_pillars(output: Path) -> Path:
     start = time.monotonic()
     results = run_pillar_checks()
     report = build_report(results)
@@ -30,6 +30,10 @@ def run_harness(output: Path) -> Path:
     return written
 
 
+def run_harness(output: Path) -> Path:
+    return run_pillars(output)
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PhysicsLab Pillars harness (scaffold).")
     parser.add_argument(
@@ -42,7 +46,7 @@ def main(argv: List[str] | None = None) -> int:
 
     output_dir = args.out or Path(tempfile.mkdtemp(prefix="pillars_report_"))
     try:
-        written = run_harness(output_dir)
+        written = run_pillars(output_dir)
     except Exception as exc:  # pragma: no cover - defensive
         sys.stderr.write(f"Failed to run harness: {exc}\n")
         return 1

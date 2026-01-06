@@ -95,3 +95,20 @@ def test_pillar_2_schema_manifest_fail(tmp_path: Path) -> None:
     (schemas_dir / "schema_manifest.json").write_text(json.dumps(manifest, indent=2))
     result = pillars_report._check_schema_manifest(base_dir=tmp_path)
     assert result.status == "FAIL"
+
+
+def test_run_pillars_does_not_systemexit(tmp_path: Path) -> None:
+    from tools import pillars_harness
+
+    report_path = pillars_harness.run_pillars(tmp_path)
+    assert report_path.exists()
+
+
+def test_pillars_thread_ref_cleared_on_thread_finished_only() -> None:
+    import inspect
+    from app_ui.screens.system_health import SystemHealthScreen
+
+    finished_src = inspect.getsource(SystemHealthScreen._on_pillars_run_finished)
+    error_src = inspect.getsource(SystemHealthScreen._on_pillars_run_error)
+    assert "self._pillars_thread = None" not in finished_src
+    assert "self._pillars_thread = None" not in error_src

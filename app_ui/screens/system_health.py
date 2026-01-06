@@ -1,7 +1,7 @@
-import subprocess
 import sys
 import time
 from datetime import datetime
+import traceback
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, Optional
@@ -13,6 +13,7 @@ from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 from app_ui.ui_helpers import terms
 from tools.pillars_report import find_latest_report, load_report
+from tools.pillars_harness import run_pillars
 from app_ui.diagnostics.providers import (
     DiagnosticsContext,
     DiagnosticsProvider,
@@ -916,21 +917,40 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
 
         def _run() -> Dict[str, Any]:
-            cmd = [
-                sys.executable,
-                str(Path("tools/pillars_harness.py")),
-                "--out",
-                "data/roaming/pillars_reports",
+            log_path = Path("data/roaming/pillars_run_latest.log")
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            out_dir = Path("data/roaming/pillars_reports")
+            cmd = f"{sys.executable} tools/pillars_harness.py --out {out_dir}"
+            started = datetime.now().isoformat()
+            success = False
+            report_path: Optional[Path] = None
+            error = ""
+            traceback_text = ""
+            try:
+                report_path = run_pillars(out_dir)
+                success = True
+            except SystemExit as exc:
+                error = f"SystemExit: {exc}"
+            except Exception as exc:
+                error = f"{exc}"
+                traceback_text = traceback.format_exc()
+            log_lines = [
+                f"started_at: {started}",
+                f"command: {cmd}",
+                f"success: {success}",
+                f"report_path: {report_path or ''}",
             ]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-            )
+            if error:
+                log_lines.append(f"error: {error}")
+            if traceback_text:
+                log_lines.append("traceback:")
+                log_lines.append(traceback_text)
+            log_path.write_text("\n".join(log_lines))
             return {
-                "returncode": result.returncode,
-                "stdout": result.stdout or "",
-                "stderr": result.stderr or "",
+                "success": success,
+                "report_path": str(report_path) if report_path else "",
+                "error": error,
+                "log_path": str(log_path),
             }
 
         self.pillars_log.setPlainText("Running pillars checks...\n")
@@ -944,32 +964,44 @@ class SystemHealthScreen(QtWidgets.QWidget):
         thread.started.connect(worker.run)
         worker.finished.connect(self._on_pillars_run_finished)
         worker.error.connect(self._on_pillars_run_error)
+        worker.error.connect(thread.quit)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_pillars_thread_finished)
         self._pillars_worker = worker
         self._pillars_thread = thread
         thread.start()
 
     def _on_pillars_run_finished(self, payload: Dict[str, Any]) -> None:
-        self._pillars_thread = None
-        self._pillars_worker = None
-        stdout = payload.get("stdout") or ""
-        stderr = payload.get("stderr") or ""
-        text = stdout if stdout else ""
-        if stderr:
-            text += ("\n" if text else "") + stderr
-        if not text:
-            text = "Pillars run completed."
+        success = payload.get("success", False)
+        error = payload.get("error") or ""
+        log_path = payload.get("log_path") or ""
+        report_path = payload.get("report_path") or ""
+        if success:
+            text = f"Pillars run completed.\nReport: {report_path}".strip()
+        else:
+            text = f"Pillars run failed.\nError: {error}\nLog: {log_path}".strip()
         self.pillars_log.setPlainText(text)
         self._update_pillars_controls()
-        self._refresh_pillars_view()
+        if success:
+            self._refresh_pillars_view()
 
     def _on_pillars_run_error(self, message: str) -> None:
+        log_path = Path("data/roaming/pillars_run_latest.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(f"started_at: {datetime.now().isoformat()}\nerror: {message}\n")
+        self.pillars_log.setPlainText(
+            f"Pillars run failed: {message}\nLog: {log_path}"
+        )
+        self._update_pillars_controls()
+
+    def _on_pillars_thread_finished(self) -> None:
+        if self._pillars_thread:
+            self._pillars_thread.deleteLater()
+        if self._pillars_worker:
+            self._pillars_worker.deleteLater()
         self._pillars_thread = None
         self._pillars_worker = None
-        self.pillars_log.setPlainText(f"Pillars run failed: {message}")
-        self._update_pillars_controls()
     def _refresh_runs_list(self) -> None:
         if not self.bus:
             self.runs_status.setText("Runtime bus unavailable.")
@@ -1932,6 +1964,9 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self._unsubscribe_all()
+        if self._pillars_thread and self._pillars_thread.isRunning():
+            self._pillars_thread.quit()
+            self._pillars_thread.wait(2000)
         super().closeEvent(event)
 
     def _run_task(self, job: Callable[[], Any], callback: Callable[[Any], None]) -> None:
