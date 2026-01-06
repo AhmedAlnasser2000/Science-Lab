@@ -1,0 +1,56 @@
+/* Default PhysicsLab UI Pack */
+QWidget {
+    background: #f7f7fb;
+    color: #1f1f2e;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 14px;
+}
+
+QPushButton {
+    background: #2d7ff9;
+    color: white;
+    border-radius: 6px;
+    padding: 8px 12px;
+    border: 1px solid #1f6cd4;
+}
+
+QPushButton:hover {
+    background: #3c8bff;
+}
+
+QPushButton:pressed {
+    background: #1c64d1;
+}
+
+QGroupBox {
+    border: 1px solid #d9dbe0;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding: 8px;
+}
+
+QGroupBox:title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: #444a60;
+}
+
+QLineEdit, QTextEdit {
+    background: white;
+    border: 1px solid #cfd2da;
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+
+QTreeWidget {
+    background: white;
+    border: 1px solid #cfd2da;
+    border-radius: 6px;
+}
+
+QHeaderView::section {
+    background: #eef1f8;
+    padding: 6px;
+    border: 1px solid #d9dbe0;
+}

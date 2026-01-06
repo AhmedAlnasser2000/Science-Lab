@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://physicslab.dev/schemas/component_pack_manifest.schema.json",
+  "title": "Component Pack Manifest",
+  "description": "Defines a pack of declarative runtime components.",
+  "type": "object",
+  "properties": {
+    "pack_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "display_name": {
+      "$ref": "common.schema.json#/$defs/title"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component_id": {
+            "$ref": "common.schema.json#/$defs/identifier"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "panel",
+              "tool",
+              "lab",
+              "other"
+            ]
+          },
+          "display_name": {
+            "$ref": "common.schema.json#/$defs/title"
+          },
+          "impl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "assets": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "component_id",
+          "kind",
+          "display_name",
+          "impl"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "pack_id",
+    "version",
+    "display_name",
+    "components"
+  ],
+  "additionalProperties": false
+}

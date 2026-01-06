@@ -40,6 +40,21 @@ def test_pillar_3_ci_baseline_passes() -> None:
     assert p3["status"] == "PASS"
 
 
+def test_pillar_4_release_pipeline_passes() -> None:
+    report = build_report(run_pillar_checks())
+    p4 = next(r for r in report["results"] if r["id"] == 4)
+    assert p4["status"] == "PASS"
+
+
+def test_pillar_4_release_pipeline_fail(tmp_path: Path) -> None:
+    workflow = tmp_path / ".github" / "workflows"
+    workflow.mkdir(parents=True, exist_ok=True)
+    (workflow / "release-windows.yml").write_text("workflow_dispatch: {}\n")
+    result = pillars_report._check_release_pipeline(base_dir=tmp_path)
+    assert result.status == "FAIL"
+    assert "build script" in result.evidence
+
+
 def test_pillar_10_hygiene_passes_or_skips() -> None:
     report = build_report(run_pillar_checks())
     p10 = next(r for r in report["results"] if r["id"] == 10)

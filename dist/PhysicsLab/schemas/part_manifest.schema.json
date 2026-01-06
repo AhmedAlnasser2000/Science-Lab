@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://physicslab.dev/schemas/part_manifest.schema.json",
+  "title": "Part Manifest",
+  "description": "Defines a renderable part, such as text or a simple simulation.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "$ref": "common.schema.json#/$defs/schema_ref"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "content_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "module_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "section_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "package_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "part_id": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "component_id": {
+      "$ref": "common.schema.json#/$defs/component_id"
+    },
+    "title": {
+      "$ref": "common.schema.json#/$defs/title"
+    },
+    "part_type": {
+      "type": "string",
+      "enum": [
+        "text",
+        "simulation"
+      ]
+    },
+    "content": {
+      "type": "object",
+      "description": "Primary asset reference for the part.",
+      "properties": {
+        "asset_path": {
+          "$ref": "common.schema.json#/$defs/asset_ref"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "markdown"
+          ]
+        }
+      },
+      "required": [
+        "asset_path"
+      ],
+      "additionalProperties": false
+    },
+    "behavior": {
+      "type": "object",
+      "description": "Optional runtime hints for interactive parts.",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_\\-]*$"
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "gravity_m_s2": {
+              "type": "number"
+            },
+            "initial_height_m": {
+              "type": "number"
+            },
+            "time_step_s": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": {
+            "type": [
+              "number",
+              "integer",
+              "boolean",
+              "string"
+            ]
+          }
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "x_extensions": {
+      "$ref": "common.schema.json#/$defs/x_extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "content_version",
+    "module_id",
+    "section_id",
+    "package_id",
+    "part_id",
+    "title",
+    "part_type",
+    "content"
+  ],
+  "$defs": {
+    "lab_extension": {
+      "type": "object",
+      "description": "Optional lab metadata used by the runtime to launch interactive labs.",
+      "properties": {
+        "lab_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recommended_profile": {
+          "type": "string",
+          "enum": [
+            "Learner",
+            "Educator",
+            "Explorer"
+          ]
+        }
+      },
+      "required": [
+        "lab_id"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "x_extensions": {
+            "type": "object",
+            "properties": {
+              "lab": {}
+            },
+            "required": [
+              "lab"
+            ]
+          }
+        },
+        "required": [
+          "x_extensions"
+        ]
+      },
+      "then": {
+        "properties": {
+          "x_extensions": {
+            "type": "object",
+            "properties": {
+              "lab": {
+                "$ref": "#/$defs/lab_extension"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "part_type": {
+            "const": "simulation"
+          },
+          "component_id": {
+            "const": "__MISSING__"
+          }
+        },
+        "required": [
+          "part_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "behavior"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}
