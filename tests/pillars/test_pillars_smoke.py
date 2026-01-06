@@ -181,3 +181,89 @@ def test_pillar_8_tracing_fail(monkeypatch) -> None:
     monkeypatch.setattr(tracing, "get_recent_spans", lambda: [])
     result = pillars_report._check_tracing_contract()
     assert result.status == "FAIL"
+
+
+def test_pillar_11_pack_metadata_pass(tmp_path: Path) -> None:
+    store = tmp_path / "component_store"
+    pack_a = store / "pack_a"
+    pack_b = store / "pack_b"
+    pack_a.mkdir(parents=True, exist_ok=True)
+    pack_b.mkdir(parents=True, exist_ok=True)
+    (pack_b / "pack_manifest.json").write_text(
+        json.dumps(
+            {
+                "pack_id": "pack_b",
+                "pack_type": "component_pack",
+                "version": "1.0.0",
+                "capabilities": ["fs.read_store"],
+            },
+            indent=2,
+        )
+    )
+    (pack_a / "pack_manifest.json").write_text(
+        json.dumps(
+            {
+                "pack_id": "pack_a",
+                "pack_type": "component_pack",
+                "version": "1.0.0",
+                "dependencies": [{"id": "pack_b"}],
+            },
+            indent=2,
+        )
+    )
+    result = pillars_report._check_pack_metadata([store])
+    assert result.status == "PASS"
+
+
+def test_pillar_11_pack_metadata_fail_cycle(tmp_path: Path) -> None:
+    store = tmp_path / "content_store"
+    pack_a = store / "pack_a"
+    pack_b = store / "pack_b"
+    pack_a.mkdir(parents=True, exist_ok=True)
+    pack_b.mkdir(parents=True, exist_ok=True)
+    (pack_a / "pack_manifest.json").write_text(
+        json.dumps(
+            {
+                "pack_id": "pack_a",
+                "pack_type": "content_module",
+                "version": "1.0.0",
+                "dependencies": [{"id": "pack_b"}],
+            },
+            indent=2,
+        )
+    )
+    (pack_b / "pack_manifest.json").write_text(
+        json.dumps(
+            {
+                "pack_id": "pack_b",
+                "pack_type": "content_module",
+                "version": "1.0.0",
+                "dependencies": [{"id": "pack_a"}],
+            },
+            indent=2,
+        )
+    )
+    result = pillars_report._check_pack_metadata([store])
+    assert result.status == "FAIL"
+
+
+def test_pillar_12_security_guard_paths(tmp_path: Path) -> None:
+    from diagnostics.security_guard import resolve_under_root
+
+    root = tmp_path / "root"
+    root.mkdir(parents=True, exist_ok=True)
+    safe = resolve_under_root(root, "safe/file.txt")
+    assert safe.is_absolute()
+    for bad in ["../secret", "..\\secret", "C:\\Windows\\system32", "\\\\server\\share\\x"]:
+        try:
+            resolve_under_root(root, bad)
+        except ValueError:
+            continue
+        assert False, f"path should be rejected: {bad}"
+
+
+def test_pillar_12_security_guard_caps() -> None:
+    from diagnostics.security_guard import validate_capabilities
+
+    assert validate_capabilities(["fs.read_store"]) == []
+    assert validate_capabilities(["unknown.capability"]) != []

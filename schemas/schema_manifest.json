@@ -32,6 +32,11 @@
       "schema_version": 1
     },
     {
+      "path": "pack_manifest.schema.json",
+      "schema_id": "pack_manifest",
+      "schema_version": 1
+    },
+    {
       "path": "part_manifest.schema.json",
       "schema_id": "part_manifest",
       "schema_version": 1
