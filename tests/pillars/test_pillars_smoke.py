@@ -114,6 +114,14 @@ def test_pillars_thread_ref_cleared_on_thread_finished_only() -> None:
     assert "self._pillars_thread = None" not in error_src
 
 
+def test_pillars_thread_finished_does_not_delete_worker() -> None:
+    import inspect
+    from app_ui.screens.system_health import SystemHealthScreen
+
+    finished_src = inspect.getsource(SystemHealthScreen._on_pillars_thread_finished)
+    assert "pillars_worker.deleteLater" not in finished_src
+
+
 def test_pillar_5_crash_capture_pass(tmp_path: Path) -> None:
     result = pillars_report._check_crash_capture(
         base_dir=tmp_path, viewer_symbol="app_ui.screens.system_health.CrashViewerPanel"

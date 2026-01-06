@@ -1072,8 +1072,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _on_pillars_thread_finished(self) -> None:
         if self._pillars_thread:
             self._pillars_thread.deleteLater()
-        if self._pillars_worker:
-            self._pillars_worker.deleteLater()
         self._pillars_thread = None
         self._pillars_worker = None
     def _refresh_runs_list(self) -> None:
