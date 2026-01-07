@@ -43,6 +43,13 @@ class EdgeItem(QtWidgets.QGraphicsPathItem):
         )
         self.setPath(path)
 
+    def geometry_path(self) -> QtGui.QPainterPath:
+        path = self.path()
+        if path.isEmpty():
+            self.update_path()
+            path = self.path()
+        return path
+
 
 class NodeItem(QtWidgets.QGraphicsItem):
     def __init__(

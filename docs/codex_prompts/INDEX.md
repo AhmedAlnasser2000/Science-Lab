@@ -22,4 +22,6 @@ Definition of Done:
 | 2026-01-06__V5.4k__release__packaging_pipeline_p4.md | TBD | Add Windows packaging pipeline + P4 pillar check/tests |
 | 2026-01-06__V5.4k1__release__build_windows_import_path_fix.md | TBD | Fix build_windows.py sys.path so app_ui imports succeed |
 | 2026-01-06__V5.4k2__release__pyinstaller_spec_invocation_fix.md | TBD | Fix PyInstaller spec invocation flags for release build |
+| 2026-01-06__V5.4k3__release__dist_cleanup_lock_hint.md | TBD | Pre-clean dist output and fail fast with a locked-folder hint |
 | 2026-01-06__V5.4i1__system_health__pillars_worker_deleted_guard.md | TBD | Fix System Health Pillars cleanup: avoid calling deleteLater on already-deleted TaskWorker |
+| V5.5/2026-01-07__V5.5a__codesee__edge_following_pulses.md | TBD | CodeSee pulses follow edge paths for rendering and animation |

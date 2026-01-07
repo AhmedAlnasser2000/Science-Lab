@@ -32,6 +32,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._reduced_motion = False
         self._nodes: Dict[str, NodeItem] = {}
         self._edges: list[EdgeItem] = []
+        self._edge_index: Dict[Tuple[str, str], EdgeItem] = {}
         self._signals: list[dict] = []
         self._pulses: Dict[str, dict] = {}
         self._span_tints: Dict[str, dict] = {}
@@ -50,6 +51,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self.clear()
         self._nodes = {}
         self._edges = []
+        self._edge_index = {}
         self._empty_item = None
         self._signals = []
         self._pulses = {}
@@ -103,6 +105,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
             edge_item.update_path()
             self.addItem(edge_item)
             self._edges.append(edge_item)
+            self._edge_index[(edge.src_node_id, edge.dst_node_id)] = edge_item
 
     def set_icon_style(self, style: str) -> None:
         self._icon_style = style
@@ -256,7 +259,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 fade_curve=str(curve),
             )
             return
-        if not source_id or not self._edge_exists(source_id, target_id):
+        edge_item, reverse = self._find_edge(source_id, target_id)
+        if not source_id or not edge_item:
             self._queue_pulse(
                 target_id,
                 color=color,
@@ -283,12 +287,13 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 intensity=float(intensity),
             )
             return
-        start = src_item.center_pos()
-        end = target_item.center_pos()
+        path = edge_item.geometry_path()
+        start_percent = 1.0 if reverse else 0.0
+        start = path.pointAtPercent(start_percent)
         if travel_duration_ms:
             duration = max(0.15, float(travel_duration_ms) / 1000.0)
         else:
-            distance = max(1.0, _distance(start, end))
+            distance = max(1.0, float(path.length()))
             duration = max(0.15, distance / max(1.0, float(speed)))
         intensity = max(0.1, float(intensity))
         alpha = min(1.0, max(0.25, float(alpha) * intensity))
@@ -303,8 +308,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
             self._signals.append(
                 {
                     "dot": dot,
-                    "start": start,
-                    "end": end,
+                    "edge": edge_item,
+                    "reverse": reverse,
                     "target": target_id,
                     "t0": now + offset_s,
                     "duration": duration,
@@ -390,10 +395,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
                         fade_curve=str(state.get("fade_curve", "linear")),
                     )
                 continue
-            start = state.get("start")
-            end = state.get("end")
-            if isinstance(start, QtCore.QPointF) and isinstance(end, QtCore.QPointF):
-                pos = start + (end - start) * float(progress)
+            edge_item = state.get("edge")
+            if isinstance(edge_item, EdgeItem):
+                reverse = bool(state.get("reverse", False))
+                percent = _edge_progress(progress, reverse)
+                path = edge_item.geometry_path()
+                pos = path.pointAtPercent(percent)
                 dot.setPos(pos)
             remaining.append(state)
         self._signals = remaining
@@ -403,13 +410,16 @@ class GraphScene(QtWidgets.QGraphicsScene):
             if self._signal_timer.isActive():
                 self._signal_timer.stop()
 
-    def _edge_exists(self, source_id: str, target_id: str) -> bool:
-        for edge in self._edges:
-            if edge.src.node.node_id == source_id and edge.dst.node.node_id == target_id:
-                return True
-            if edge.src.node.node_id == target_id and edge.dst.node.node_id == source_id:
-                return True
-        return False
+    def _find_edge(self, source_id: Optional[str], target_id: Optional[str]) -> Tuple[Optional[EdgeItem], bool]:
+        if not source_id or not target_id:
+            return None, False
+        direct = self._edge_index.get((source_id, target_id))
+        if direct:
+            return direct, False
+        reverse = self._edge_index.get((target_id, source_id))
+        if reverse:
+            return reverse, True
+        return None, False
 
     def _queue_pulse(
         self,
@@ -566,6 +576,11 @@ def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
         strength = strength * strength
     strength = max(min_alpha, strength) * intensity
     return max(0.0, strength), False
+
+
+def _edge_progress(progress: float, reverse: bool) -> float:
+    clamped = max(0.0, min(1.0, float(progress)))
+    return 1.0 - clamped if reverse else clamped
 
 
 def _node_diff_state(node_id: str, diff_result: Optional[DiffResult]) -> Optional[str]:

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,30 @@ def _copy_tree(src: Path, dst: Path) -> None:
     if not src.exists():
         return
     shutil.copytree(src, dst, dirs_exist_ok=True)
+
+
+def _rmtree_best_effort(path: Path) -> None:
+    if not path.exists():
+        return
+
+    def _handle_error(func, p, exc_info):
+        try:
+            Path(p).chmod(0o700)
+            func(p)
+        except Exception:
+            pass
+
+    delays = [0.25, 0.5, 1.0]
+    last_exc: Exception | None = None
+    for delay in delays:
+        try:
+            shutil.rmtree(path, onerror=_handle_error)
+            return
+        except Exception as exc:
+            last_exc = exc
+            time.sleep(delay)
+    if last_exc:
+        raise last_exc
 
 
 def _write_build_info(target_dir: Path) -> None:
@@ -52,6 +77,20 @@ def build_release(out_dir: str, spec_path: str) -> Path:
     if not spec.exists():
         raise FileNotFoundError(f"Spec not found: {spec}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    dist_target = out_path.parent / out_path.name
+    if dist_target.exists():
+        try:
+            _rmtree_best_effort(dist_target)
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to remove existing release output folder. "
+                "Close Explorer windows, ensure PhysicsLab.exe is not running, "
+                "and retry. You can also run: "
+                "taskkill /IM PhysicsLab.exe /F ; "
+                "Remove-Item -Recurse -Force .\\dist\\PhysicsLab. "
+                f"Original error: {exc}"
+            ) from exc
 
     work_dir = root / "build" / "pyinstaller" / "work"
     resolved_spec = _prepare_spec(spec, root)
