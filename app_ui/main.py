@@ -2771,6 +2771,7 @@ class MainWindow(QtWidgets.QMainWindow):
         install_exception_hooks(self.codesee_hub)
         self.codesee_window: Optional[CodeSeeWindow] = None
         self.codesee_bus_bridge: Optional[BusBridge] = None
+        self._last_screen_context: Optional[str] = "Main Menu"
 
         self.stacked = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stacked)
@@ -2896,6 +2897,11 @@ class MainWindow(QtWidgets.QMainWindow):
             runtime_hub=self.codesee_hub,
             on_open_window=self._open_code_see_window,
         )
+        if self._last_screen_context:
+            try:
+                self.codesee.set_screen_context(self._last_screen_context)
+            except Exception:
+                pass
         self.component_host = ComponentHostScreen(
             self._show_content_browser, workspace_selector_factory=selector_factory
         )
@@ -3238,6 +3244,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _publish_codesee_event(self, message: str, *, node_ids: Optional[List[str]] = None) -> None:
         if not self.codesee_hub:
             return
+        self._last_screen_context = message
+        if self.codesee:
+            try:
+                self.codesee.set_screen_context(message)
+            except Exception:
+                pass
+        if self.codesee_window:
+            try:
+                self.codesee_window.screen.set_screen_context(message)
+            except Exception:
+                pass
         event = CodeSeeEvent(
             ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             kind=EVENT_APP_ACTIVITY,
@@ -3478,6 +3495,11 @@ class MainWindow(QtWidgets.QMainWindow):
             workspace_selector_factory=self._make_workspace_selector,
             on_close=self._on_codesee_window_closed,
         )
+        if self._last_screen_context:
+            try:
+                self.codesee_window.screen.set_screen_context(self._last_screen_context)
+            except Exception:
+                pass
         self.codesee_window.show()
         self._publish_codesee_event("Code See (Window)", node_ids=["system:app_ui"])
 

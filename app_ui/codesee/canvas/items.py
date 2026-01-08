@@ -77,6 +77,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._last_badge_key: Optional[str] = None
         self._highlight_strength = 0.0
         self._highlight_color = QtGui.QColor("#4c6ef5")
+        self._activity_alpha = 0.0
+        self._activity_color = QtGui.QColor("#38bdf8")
         self._tint_strength = 0.0
         self._tint_color = QtGui.QColor("#4c6ef5")
 
@@ -138,6 +140,18 @@ class NodeItem(QtWidgets.QGraphicsItem):
         if color is not None:
             self._highlight_color = color
         self._highlight_strength = max(0.0, min(1.0, float(strength)))
+        self.update()
+
+    def set_activity(
+        self,
+        alpha: float,
+        color: Optional[QtGui.QColor] = None,
+        *,
+        reduced_motion: bool,
+    ) -> None:
+        if color is not None:
+            self._activity_color = color
+        self._activity_alpha = max(0.0, min(1.0, float(alpha)))
         self.update()
 
     def set_tint(self, strength: float, color: Optional[QtGui.QColor] = None) -> None:
@@ -209,6 +223,13 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
         if self._diff_state:
             _paint_diff_badge(painter, rect, self._diff_state)
+
+        if self._activity_alpha > 0.0:
+            color = QtGui.QColor(self._activity_color)
+            color.setAlphaF(min(0.8, 0.15 + self._activity_alpha * 0.65))
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.setPen(QtGui.QPen(color, 2.0))
+            painter.drawRoundedRect(rect.adjusted(1.5, 1.5, -1.5, -1.5), NODE_RADIUS, NODE_RADIUS)
 
         if self._highlight_strength > 0.0:
             color = QtGui.QColor(self._highlight_color)

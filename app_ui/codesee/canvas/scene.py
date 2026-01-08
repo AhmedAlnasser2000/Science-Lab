@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from bisect import bisect_right
 from typing import Callable, Dict, Optional, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -37,6 +38,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._pulses: Dict[str, dict] = {}
         self._span_tints: Dict[str, dict] = {}
         self._activity_glow: Dict[str, dict] = {}
+        self._node_activity_ts: Dict[str, float] = {}
+        self._activity_fade_s = 2.0
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -56,6 +59,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._signals = []
         self._pulses = {}
         self._activity_glow = {}
+        self._node_activity_ts = {}
         if self._signal_timer.isActive():
             self._signal_timer.stop()
 
@@ -151,6 +155,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
     ) -> None:
         if node_id not in self._nodes:
             return
+        self._record_activity(node_id)
         self._activity_glow[node_id] = {
             "t0": time.monotonic(),
             "linger": max(0.0, float(linger_ms) / 1000.0),
@@ -345,6 +350,13 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 except RuntimeError:
                     pass
             self._pulses = {}
+        if self._node_activity_ts:
+            for node_id, item in list(self._nodes.items()):
+                try:
+                    item.set_activity(0.0, None, reduced_motion=self._reduced_motion)
+                except RuntimeError:
+                    pass
+            self._node_activity_ts = {}
         if self._signals:
             for state in list(self._signals):
                 dot = state.get("dot")
@@ -406,7 +418,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._signals = remaining
         self._tick_pulses(now)
         self._tick_activity(now)
-        if not self._signals and not self._pulses and not self._activity_glow:
+        self._tick_node_activity(now)
+        if not self._signals and not self._pulses and not self._activity_glow and not self._node_activity_ts:
             if self._signal_timer.isActive():
                 self._signal_timer.stop()
 
@@ -436,6 +449,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
     ) -> None:
         if node_id not in self._nodes:
             return
+        self._record_activity(node_id)
         self._pulses[node_id] = {
             "t0": time.monotonic(),
             "color": color,
@@ -529,6 +543,32 @@ class GraphScene(QtWidgets.QGraphicsScene):
     def _apply_span_tints(self) -> None:
         self._apply_tints()
 
+    def _record_activity(self, node_id: str) -> None:
+        self._node_activity_ts[str(node_id)] = time.monotonic()
+        if not self._signal_timer.isActive():
+            self._signal_timer.start()
+
+    def _tick_node_activity(self, now: float) -> None:
+        if not self._node_activity_ts:
+            return
+        remove_ids = []
+        for node_id, ts in list(self._node_activity_ts.items()):
+            item = self._nodes.get(node_id)
+            if not item:
+                remove_ids.append(node_id)
+                continue
+            age = max(0.0, now - float(ts))
+            alpha = activity_alpha(age, fade_s=self._activity_fade_s, reduced_motion=self._reduced_motion)
+            try:
+                item.set_activity(alpha, QtGui.QColor("#4c6ef5"), reduced_motion=self._reduced_motion)
+            except RuntimeError:
+                remove_ids.append(node_id)
+                continue
+            if alpha <= 0.0:
+                remove_ids.append(node_id)
+        for node_id in remove_ids:
+            self._node_activity_ts.pop(node_id, None)
+
 
 def _setting_value(settings, key: str, default):
     if settings is None:
@@ -583,6 +623,17 @@ def _edge_progress(progress: float, reverse: bool) -> float:
     return 1.0 - clamped if reverse else clamped
 
 
+def activity_alpha(age_s: float, *, fade_s: float = 2.0, reduced_motion: bool = False) -> float:
+    age = max(0.0, float(age_s))
+    if reduced_motion:
+        return 1.0 if age <= 1.0 else 0.0
+    if fade_s <= 0.0:
+        return 0.0
+    if age >= fade_s:
+        return 0.0
+    return max(0.0, 1.0 - (age / fade_s))
+
+
 def _node_diff_state(node_id: str, diff_result: Optional[DiffResult]) -> Optional[str]:
     if not diff_result:
         return None
@@ -601,3 +652,54 @@ def _edge_diff_state(edge, diff_result: Optional[DiffResult]) -> Optional[str]:
     if edge_key(edge) in diff_result.edges_added:
         return "added"
     return None
+
+
+def _build_cumdist(points: list[tuple[float, float]]) -> tuple[list[float], float]:
+    if len(points) < 2:
+        return [0.0], 0.0
+    cumdist = [0.0]
+    total = 0.0
+    for idx in range(1, len(points)):
+        x0, y0 = points[idx - 1]
+        x1, y1 = points[idx]
+        dx = x1 - x0
+        dy = y1 - y0
+        seg = (dx * dx + dy * dy) ** 0.5
+        total += seg
+        cumdist.append(total)
+    return cumdist, total
+
+
+def _distance_to_percent(cumdist: list[float], total: float, distance: float) -> float:
+    if total <= 0.0 or len(cumdist) < 2:
+        return 0.0
+    d = max(0.0, min(total, float(distance)))
+    idx = bisect_right(cumdist, d) - 1
+    idx = max(0, min(idx, len(cumdist) - 2))
+    seg_start = cumdist[idx]
+    seg_end = cumdist[idx + 1]
+    if seg_end <= seg_start:
+        return 0.0
+    local = (d - seg_start) / (seg_end - seg_start)
+    percent = (idx + local) / (len(cumdist) - 1)
+    return max(0.0, min(1.0, percent))
+
+
+def _distance_progress(
+    edge_item: EdgeItem,
+    elapsed: float,
+    reverse: bool,
+    *,
+    speed: float,
+    sample_count: int,
+) -> Optional[float]:
+    table = edge_item.sample_table(sample_count)
+    cumdist = table.get("cumdist") or []
+    total = float(table.get("total") or 0.0)
+    if total <= 0.0:
+        return None
+    dist = max(0.0, float(elapsed)) * max(1.0, float(speed))
+    if dist >= total:
+        return 1.0 if not reverse else 0.0
+    percent = _distance_to_percent(cumdist, total, dist)
+    return 1.0 - percent if reverse else percent

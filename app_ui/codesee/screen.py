@@ -123,6 +123,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._status_timer.setInterval(1000)
         self._status_timer.timeout.connect(self._on_status_tick)
         self._last_span_pulse = 0.0
+        self._screen_context: Optional[str] = None
 
         layout = QtWidgets.QVBoxLayout(self)
         self._root_layout = layout
@@ -1853,6 +1854,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             active_pulses = self.scene.active_pulse_count() if self.scene else 0
         parts = [
             f"Source: {self._source}",
+            f"Screen: {self._screen_context}" if self._screen_context else None,
             f"Lens: {lens_title}",
             f"Live: {live_state}",
             f"Diff: {diff_state}",
@@ -1893,6 +1895,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._crash_node_id = None
         self._update_mode_status(0, 0)
         self._render_current_graph()
+
+    def set_screen_context(self, context: str, detail: Optional[str] = None) -> None:
+        label = (context or "").strip()
+        if detail:
+            label = f"{label}: {detail}" if label else str(detail)
+        self._screen_context = label or None
+        self._update_mode_status(0, 0)
 
 
 def _style_from_label(label: str) -> str:
