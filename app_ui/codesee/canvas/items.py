@@ -349,7 +349,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
                     event.accept()
                     return
             if self._on_status_badges and self._status_badges and self._status_badge_hit(event.pos()):
-                self._on_status_badges(self.node, self._dedupe_status_badges(), _screen_point(event))
+                self._on_status_badges(self.node, self._collect_status_menu_items(), _screen_point(event))
                 event.accept()
                 return
             if self.on_inspect:
@@ -417,6 +417,40 @@ class NodeItem(QtWidgets.QGraphicsItem):
             entry["count"] = int(entry.get("count", 1)) + int(badge.get("count", 1))
         return list(seen.values())
 
+    def _collect_status_menu_items(self) -> list[dict]:
+        items: list[dict] = []
+
+        def _merge(entry: dict) -> None:
+            key = str(entry.get("key") or "")
+            if not key:
+                items.append(dict(entry))
+                return
+            for existing in items:
+                if str(existing.get("key") or "") == key:
+                    existing["count"] = int(existing.get("count", 1)) + int(entry.get("count", 1))
+                    if not existing.get("detail") and entry.get("detail"):
+                        existing["detail"] = entry.get("detail")
+                    last_seen = entry.get("last_seen")
+                    if isinstance(last_seen, (int, float)):
+                        current = existing.get("last_seen")
+                        if current is None or float(last_seen) < float(current):
+                            existing["last_seen"] = float(last_seen)
+                    return
+            items.append(dict(entry))
+
+        rail_badges: List[Badge] = []
+        for top in (True, False):
+            rail_badges.extend(
+                badge
+                for badge in self.node.badges_for_rail("top" if top else "bottom")
+                if self._badge_visible(badge)
+            )
+        for entry in _aggregate_badges(rail_badges):
+            _merge(entry)
+        for entry in self._dedupe_status_badges():
+            _merge(entry)
+        return items
+
     def _badge_overflow_items(self, pos: QtCore.QPointF) -> Optional[list[dict]]:
         rect = self.boundingRect()
         rail_height = _rail_height()
@@ -442,7 +476,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
                 continue
             rects, overflow, ellipsis = self._rail_layout(badges, rail_rect)
             if (overflow and overflow[0].contains(pos)) or (ellipsis and ellipsis.contains(pos)):
-                return _aggregate_badges(badges)
+                return self._collect_status_menu_items()
         return None
 
     def _paint_rail_badges(self, painter: QtGui.QPainter, rail_rect: QtCore.QRectF, *, top: bool) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -1134,6 +1135,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         menu = QtWidgets.QMenu(self)
         total = 0
         normalized: list[dict] = []
+        def _normalize_label(text: str) -> str:
+            # Strip capped overflow markers like "8+" so the menu shows exact counts.
+            return re.sub(r"(\d+)\+", r"\1", text)
         for status in statuses:
             count_raw = status.get("count", 1)
             count = 1
@@ -1143,11 +1147,48 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 digits = "".join(ch for ch in count_raw if ch.isdigit())
                 if digits:
                     count = int(digits)
+            label = str(status.get("label") or "Status")
+            detail = status.get("detail")
+            if isinstance(label, str):
+                label = _normalize_label(label)
+            if isinstance(detail, str):
+                detail = _normalize_label(detail)
+            if not isinstance(count_raw, (int, str)):
+                match = re.search(r"(\d+)", label if label else "")
+                if match:
+                    count = int(match.group(1))
             total += count
-            normalized.append({**status, "count": count})
-        total_action = QtGui.QAction(f"Total: {total}", menu)
-        total_action.setEnabled(False)
-        menu.addAction(total_action)
+            normalized.append({**status, "count": count, "label": label, "detail": detail})
+        totals = {
+            "Context": 0,
+            "Activity": 0,
+            "Pulses": 0,
+            "Signals": 0,
+            "Errors": 0,
+        }
+        for status in normalized:
+            key = str(status.get("key") or "")
+            count = int(status.get("count", 1))
+            if key == "context":
+                totals["Context"] += count
+            elif key == "pulse":
+                totals["Pulses"] += count
+            elif key == "signal":
+                totals["Signals"] += count
+            elif key == "activity" or key.startswith("activity."):
+                totals["Activity"] += count
+            elif key in ("error", "state.error", "state.crash", "state.warn", "probe.fail", "expect.mismatch"):
+                totals["Errors"] += count
+        if any(value > 0 for value in totals.values()):
+            totals_action = QtGui.QAction("Totals:", menu)
+            totals_action.setEnabled(False)
+            menu.addAction(totals_action)
+            for name, value in totals.items():
+                if value <= 0:
+                    continue
+                total_line = QtGui.QAction(f"{name}: {value}", menu)
+                total_line.setEnabled(False)
+                menu.addAction(total_line)
         menu.addSeparator()
         for status in normalized:
             label = str(status.get("label") or "Status")
