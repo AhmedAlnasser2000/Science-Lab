@@ -118,6 +118,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._overlay_badges: Dict[str, list[Badge]] = {}
         self._overlay_limit = 8
         self._runtime_connected = False
+        self._screen_context: Optional[str] = None
         self._overlay_checks: Dict[str, list[EVACheck]] = {}
         self._status_timer = QtCore.QTimer(self)
         self._status_timer.setInterval(1000)
@@ -277,6 +278,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             on_open_subgraph=self._enter_subgraph,
             on_layout_changed=self._save_layout,
             on_inspect=self._inspect_node,
+            on_status_badges=self._show_status_menu,
             icon_style=self._resolved_icon_style(),
             node_theme=self._node_theme,
         )
@@ -346,6 +348,29 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.diff_action.blockSignals(True)
             self.diff_action.setChecked(False)
             self.diff_action.blockSignals(False)
+
+    def set_screen_context(self, context: str, detail: Optional[dict] = None) -> None:
+        context = (context or "").strip()
+        if not context:
+            return
+        if context == self._screen_context and not detail:
+            return
+        self._screen_context = context
+        if self.scene:
+            self.scene.set_context_nodes(self._context_nodes_for(context), label=context)
+        self._update_mode_status(0, 0)
+
+    def _context_nodes_for(self, context: str) -> set[str]:
+        key = context.lower()
+        if "system health" in key or "diagnostics" in key or "pack management" in key:
+            return {"system:core_center"}
+        if "content browser" in key or "content management" in key:
+            return {"system:content_system"}
+        if "block sandbox" in key or "block catalog" in key:
+            return {"system:component_runtime"}
+        if "lab" in key:
+            return {"system:component_runtime"}
+        return {"system:app_ui"}
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)
@@ -1103,6 +1128,55 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if not active_signals and not active_spans:
             self._status_timer.stop()
 
+    def _show_status_menu(self, node: Node, statuses: list, global_pos: QtCore.QPoint) -> None:
+        if not statuses:
+            return
+        menu = QtWidgets.QMenu(self)
+        for status in statuses:
+            label = str(status.get("label") or "Status")
+            detail = status.get("detail")
+            if detail:
+                label = f"{label}: {detail}"
+            count = status.get("count")
+            if count:
+                label = f"{label} ({count})"
+            last_seen = status.get("last_seen")
+            if isinstance(last_seen, (int, float)):
+                label = f"{label} — {self._format_age(float(last_seen))} ago"
+            action = QtGui.QAction(label, menu)
+            icon = self._status_icon(status.get("color"))
+            if icon:
+                action.setIcon(icon)
+            menu.addAction(action)
+        menu.exec(global_pos)
+
+    def _status_icon(self, color) -> Optional[QtGui.QIcon]:
+        size = int(max(8, ui_scale.scale_px(10)))
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        if isinstance(color, QtGui.QColor):
+            tint = color
+        elif color:
+            tint = QtGui.QColor(color)
+        else:
+            tint = QtGui.QColor("#666")
+        painter.setBrush(tint)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, size, size)
+        painter.end()
+        return QtGui.QIcon(pixmap)
+
+    def _format_age(self, age_s: float) -> str:
+        if age_s < 1.0:
+            return "0s"
+        if age_s < 60.0:
+            return f"{int(age_s)}s"
+        if age_s < 3600.0:
+            return f"{int(age_s // 60)}m"
+        return f"{int(age_s // 3600)}h"
+
     def _refresh_span_activity(self) -> None:
         if not self._runtime_hub:
             return
@@ -1842,6 +1916,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 f"-{len(self._diff_result.nodes_removed)} "
                 f"Δ{len(self._diff_result.nodes_changed)}"
             )
+        screen_label = f"Screen: {self._screen_context}" if self._screen_context else None
         bus_state = "Disconnected"
         active_spans = 0
         active_pulses = 0
@@ -1854,6 +1929,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         parts = [
             f"Source: {self._source}",
             f"Lens: {lens_title}",
+            screen_label,
             f"Live: {live_state}",
             f"Diff: {diff_state}",
             f"Delta: {diff_counts}" if diff_counts else None,

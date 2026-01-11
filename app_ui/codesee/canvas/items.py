@@ -17,6 +17,13 @@ ICON_SIZE_BASE = 12
 ICON_SPACING_BASE = 6
 TITLE_PADDING = 8.0
 DIFF_BADGE_SIZE_BASE = 12
+STATUS_BADGE_SIZE_BASE = 10
+STATUS_BADGE_SPACING_BASE = 4
+STATUS_BADGE_MARGIN = 6.0
+STATUS_BADGE_PILL_PAD_X = 4.0
+STATUS_BADGE_PILL_PAD_Y = 2.0
+STATUS_BADGE_MAX = 4
+RAIL_BADGE_MAX = 4
 _ICON_CACHE: Dict[Tuple[str, float], QtGui.QPixmap] = {}
 
 
@@ -59,6 +66,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         on_open_subgraph: Optional[Callable[[str], None]] = None,
         on_layout_changed: Optional[Callable[[], None]] = None,
         on_inspect: Optional[Callable[[Node, Optional[Badge]], None]] = None,
+        on_status_badges: Optional[Callable[[Node, list, QtCore.QPoint], None]] = None,
         icon_style: str = "color",
         node_theme: str = "neutral",
         show_badge_layers: Optional[Dict[str, bool]] = None,
@@ -69,6 +77,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.on_open_subgraph = on_open_subgraph
         self.on_layout_changed = on_layout_changed
         self.on_inspect = on_inspect
+        self._on_status_badges = on_status_badges
         self._icon_style = icon_style
         self._node_theme = node_theme or "neutral"
         self._show_badge_layers = show_badge_layers or {}
@@ -79,6 +88,11 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._highlight_color = QtGui.QColor("#4c6ef5")
         self._tint_strength = 0.0
         self._tint_color = QtGui.QColor("#4c6ef5")
+        self._activity_alpha = 0.0
+        self._activity_color = QtGui.QColor("#4c6ef5")
+        self._context_active = False
+        self._context_color = QtGui.QColor("#2f9e44")
+        self._status_badges: List[dict] = []
 
         self.setFlags(
             QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -146,6 +160,22 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._tint_strength = max(0.0, min(1.0, float(strength)))
         self.update()
 
+    def set_activity(self, alpha: float, color: Optional[QtGui.QColor] = None) -> None:
+        if color is not None:
+            self._activity_color = color
+        self._activity_alpha = max(0.0, min(1.0, float(alpha)))
+        self.update()
+
+    def set_context_active(self, active: bool, color: Optional[QtGui.QColor] = None) -> None:
+        if color is not None:
+            self._context_color = color
+        self._context_active = bool(active)
+        self.update()
+
+    def set_status_badges(self, badges: List[dict]) -> None:
+        self._status_badges = badges or []
+        self.update()
+
     def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
         rect = self.boundingRect()
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
@@ -166,6 +196,20 @@ class NodeItem(QtWidgets.QGraphicsItem):
             )
 
         _paint_theme_marker(painter, rect, self.node.node_type, self._icon_style, self._node_theme)
+
+        if self._context_active:
+            color = QtGui.QColor(self._context_color)
+            color.setAlphaF(0.9)
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.setPen(QtGui.QPen(color, 3.0))
+            painter.drawRoundedRect(rect.adjusted(1.0, 1.0, -1.0, -1.0), NODE_RADIUS, NODE_RADIUS)
+
+        if self._activity_alpha > 0.0:
+            color = QtGui.QColor(self._activity_color)
+            color.setAlphaF(min(0.8, max(0.2, self._activity_alpha)))
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.setPen(QtGui.QPen(color, 2.0))
+            painter.drawRoundedRect(rect.adjusted(2.0, 2.0, -2.0, -2.0), NODE_RADIUS - 1.0, NODE_RADIUS - 1.0)
 
         rail_color = QtGui.QColor("#e9e9e9")
         rail_height = _rail_height()
@@ -195,12 +239,10 @@ class NodeItem(QtWidgets.QGraphicsItem):
         painter.drawText(title_rect, QtCore.Qt.AlignmentFlag.AlignCenter, self.node.title)
 
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        for badge_rect, badge in self._badge_rects():
-            pixmap = _icon_pixmap(badge.key, self._icon_style, _icon_size())
-            if pixmap is None:
-                _paint_fallback_badge(painter, badge_rect, badge, self._icon_style)
-            else:
-                painter.drawPixmap(badge_rect.toRect(), pixmap)
+        self._paint_rail_badges(painter, top_rail, top=True)
+        self._paint_rail_badges(painter, bottom_rail, top=False)
+
+        self._paint_status_badges(painter, rect)
 
         if self.isSelected():
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
@@ -262,12 +304,23 @@ class NodeItem(QtWidgets.QGraphicsItem):
         super().contextMenuEvent(event)
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
-        if event.button() == QtCore.Qt.MouseButton.LeftButton and self.on_inspect:
-            badge = self._badge_at(event.pos())
-            if badge:
-                self.on_inspect(self.node, badge)
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            if self._on_status_badges:
+                overflow_items = self._badge_overflow_items(event.pos())
+                if overflow_items:
+                    self._on_status_badges(self.node, overflow_items, _screen_point(event))
+                    event.accept()
+                    return
+            if self._on_status_badges and self._status_badges and self._status_badge_hit(event.pos()):
+                self._on_status_badges(self.node, list(self._status_badges), _screen_point(event))
                 event.accept()
                 return
+            if self.on_inspect:
+                badge = self._badge_at(event.pos())
+                if badge:
+                    self.on_inspect(self.node, badge)
+                    event.accept()
+                    return
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
@@ -283,30 +336,23 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def _badge_rects(self) -> List[Tuple[QtCore.QRectF, Badge]]:
         rects: List[Tuple[QtCore.QRectF, Badge]] = []
-        rects.extend(
-            self._rail_badges(
-                [badge for badge in self.node.badges_for_rail("top") if self._badge_visible(badge)],
-                y_offset=_rail_y_offset(top=True),
-            )
-        )
-        rects.extend(
-            self._rail_badges(
-                [badge for badge in self.node.badges_for_rail("bottom") if self._badge_visible(badge)],
-                y_offset=_rail_y_offset(top=False),
-            )
-        )
+        rects.extend(self._rail_badge_rects(top=True))
+        rects.extend(self._rail_badge_rects(top=False))
         return rects
 
-    def _rail_badges(self, badges: List[Badge], *, y_offset: float) -> List[Tuple[QtCore.QRectF, Badge]]:
-        rects: List[Tuple[QtCore.QRectF, Badge]] = []
+    def _rail_badge_rects(self, *, top: bool) -> List[Tuple[QtCore.QRectF, Badge]]:
+        badges = [badge for badge in self.node.badges_for_rail("top" if top else "bottom") if self._badge_visible(badge)]
         if not badges:
-            return rects
-        x = 10.0
-        for badge in badges:
-            size = _icon_size()
-            badge_rect = QtCore.QRectF(x, y_offset, size, size)
-            rects.append((badge_rect, badge))
-            x += size + _icon_spacing()
+            return []
+        rect = self.boundingRect()
+        rail_height = _rail_height()
+        rail_rect = QtCore.QRectF(
+            rect.left() + 1.0,
+            rect.top() + 1.0 if top else rect.bottom() - rail_height - 1.0,
+            rect.width() - 2.0,
+            rail_height,
+        )
+        rects, _overflow = self._rail_layout(badges, rail_rect)
         return rects
 
     def _badge_at(self, pos: QtCore.QPointF) -> Optional[Badge]:
@@ -320,6 +366,172 @@ class NodeItem(QtWidgets.QGraphicsItem):
         if not layer:
             return True
         return self._show_badge_layers.get(layer, True)
+
+    def _badge_overflow_items(self, pos: QtCore.QPointF) -> Optional[list[dict]]:
+        rect = self.boundingRect()
+        rail_height = _rail_height()
+        top_rail = QtCore.QRectF(
+            rect.left() + 1.0,
+            rect.top() + 1.0,
+            rect.width() - 2.0,
+            rail_height,
+        )
+        bottom_rail = QtCore.QRectF(
+            rect.left() + 1.0,
+            rect.bottom() - rail_height - 1.0,
+            rect.width() - 2.0,
+            rail_height,
+        )
+        for top, rail_rect in ((True, top_rail), (False, bottom_rail)):
+            badges = [
+                badge
+                for badge in self.node.badges_for_rail("top" if top else "bottom")
+                if self._badge_visible(badge)
+            ]
+            if not badges:
+                continue
+            rects, overflow = self._rail_layout(badges, rail_rect)
+            if overflow and overflow[0].contains(pos):
+                return _aggregate_badges(badges)
+        return None
+
+    def _paint_rail_badges(self, painter: QtGui.QPainter, rail_rect: QtCore.QRectF, *, top: bool) -> None:
+        badges = [
+            badge
+            for badge in self.node.badges_for_rail("top" if top else "bottom")
+            if self._badge_visible(badge)
+        ]
+        if not badges:
+            return
+        rects, overflow = self._rail_layout(badges, rail_rect)
+        painter.save()
+        painter.setClipRect(rail_rect)
+        for badge_rect, badge in rects:
+            pixmap = _icon_pixmap(badge.key, self._icon_style, _icon_size())
+            if pixmap is None:
+                _paint_fallback_badge(painter, badge_rect, badge, self._icon_style)
+            else:
+                painter.drawPixmap(badge_rect.toRect(), pixmap)
+        if overflow:
+            overflow_rect, label = overflow
+            painter.setBrush(QtGui.QColor("#555"))
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(
+                overflow_rect,
+                overflow_rect.height() / 2.0,
+                overflow_rect.height() / 2.0,
+            )
+            painter.setPen(QtGui.QPen(QtGui.QColor("#fff"), 1.0))
+            painter.setFont(_status_badge_font())
+            painter.drawText(overflow_rect, QtCore.Qt.AlignmentFlag.AlignCenter, label)
+        painter.restore()
+
+    def _rail_layout(
+        self, badges: List[Badge], rail_rect: QtCore.QRectF
+    ) -> Tuple[List[Tuple[QtCore.QRectF, Badge]], Optional[Tuple[QtCore.QRectF, str]]]:
+        size = _icon_size()
+        spacing = _icon_spacing()
+        max_slots = max(1, RAIL_BADGE_MAX)
+        total = len(badges)
+        available = max(0.0, rail_rect.width() - (2 * STATUS_BADGE_MARGIN))
+        base_fit = int(max(0.0, (available + spacing) // (size + spacing)))
+        visible_cap = min(max_slots, base_fit)
+        overflow_label = ""
+        overflow_rect = None
+        if total > visible_cap and total >= 5:
+            overflow_label = format_overflow(total)
+            if overflow_label:
+                metrics = QtGui.QFontMetrics(_status_badge_font())
+                pill_width = max(size, metrics.horizontalAdvance(overflow_label) + (2 * STATUS_BADGE_PILL_PAD_X))
+                reserve = pill_width + spacing
+                fit = int(max(0.0, ((available - reserve) + spacing) // (size + spacing)))
+                visible_cap = max(0, min(max_slots - 1, fit))
+                visible_cap = min(visible_cap, total)
+                x = rail_rect.right() - STATUS_BADGE_MARGIN - pill_width
+                y = rail_rect.top() + (rail_rect.height() - size) / 2.0
+                overflow_rect = QtCore.QRectF(x, y, pill_width, size)
+        visible = badges[:visible_cap]
+        rects: List[Tuple[QtCore.QRectF, Badge]] = []
+        x = rail_rect.left() + STATUS_BADGE_MARGIN
+        y = rail_rect.top() + (rail_rect.height() - size) / 2.0
+        for badge in visible:
+            rects.append((QtCore.QRectF(x, y, size, size), badge))
+            x += size + spacing
+        if overflow_rect and overflow_label:
+            return rects, (overflow_rect, overflow_label)
+        return rects, None
+
+    def _paint_status_badges(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None:
+        if not self._status_badges:
+            return
+        badge_rects, overflow = self._status_badge_layout(rect)
+        if not badge_rects and not overflow:
+            return
+        painter.save()
+        painter.setFont(_status_badge_font())
+        for badge_rect, badge in badge_rects:
+            color = _status_badge_color(badge)
+            painter.setBrush(color)
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.drawEllipse(badge_rect)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#fff"), 1.0))
+            painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, _status_badge_label(badge))
+        if overflow:
+            overflow_rect, label = overflow
+            painter.setBrush(QtGui.QColor("#555"))
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(
+                overflow_rect,
+                overflow_rect.height() / 2.0,
+                overflow_rect.height() / 2.0,
+            )
+            painter.setPen(QtGui.QPen(QtGui.QColor("#fff"), 1.0))
+            painter.drawText(overflow_rect, QtCore.Qt.AlignmentFlag.AlignCenter, label)
+        painter.restore()
+
+    def _status_badge_layout(
+        self, rect: QtCore.QRectF
+    ) -> Tuple[List[Tuple[QtCore.QRectF, dict]], Optional[Tuple[QtCore.QRectF, str]]]:
+        badges = self._status_badges
+        if not badges:
+            return [], None
+        max_slots = max(1, STATUS_BADGE_MAX)
+        total = len(badges)
+        show_overflow = total > max_slots
+        visible = badges[: max_slots - 1] if show_overflow else badges[:max_slots]
+        size = _status_badge_size()
+        spacing = _status_badge_spacing()
+        y = rect.top() + 1.0 + (_rail_height() - size) / 2.0
+        x = rect.right() - STATUS_BADGE_MARGIN
+        overflow_rect = None
+        overflow_label = None
+        if show_overflow:
+            overflow_label = format_overflow(total)
+            font = _status_badge_font()
+            metrics = QtGui.QFontMetrics(font)
+            pill_width = max(size, metrics.horizontalAdvance(overflow_label) + (2 * STATUS_BADGE_PILL_PAD_X))
+            overflow_rect = QtCore.QRectF(x - pill_width, y, pill_width, size)
+            x = overflow_rect.left() - spacing
+        rects: List[Tuple[QtCore.QRectF, dict]] = []
+        for badge in reversed(visible):
+            x -= size
+            rects.append((QtCore.QRectF(x, y, size, size), badge))
+            x -= spacing
+        rects.reverse()
+        if overflow_rect and overflow_label:
+            return rects, (overflow_rect, overflow_label)
+        return rects, None
+
+    def _status_badge_hit(self, pos: QtCore.QPointF) -> bool:
+        if not self._status_badges:
+            return False
+        rects, overflow = self._status_badge_layout(self.boundingRect())
+        for rect, _badge in rects:
+            if rect.contains(pos):
+                return True
+        if overflow and overflow[0].contains(pos):
+            return True
+        return False
 
 
 class SignalDotItem(QtWidgets.QGraphicsEllipseItem):
@@ -510,6 +722,69 @@ def _diff_badge_size() -> float:
 
 def clear_icon_cache() -> None:
     _ICON_CACHE.clear()
+
+
+def _status_badge_size() -> float:
+    return float(ui_scale.scale_px(STATUS_BADGE_SIZE_BASE))
+
+
+def _status_badge_spacing() -> float:
+    return float(ui_scale.scale_px(STATUS_BADGE_SPACING_BASE))
+
+
+def _status_badge_font() -> QtGui.QFont:
+    return QtGui.QFont("Segoe UI", 7, QtGui.QFont.Weight.DemiBold)
+
+
+def _status_badge_label(badge: dict) -> str:
+    key = str(badge.get("key") or "")
+    mapping = {
+        "context": "C",
+        "activity": "A",
+        "pulse": "P",
+        "signal": "S",
+        "error": "!",
+    }
+    if key in mapping:
+        return mapping[key]
+    if key:
+        return key[:1].upper()
+    return "?"
+
+
+def _status_badge_color(badge: dict) -> QtGui.QColor:
+    color = badge.get("color")
+    if isinstance(color, QtGui.QColor):
+        return color
+    if isinstance(color, str) and color:
+        return QtGui.QColor(color)
+    return QtGui.QColor("#666")
+
+
+def format_overflow(total: int) -> str:
+    total = int(total)
+    if total >= 99:
+        return "99+"
+    if total >= 5:
+        return f"{total}+"
+    return ""
+
+
+def _aggregate_badges(badges: List[Badge]) -> list[dict]:
+    counts: Dict[str, dict] = {}
+    for badge in badges:
+        entry = counts.get(badge.key)
+        if not entry:
+            counts[badge.key] = {
+                "key": badge.key,
+                "label": badge.key,
+                "count": 1,
+                "color": _fallback_badge_color(badge),
+                "last_seen": None,
+            }
+        else:
+            entry["count"] = int(entry.get("count", 1)) + 1
+    return list(counts.values())
 
 
 def _paint_fallback_badge(
