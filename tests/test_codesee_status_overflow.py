@@ -12,3 +12,8 @@ def test_format_overflow_small_values() -> None:
     assert format_overflow(0) == ""
     assert format_overflow(1) == ""
     assert format_overflow(4) == ""
+
+
+def test_format_overflow_thresholds() -> None:
+    assert format_overflow(5) == "5+"
+    assert format_overflow(8) == "8+"

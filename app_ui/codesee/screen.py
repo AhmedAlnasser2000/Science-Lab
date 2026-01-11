@@ -1132,6 +1132,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if not statuses:
             return
         menu = QtWidgets.QMenu(self)
+        total = sum(int(status.get("count", 1)) for status in statuses)
+        total_action = QtGui.QAction(f"Total: {total}", menu)
+        total_action.setEnabled(False)
+        menu.addAction(total_action)
+        menu.addSeparator()
         for status in statuses:
             label = str(status.get("label") or "Status")
             detail = status.get("detail")
@@ -1148,6 +1153,18 @@ class CodeSeeScreen(QtWidgets.QWidget):
             if icon:
                 action.setIcon(icon)
             menu.addAction(action)
+        menu.addSeparator()
+        legend = [
+            "C = Current screen context",
+            "A = Recent activity",
+            "P = Pulse active",
+            "S = Signals",
+            "! = Error",
+        ]
+        for item in legend:
+            legend_action = QtGui.QAction(item, menu)
+            legend_action.setEnabled(False)
+            menu.addAction(legend_action)
         menu.exec(global_pos)
 
     def _status_icon(self, color) -> Optional[QtGui.QIcon]:

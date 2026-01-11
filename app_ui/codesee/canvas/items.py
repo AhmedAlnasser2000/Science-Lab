@@ -260,6 +260,11 @@ class NodeItem(QtWidgets.QGraphicsItem):
             painter.drawRoundedRect(rect.adjusted(1.0, 1.0, -1.0, -1.0), NODE_RADIUS, NODE_RADIUS)
 
     def hoverMoveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
+        if self._ellipsis_tooltip(event.pos()):
+            QtWidgets.QToolTip.showText(_screen_point(event), "More status items — open dropdown")
+            self._last_badge_key = None
+            super().hoverMoveEvent(event)
+            return
         badge = self._badge_at(event.pos())
         key = badge.key if badge else None
         if key != self._last_badge_key:
@@ -273,6 +278,38 @@ class NodeItem(QtWidgets.QGraphicsItem):
                 QtWidgets.QToolTip.hideText()
             self._last_badge_key = key
         super().hoverMoveEvent(event)
+
+    def _ellipsis_tooltip(self, pos: QtCore.QPointF) -> bool:
+        rect = self.boundingRect()
+        rail_height = _rail_height()
+        top_rail = QtCore.QRectF(
+            rect.left() + 1.0,
+            rect.top() + 1.0,
+            rect.width() - 2.0,
+            rail_height,
+        )
+        bottom_rail = QtCore.QRectF(
+            rect.left() + 1.0,
+            rect.bottom() - rail_height - 1.0,
+            rect.width() - 2.0,
+            rail_height,
+        )
+        for top, rail_rect in ((True, top_rail), (False, bottom_rail)):
+            badges = [
+                badge
+                for badge in self.node.badges_for_rail("top" if top else "bottom")
+                if self._badge_visible(badge)
+            ]
+            if not badges:
+                continue
+            _rects, _overflow, ellipsis = self._rail_layout(badges, rail_rect)
+            if ellipsis and ellipsis.contains(pos):
+                return True
+        if self._status_badges:
+            _rects, _overflow, ellipsis = self._status_badge_layout(rect)
+            if ellipsis and ellipsis.contains(pos):
+                return True
+        return False
 
     def hoverLeaveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
         QtWidgets.QToolTip.hideText()
@@ -312,7 +349,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
                     event.accept()
                     return
             if self._on_status_badges and self._status_badges and self._status_badge_hit(event.pos()):
-                self._on_status_badges(self.node, list(self._status_badges), _screen_point(event))
+                self._on_status_badges(self.node, self._dedupe_status_badges(), _screen_point(event))
                 event.accept()
                 return
             if self.on_inspect:
@@ -352,7 +389,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
             rect.width() - 2.0,
             rail_height,
         )
-        rects, _overflow = self._rail_layout(badges, rail_rect)
+        rects, _overflow, _ellipsis = self._rail_layout(badges, rail_rect)
         return rects
 
     def _badge_at(self, pos: QtCore.QPointF) -> Optional[Badge]:
@@ -366,6 +403,19 @@ class NodeItem(QtWidgets.QGraphicsItem):
         if not layer:
             return True
         return self._show_badge_layers.get(layer, True)
+
+    def _dedupe_status_badges(self) -> List[dict]:
+        seen: Dict[str, dict] = {}
+        for badge in self._status_badges:
+            key = str(badge.get("key") or "")
+            if not key:
+                continue
+            entry = seen.get(key)
+            if not entry:
+                seen[key] = dict(badge)
+                continue
+            entry["count"] = int(entry.get("count", 1)) + int(badge.get("count", 1))
+        return list(seen.values())
 
     def _badge_overflow_items(self, pos: QtCore.QPointF) -> Optional[list[dict]]:
         rect = self.boundingRect()
@@ -390,8 +440,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
             ]
             if not badges:
                 continue
-            rects, overflow = self._rail_layout(badges, rail_rect)
-            if overflow and overflow[0].contains(pos):
+            rects, overflow, ellipsis = self._rail_layout(badges, rail_rect)
+            if (overflow and overflow[0].contains(pos)) or (ellipsis and ellipsis.contains(pos)):
                 return _aggregate_badges(badges)
         return None
 
@@ -403,7 +453,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         ]
         if not badges:
             return
-        rects, overflow = self._rail_layout(badges, rail_rect)
+        rects, overflow, ellipsis = self._rail_layout(badges, rail_rect)
         painter.save()
         painter.setClipRect(rail_rect)
         for badge_rect, badge in rects:
@@ -412,7 +462,12 @@ class NodeItem(QtWidgets.QGraphicsItem):
                 _paint_fallback_badge(painter, badge_rect, badge, self._icon_style)
             else:
                 painter.drawPixmap(badge_rect.toRect(), pixmap)
+        if ellipsis:
+            painter.setPen(QtGui.QPen(QtGui.QColor("#666"), 1.0))
+            painter.setFont(_status_badge_font())
+            painter.drawText(ellipsis, QtCore.Qt.AlignmentFlag.AlignCenter, "\u2026")
         if overflow:
+            # Draw last to keep pill label intact.
             overflow_rect, label = overflow
             painter.setBrush(QtGui.QColor("#555"))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
@@ -428,47 +483,65 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def _rail_layout(
         self, badges: List[Badge], rail_rect: QtCore.QRectF
-    ) -> Tuple[List[Tuple[QtCore.QRectF, Badge]], Optional[Tuple[QtCore.QRectF, str]]]:
+    ) -> Tuple[
+        List[Tuple[QtCore.QRectF, Badge]],
+        Optional[Tuple[QtCore.QRectF, str]],
+        Optional[QtCore.QRectF],
+    ]:
+        summaries = _summarize_badges(badges)
         size = _icon_size()
         spacing = _icon_spacing()
         max_slots = max(1, RAIL_BADGE_MAX)
-        total = len(badges)
-        available = max(0.0, rail_rect.width() - (2 * STATUS_BADGE_MARGIN))
-        base_fit = int(max(0.0, (available + spacing) // (size + spacing)))
-        visible_cap = min(max_slots, base_fit)
-        overflow_label = ""
+        total_count = sum(summary["count"] for summary in summaries)
+        x_right = rail_rect.right() - STATUS_BADGE_MARGIN
         overflow_rect = None
-        if total > visible_cap and total >= 5:
-            overflow_label = format_overflow(total)
+        overflow_label = ""
+        if total_count >= 5:
+            overflow_label = format_overflow(total_count)
             if overflow_label:
                 metrics = QtGui.QFontMetrics(_status_badge_font())
                 pill_width = max(size, metrics.horizontalAdvance(overflow_label) + (2 * STATUS_BADGE_PILL_PAD_X))
-                reserve = pill_width + spacing
-                fit = int(max(0.0, ((available - reserve) + spacing) // (size + spacing)))
-                visible_cap = max(0, min(max_slots - 1, fit))
-                visible_cap = min(visible_cap, total)
-                x = rail_rect.right() - STATUS_BADGE_MARGIN - pill_width
-                y = rail_rect.top() + (rail_rect.height() - size) / 2.0
-                overflow_rect = QtCore.QRectF(x, y, pill_width, size)
-        visible = badges[:visible_cap]
+                overflow_rect = QtCore.QRectF(x_right - pill_width, rail_rect.top() + (rail_rect.height() - size) / 2.0, pill_width, size)
+                x_right = overflow_rect.left() - spacing
+        available = max(0.0, x_right - (rail_rect.left() + STATUS_BADGE_MARGIN))
+        max_fit = int(max(0.0, (available + spacing) // (size + spacing)))
+        max_visible = min(max_slots, max_fit)
+        visible_summaries = summaries[:max_visible]
+        hidden_types = max(0, len(summaries) - len(visible_summaries))
+        ellipsis_rect = None
+        if hidden_types > 0:
+            ellipsis_rect = QtCore.QRectF(x_right - size, rail_rect.top() + (rail_rect.height() - size) / 2.0, size, size)
+            x_right = ellipsis_rect.left() - spacing
+            available = max(0.0, x_right - (rail_rect.left() + STATUS_BADGE_MARGIN))
+            max_fit = int(max(0.0, (available + spacing) // (size + spacing)))
+            max_visible = min(max_slots, max_fit)
+            visible_summaries = summaries[:max_visible]
         rects: List[Tuple[QtCore.QRectF, Badge]] = []
-        x = rail_rect.left() + STATUS_BADGE_MARGIN
+        x = x_right
         y = rail_rect.top() + (rail_rect.height() - size) / 2.0
-        for badge in visible:
-            rects.append((QtCore.QRectF(x, y, size, size), badge))
-            x += size + spacing
-        if overflow_rect and overflow_label:
-            return rects, (overflow_rect, overflow_label)
-        return rects, None
+        for summary in reversed(visible_summaries):
+            x -= size
+            rects.append((QtCore.QRectF(x, y, size, size), summary["badge"]))
+            x -= spacing
+        rects.reverse()
+        overflow = (overflow_rect, overflow_label) if overflow_rect and overflow_label else None
+        return rects, overflow, ellipsis_rect
 
     def _paint_status_badges(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None:
         if not self._status_badges:
             return
-        badge_rects, overflow = self._status_badge_layout(rect)
-        if not badge_rects and not overflow:
+        badge_rects, overflow, ellipsis = self._status_badge_layout(rect)
+        if not badge_rects and not overflow and not ellipsis:
             return
+        badge_strip = QtCore.QRectF(
+            rect.left() + 1.0,
+            rect.top() + 1.0,
+            rect.width() - 2.0,
+            _rail_height(),
+        )
         painter.save()
         painter.setFont(_status_badge_font())
+        painter.setClipRect(badge_strip)
         for badge_rect, badge in badge_rects:
             color = _status_badge_color(badge)
             painter.setBrush(color)
@@ -476,7 +549,12 @@ class NodeItem(QtWidgets.QGraphicsItem):
             painter.drawEllipse(badge_rect)
             painter.setPen(QtGui.QPen(QtGui.QColor("#fff"), 1.0))
             painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, _status_badge_label(badge))
+        if ellipsis:
+            ellipsis_rect = ellipsis
+            painter.setPen(QtGui.QPen(QtGui.QColor("#666"), 1.0))
+            painter.drawText(ellipsis_rect, QtCore.Qt.AlignmentFlag.AlignCenter, "\u2026")
         if overflow:
+            # Draw last so the pill label can't be overwritten by badge letters.
             overflow_rect, label = overflow
             painter.setBrush(QtGui.QColor("#555"))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
@@ -491,45 +569,66 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def _status_badge_layout(
         self, rect: QtCore.QRectF
-    ) -> Tuple[List[Tuple[QtCore.QRectF, dict]], Optional[Tuple[QtCore.QRectF, str]]]:
-        badges = self._status_badges
+    ) -> Tuple[
+        List[Tuple[QtCore.QRectF, dict]],
+        Optional[Tuple[QtCore.QRectF, str]],
+        Optional[QtCore.QRectF],
+    ]:
+        badges = self._dedupe_status_badges()
         if not badges:
-            return [], None
+            return [], None, None
         max_slots = max(1, STATUS_BADGE_MAX)
-        total = len(badges)
-        show_overflow = total > max_slots
-        visible = badges[: max_slots - 1] if show_overflow else badges[:max_slots]
         size = _status_badge_size()
         spacing = _status_badge_spacing()
         y = rect.top() + 1.0 + (_rail_height() - size) / 2.0
-        x = rect.right() - STATUS_BADGE_MARGIN
+        total_count = sum(int(badge.get("count", 1)) for badge in badges)
+        x_left = rect.left() + STATUS_BADGE_MARGIN
+        x_right = rect.right() - STATUS_BADGE_MARGIN
         overflow_rect = None
-        overflow_label = None
-        if show_overflow:
-            overflow_label = format_overflow(total)
-            font = _status_badge_font()
-            metrics = QtGui.QFontMetrics(font)
-            pill_width = max(size, metrics.horizontalAdvance(overflow_label) + (2 * STATUS_BADGE_PILL_PAD_X))
-            overflow_rect = QtCore.QRectF(x - pill_width, y, pill_width, size)
-            x = overflow_rect.left() - spacing
+        overflow_label = ""
+        pill_width = 0.0
+        if total_count >= 5:
+            overflow_label = format_overflow(total_count)
+            if overflow_label:
+                metrics = QtGui.QFontMetrics(_status_badge_font())
+                pill_width = max(size, metrics.horizontalAdvance(overflow_label) + (2 * STATUS_BADGE_PILL_PAD_X))
+        ellipsis_rect = None
+        reserved = (pill_width + spacing) if overflow_label else 0.0
+        available = max(0.0, x_right - x_left - reserved)
+        max_fit = int(max(0.0, (available + spacing) // (size + spacing)))
+        max_visible = min(max_slots, max_fit)
+        visible = badges[:max_visible]
+        hidden_types = max(0, len(badges) - len(visible))
+        if hidden_types > 0:
+            reserved = (size + spacing) + ((pill_width + spacing) if overflow_label else 0.0)
+            available = max(0.0, x_right - x_left - reserved)
+            max_fit = int(max(0.0, (available + spacing) // (size + spacing)))
+            max_visible = min(max_slots, max_fit)
+            visible = badges[:max_visible]
+            hidden_types = max(0, len(badges) - len(visible))
         rects: List[Tuple[QtCore.QRectF, dict]] = []
-        for badge in reversed(visible):
-            x -= size
+        x = x_left
+        for badge in visible:
             rects.append((QtCore.QRectF(x, y, size, size), badge))
-            x -= spacing
-        rects.reverse()
-        if overflow_rect and overflow_label:
-            return rects, (overflow_rect, overflow_label)
-        return rects, None
+            x += size + spacing
+        if hidden_types > 0:
+            ellipsis_rect = QtCore.QRectF(x, y, size, size)
+            x += size + spacing
+        if overflow_label:
+            overflow_rect = QtCore.QRectF(x, y, pill_width, size)
+        overflow = (overflow_rect, overflow_label) if overflow_rect and overflow_label else None
+        return rects, overflow, ellipsis_rect
 
     def _status_badge_hit(self, pos: QtCore.QPointF) -> bool:
         if not self._status_badges:
             return False
-        rects, overflow = self._status_badge_layout(self.boundingRect())
+        rects, overflow, ellipsis = self._status_badge_layout(self.boundingRect())
         for rect, _badge in rects:
             if rect.contains(pos):
                 return True
         if overflow and overflow[0].contains(pos):
+            return True
+        if ellipsis and ellipsis.contains(pos):
             return True
         return False
 
@@ -777,7 +876,7 @@ def _aggregate_badges(badges: List[Badge]) -> list[dict]:
         if not entry:
             counts[badge.key] = {
                 "key": badge.key,
-                "label": badge.key,
+                "label": _badge_label(badge.key),
                 "count": 1,
                 "color": _fallback_badge_color(badge),
                 "last_seen": None,
@@ -785,6 +884,37 @@ def _aggregate_badges(badges: List[Badge]) -> list[dict]:
         else:
             entry["count"] = int(entry.get("count", 1)) + 1
     return list(counts.values())
+
+
+def _summarize_badges(badges: List[Badge]) -> list[dict]:
+    summaries: Dict[str, dict] = {}
+    ordered: list[str] = []
+    for badge in badges:
+        key = badge.key
+        entry = summaries.get(key)
+        if not entry:
+            summaries[key] = {"badge": badge, "count": 1}
+            ordered.append(key)
+        else:
+            entry["count"] = int(entry.get("count", 1)) + 1
+    return [summaries[key] for key in ordered]
+
+
+def _badge_label(key: str) -> str:
+    return {
+        "state.error": "Error",
+        "state.warn": "Warning",
+        "state.crash": "Crash",
+        "activity.muted": "Muted activity",
+        "activity.active": "Activity",
+        "activity.stuck": "Stuck activity",
+        "probe.fail": "Probe failed",
+        "probe.pass": "Probe passed",
+        "expect.value": "Expectation",
+        "expect.mismatch": "Expectation mismatch",
+        "conn.offline": "Offline",
+        "perf.slow": "Performance slow",
+    }.get(key, key)
 
 
 def _paint_fallback_badge(
