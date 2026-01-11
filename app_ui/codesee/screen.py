@@ -1132,12 +1132,24 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if not statuses:
             return
         menu = QtWidgets.QMenu(self)
-        total = sum(int(status.get("count", 1)) for status in statuses)
+        total = 0
+        normalized: list[dict] = []
+        for status in statuses:
+            count_raw = status.get("count", 1)
+            count = 1
+            if isinstance(count_raw, int):
+                count = count_raw
+            elif isinstance(count_raw, str):
+                digits = "".join(ch for ch in count_raw if ch.isdigit())
+                if digits:
+                    count = int(digits)
+            total += count
+            normalized.append({**status, "count": count})
         total_action = QtGui.QAction(f"Total: {total}", menu)
         total_action.setEnabled(False)
         menu.addAction(total_action)
         menu.addSeparator()
-        for status in statuses:
+        for status in normalized:
             label = str(status.get("label") or "Status")
             detail = status.get("detail")
             if detail:
