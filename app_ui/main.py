@@ -2770,6 +2770,7 @@ class MainWindow(QtWidgets.QMainWindow):
         set_global_hub(self.codesee_hub)
         install_exception_hooks(self.codesee_hub)
         self.codesee_window: Optional[CodeSeeWindow] = None
+        self._codesee_context: str = "Main Menu"
         self.codesee_bus_bridge: Optional[BusBridge] = None
 
         self.stacked = QtWidgets.QStackedWidget()
@@ -2896,6 +2897,10 @@ class MainWindow(QtWidgets.QMainWindow):
             runtime_hub=self.codesee_hub,
             on_open_window=self._open_code_see_window,
         )
+        try:
+            self.codesee.set_screen_context(self._codesee_context)
+        except Exception:
+            pass
         self.component_host = ComponentHostScreen(
             self._show_content_browser, workspace_selector_factory=selector_factory
         )
@@ -3238,6 +3243,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _publish_codesee_event(self, message: str, *, node_ids: Optional[List[str]] = None) -> None:
         if not self.codesee_hub:
             return
+        self._codesee_context = message
+        if hasattr(self, "codesee") and self.codesee:
+            try:
+                self.codesee.set_screen_context(message)
+            except Exception:
+                pass
+        if self.codesee_window:
+            try:
+                self.codesee_window.screen.set_screen_context(message)
+            except Exception:
+                pass
         event = CodeSeeEvent(
             ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             kind=EVENT_APP_ACTIVITY,
@@ -3479,6 +3495,10 @@ class MainWindow(QtWidgets.QMainWindow):
             on_close=self._on_codesee_window_closed,
         )
         self.codesee_window.show()
+        try:
+            self.codesee_window.screen.set_screen_context(self._codesee_context)
+        except Exception:
+            pass
         self._publish_codesee_event("Code See (Window)", node_ids=["system:app_ui"])
 
     def _on_codesee_window_closed(self) -> None:

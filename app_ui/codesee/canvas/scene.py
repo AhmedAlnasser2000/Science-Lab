@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from bisect import bisect_right
 from typing import Callable, Dict, Optional, Tuple
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -17,6 +18,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         on_open_subgraph: Optional[Callable[[str], None]] = None,
         on_layout_changed: Optional[Callable[[], None]] = None,
         on_inspect: Optional[Callable] = None,
+        on_status_badges: Optional[Callable] = None,
         icon_style: str = "color",
         node_theme: str = "neutral",
     ) -> None:
@@ -24,6 +26,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self.on_open_subgraph = on_open_subgraph
         self.on_layout_changed = on_layout_changed
         self.on_inspect = on_inspect
+        self._on_status_badges = on_status_badges
         self._icon_style = icon_style
         self._node_theme = node_theme or "neutral"
         self._badge_layers: Dict[str, bool] = {}
@@ -37,6 +40,15 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._pulses: Dict[str, dict] = {}
         self._span_tints: Dict[str, dict] = {}
         self._activity_glow: Dict[str, dict] = {}
+        self._node_activity_ts: Dict[str, float] = {}
+        self._node_activity_color: Dict[str, QtGui.QColor] = {}
+        self._activity_fade_s = 2.0
+        # Status semantics:
+        # - active_count reflects current concurrent/visible states (decay/cap applies).
+        # - total_count reflects session occurrences (monotonic while CodeSee is open).
+        self._status_totals: Dict[str, Dict[str, int]] = {}
+        self._context_nodes: set[str] = set()
+        self._context_label: Optional[str] = None
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -74,6 +86,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 on_open_subgraph=self.on_open_subgraph,
                 on_layout_changed=self.on_layout_changed,
                 on_inspect=self.on_inspect,
+                on_status_badges=self._on_status_badges,
                 icon_style=self._icon_style,
                 node_theme=self._node_theme,
                 show_badge_layers=self._badge_layers,
@@ -91,7 +104,23 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 item.setPos(x, y)
             self._nodes[node.node_id] = item
 
+        if self._node_activity_ts:
+            self._node_activity_ts = {
+                node_id: ts for node_id, ts in self._node_activity_ts.items() if node_id in self._nodes
+            }
+            self._node_activity_color = {
+                node_id: color
+                for node_id, color in self._node_activity_color.items()
+                if node_id in self._node_activity_ts
+            }
+        if self._status_totals:
+            self._status_totals = {
+                node_id: totals for node_id, totals in self._status_totals.items() if node_id in self._nodes
+            }
+
         self._apply_tints()
+        self._apply_context()
+        self._update_node_statuses()
 
         for edge in graph.edges:
             src = self._nodes.get(edge.src_node_id)
@@ -128,6 +157,14 @@ class GraphScene(QtWidgets.QGraphicsScene):
     def set_reduced_motion(self, value: bool) -> None:
         self._reduced_motion = bool(value)
 
+    def set_context_nodes(self, node_ids: Optional[set[str]], *, label: Optional[str] = None) -> None:
+        self._context_nodes = set(node_ids or [])
+        self._context_label = label
+        for node_id in self._context_nodes:
+            self._bump_status_total(node_id, "context", 1)
+        self._apply_context()
+        self._update_node_statuses()
+
     def set_span_tints(
         self,
         node_ids: list[str],
@@ -151,6 +188,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
     ) -> None:
         if node_id not in self._nodes:
             return
+        self._record_activity(node_id, color)
         self._activity_glow[node_id] = {
             "t0": time.monotonic(),
             "linger": max(0.0, float(linger_ms) / 1000.0),
@@ -235,6 +273,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
         target_item = self._nodes.get(target_id)
         if not target_item:
             return
+        self._record_activity(target_id, color)
+        self._bump_status_total(target_id, "signal", 1)
         speed = _setting_value(settings, "travel_speed_px_per_s", 900)
         travel_duration_ms = _setting_value(settings, "travel_duration_ms", 0)
         linger_ms = _setting_value(settings, "arrive_linger_ms", 300)
@@ -354,7 +394,21 @@ class GraphScene(QtWidgets.QGraphicsScene):
                     except RuntimeError:
                         pass
             self._signals = []
-        if not self._signals and not self._pulses and self._signal_timer.isActive():
+        if self._node_activity_ts:
+            for node_id, item in list(self._nodes.items()):
+                try:
+                    item.set_activity(0.0, None)
+                except RuntimeError:
+                    pass
+            self._node_activity_ts = {}
+            self._node_activity_color = {}
+        if (
+            not self._signals
+            and not self._pulses
+            and not self._activity_glow
+            and not self._node_activity_ts
+            and self._signal_timer.isActive()
+        ):
             self._signal_timer.stop()
 
     def node_positions(self) -> Dict[str, Tuple[float, float]]:
@@ -406,7 +460,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._signals = remaining
         self._tick_pulses(now)
         self._tick_activity(now)
-        if not self._signals and not self._pulses and not self._activity_glow:
+        self._tick_node_activity(now)
+        self._update_node_statuses()
+        if not self._signals and not self._pulses and not self._activity_glow and not self._node_activity_ts:
             if self._signal_timer.isActive():
                 self._signal_timer.stop()
 
@@ -436,6 +492,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
     ) -> None:
         if node_id not in self._nodes:
             return
+        self._record_activity(node_id, color)
+        self._bump_status_total(node_id, "pulse", 1)
         self._pulses[node_id] = {
             "t0": time.monotonic(),
             "color": color,
@@ -526,6 +584,113 @@ class GraphScene(QtWidgets.QGraphicsScene):
             else:
                 item.set_tint(0.0, None)
 
+    def _apply_context(self) -> None:
+        if not self._nodes:
+            return
+        color = QtGui.QColor("#2f9e44")
+        for node_id, item in self._nodes.items():
+            item.set_context_active(node_id in self._context_nodes, color)
+
+    def _record_activity(self, node_id: str, color: Optional[QtGui.QColor]) -> None:
+        self._node_activity_ts[node_id] = time.monotonic()
+        if isinstance(color, QtGui.QColor):
+            self._node_activity_color[node_id] = color
+        self._bump_status_total(node_id, "activity", 1)
+        if not self._signal_timer.isActive():
+            self._signal_timer.start()
+
+    def _tick_node_activity(self, now: float) -> None:
+        if not self._node_activity_ts:
+            return
+        remove_ids = []
+        for node_id, ts in list(self._node_activity_ts.items()):
+            age = max(0.0, now - float(ts))
+            alpha = activity_alpha(age, self._activity_fade_s, self._reduced_motion)
+            item = self._nodes.get(node_id)
+            color = self._node_activity_color.get(node_id)
+            if not item:
+                remove_ids.append(node_id)
+                continue
+            if alpha <= 0.0:
+                remove_ids.append(node_id)
+                if item:
+                    try:
+                        item.set_activity(0.0, None)
+                    except RuntimeError:
+                        pass
+                continue
+            if item:
+                try:
+                    item.set_activity(alpha, color)
+                except RuntimeError:
+                    remove_ids.append(node_id)
+        for node_id in remove_ids:
+            self._node_activity_ts.pop(node_id, None)
+            self._node_activity_color.pop(node_id, None)
+
+    def _update_node_statuses(self) -> None:
+        if not self._nodes:
+            return
+        now = time.monotonic()
+        for node_id, item in self._nodes.items():
+            totals = self._status_totals.get(node_id, {})
+            statuses: list[dict] = []
+            if node_id in self._context_nodes:
+                statuses.append(
+                    {
+                        "key": "context",
+                        "label": "Current screen context",
+                        "detail": self._context_label,
+                        "color": "#2f9e44",
+                        "active_count": 1,
+                        "total_count": int(totals.get("context", 1)),
+                    }
+                )
+            ts = self._node_activity_ts.get(node_id)
+            if ts is not None:
+                age = max(0.0, now - float(ts))
+                if activity_alpha(age, self._activity_fade_s, self._reduced_motion) > 0.0:
+                    statuses.append(
+                        {
+                            "key": "activity",
+                            "label": "Recent activity",
+                            "last_seen": age,
+                            "color": "#4c6ef5",
+                            "active_count": 1,
+                            "total_count": int(totals.get("activity", 0)),
+                        }
+                    )
+            if node_id in self._pulses:
+                statuses.append(
+                    {
+                        "key": "pulse",
+                        "label": "Pulse active",
+                        "color": "#845ef7",
+                        "active_count": 1,
+                        "total_count": int(totals.get("pulse", 0)),
+                    }
+                )
+            signal_count = sum(1 for state in self._signals if state.get("target") == node_id)
+            if signal_count:
+                statuses.append(
+                    {
+                        "key": "signal",
+                        "label": "Signals",
+                        "count": signal_count,
+                        "color": "#2b8a3e",
+                        "active_count": int(signal_count),
+                        "total_count": int(totals.get("signal", 0)),
+                    }
+                )
+            item.set_status_badges(statuses)
+
+    def _bump_status_total(self, node_id: str, key: str, delta: int) -> None:
+        totals = self._status_totals.get(node_id)
+        if totals is None:
+            totals = {}
+            self._status_totals[node_id] = totals
+        totals[key] = int(totals.get(key, 0)) + int(delta)
+
     def _apply_span_tints(self) -> None:
         self._apply_tints()
 
@@ -544,6 +709,37 @@ def _distance(start: QtCore.QPointF, end: QtCore.QPointF) -> float:
     dx = start.x() - end.x()
     dy = start.y() - end.y()
     return (dx * dx + dy * dy) ** 0.5
+
+
+def _build_cumdist(points: list[tuple[float, float]]) -> tuple[list[float], float]:
+    if not points:
+        return [0.0], 0.0
+    cumdist = [0.0]
+    total = 0.0
+    for idx in range(1, len(points)):
+        x0, y0 = points[idx - 1]
+        x1, y1 = points[idx]
+        dx = x1 - x0
+        dy = y1 - y0
+        total += (dx * dx + dy * dy) ** 0.5
+        cumdist.append(total)
+    return cumdist, total
+
+
+def _distance_to_percent(cumdist: list[float], total: float, distance: float) -> float:
+    if total <= 0.0:
+        return 0.0
+    distance = max(0.0, min(float(distance), float(total)))
+    idx = max(0, bisect_right(cumdist, distance) - 1)
+    if idx >= len(cumdist) - 1:
+        return 1.0
+    seg_start = cumdist[idx]
+    seg_end = cumdist[idx + 1]
+    seg_len = max(1e-9, seg_end - seg_start)
+    t = (distance - seg_start) / seg_len
+    p0 = idx / max(1.0, (len(cumdist) - 1))
+    p1 = (idx + 1) / max(1.0, (len(cumdist) - 1))
+    return p0 + (p1 - p0) * t
 
 
 def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
@@ -581,6 +777,14 @@ def _pulse_strength(state: dict, elapsed: float) -> Tuple[float, bool]:
 def _edge_progress(progress: float, reverse: bool) -> float:
     clamped = max(0.0, min(1.0, float(progress)))
     return 1.0 - clamped if reverse else clamped
+
+
+def activity_alpha(age_s: float, fade_s: float = 2.0, reduced_motion: bool = False) -> float:
+    if reduced_motion:
+        return 1.0 if age_s <= 1.0 else 0.0
+    if fade_s <= 0.0:
+        return 0.0
+    return max(0.0, 1.0 - (age_s / fade_s))
 
 
 def _node_diff_state(node_id: str, diff_result: Optional[DiffResult]) -> Optional[str]:

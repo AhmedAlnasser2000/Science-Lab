@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -118,6 +119,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._overlay_badges: Dict[str, list[Badge]] = {}
         self._overlay_limit = 8
         self._runtime_connected = False
+        self._screen_context: Optional[str] = None
         self._overlay_checks: Dict[str, list[EVACheck]] = {}
         self._status_timer = QtCore.QTimer(self)
         self._status_timer.setInterval(1000)
@@ -277,6 +279,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             on_open_subgraph=self._enter_subgraph,
             on_layout_changed=self._save_layout,
             on_inspect=self._inspect_node,
+            on_status_badges=self._show_status_menu,
             icon_style=self._resolved_icon_style(),
             node_theme=self._node_theme,
         )
@@ -346,6 +349,29 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.diff_action.blockSignals(True)
             self.diff_action.setChecked(False)
             self.diff_action.blockSignals(False)
+
+    def set_screen_context(self, context: str, detail: Optional[dict] = None) -> None:
+        context = (context or "").strip()
+        if not context:
+            return
+        if context == self._screen_context and not detail:
+            return
+        self._screen_context = context
+        if self.scene:
+            self.scene.set_context_nodes(self._context_nodes_for(context), label=context)
+        self._update_mode_status(0, 0)
+
+    def _context_nodes_for(self, context: str) -> set[str]:
+        key = context.lower()
+        if "system health" in key or "diagnostics" in key or "pack management" in key:
+            return {"system:core_center"}
+        if "content browser" in key or "content management" in key:
+            return {"system:content_system"}
+        if "block sandbox" in key or "block catalog" in key:
+            return {"system:component_runtime"}
+        if "lab" in key:
+            return {"system:component_runtime"}
+        return {"system:app_ui"}
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)
@@ -1103,6 +1129,140 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if not active_signals and not active_spans:
             self._status_timer.stop()
 
+    def _show_status_menu(self, node: Node, statuses: list, global_pos: QtCore.QPoint) -> None:
+        if not statuses:
+            return
+        menu = QtWidgets.QMenu(self)
+        total = 0
+        normalized: list[dict] = []
+        def _normalize_label(text: str) -> str:
+            # Strip capped overflow markers like "8+" so the menu shows exact counts.
+            return re.sub(r"(\d+)\+", r"\1", text)
+        for status in statuses:
+            count_raw = status.get("count", 1)
+            count = 1
+            if isinstance(count_raw, int):
+                count = count_raw
+            elif isinstance(count_raw, str):
+                digits = "".join(ch for ch in count_raw if ch.isdigit())
+                if digits:
+                    count = int(digits)
+            label = str(status.get("label") or "Status")
+            detail = status.get("detail")
+            if isinstance(label, str):
+                label = _normalize_label(label)
+            if isinstance(detail, str):
+                detail = _normalize_label(detail)
+            if not isinstance(count_raw, (int, str)):
+                match = re.search(r"(\d+)", label if label else "")
+                if match:
+                    count = int(match.group(1))
+            total += count
+            normalized.append(
+                {
+                    **status,
+                    "count": count,
+                    "label": label,
+                    "detail": detail,
+                    "active_count": int(status.get("active_count", count)),
+                    "total_count": int(status.get("total_count", count)),
+                }
+            )
+        totals = {
+            "Context": [0, 0],
+            "Activity": [0, 0],
+            "Pulses": [0, 0],
+            "Signals": [0, 0],
+            "Errors": [0, 0],
+        }
+        for status in normalized:
+            key = str(status.get("key") or "")
+            active_count = int(status.get("active_count", status.get("count", 1)))
+            total_count = int(status.get("total_count", status.get("count", 1)))
+            if key == "context":
+                totals["Context"][0] += active_count
+                totals["Context"][1] += total_count
+            elif key == "pulse":
+                totals["Pulses"][0] += active_count
+                totals["Pulses"][1] += total_count
+            elif key == "signal":
+                totals["Signals"][0] += active_count
+                totals["Signals"][1] += total_count
+            elif key == "activity" or key.startswith("activity."):
+                totals["Activity"][0] += active_count
+                totals["Activity"][1] += total_count
+            elif key in ("error", "state.error", "state.crash", "state.warn", "probe.fail", "expect.mismatch"):
+                totals["Errors"][0] += active_count
+                totals["Errors"][1] += total_count
+        if any(active or total for active, total in totals.values()):
+            totals_action = QtGui.QAction("Counts: Active now / Total (session)", menu)
+            totals_action.setEnabled(False)
+            menu.addAction(totals_action)
+            for name, value in totals.items():
+                active, total = value
+                if active <= 0 and total <= 0:
+                    continue
+                total_line = QtGui.QAction(f"{name}: {_format_active_total(active, total)}", menu)
+                total_line.setEnabled(False)
+                menu.addAction(total_line)
+        menu.addSeparator()
+        for status in normalized:
+            label = str(status.get("label") or "Status")
+            detail = status.get("detail")
+            if detail:
+                label = f"{label}: {detail}"
+            active_count = int(status.get("active_count", status.get("count", 1)))
+            total_count = int(status.get("total_count", status.get("count", 1)))
+            label = f"{label} ({_format_active_total(active_count, total_count)})"
+            last_seen = status.get("last_seen")
+            if isinstance(last_seen, (int, float)):
+                label = f"{label} — {self._format_age(float(last_seen))} ago"
+            action = QtGui.QAction(label, menu)
+            icon = self._status_icon(status.get("color"))
+            if icon:
+                action.setIcon(icon)
+            menu.addAction(action)
+        menu.addSeparator()
+        legend = [
+            "C = Current screen context",
+            "A = Recent activity",
+            "P = Pulse active",
+            "S = Signals",
+            "! = Error",
+        ]
+        for item in legend:
+            legend_action = QtGui.QAction(item, menu)
+            legend_action.setEnabled(False)
+            menu.addAction(legend_action)
+        menu.exec(global_pos)
+
+    def _status_icon(self, color) -> Optional[QtGui.QIcon]:
+        size = int(max(8, ui_scale.scale_px(10)))
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        if isinstance(color, QtGui.QColor):
+            tint = color
+        elif color:
+            tint = QtGui.QColor(color)
+        else:
+            tint = QtGui.QColor("#666")
+        painter.setBrush(tint)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, size, size)
+        painter.end()
+        return QtGui.QIcon(pixmap)
+
+    def _format_age(self, age_s: float) -> str:
+        if age_s < 1.0:
+            return "0s"
+        if age_s < 60.0:
+            return f"{int(age_s)}s"
+        if age_s < 3600.0:
+            return f"{int(age_s // 60)}m"
+        return f"{int(age_s // 3600)}h"
+
     def _refresh_span_activity(self) -> None:
         if not self._runtime_hub:
             return
@@ -1842,6 +2002,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 f"-{len(self._diff_result.nodes_removed)} "
                 f"Δ{len(self._diff_result.nodes_changed)}"
             )
+        screen_label = f"Screen: {self._screen_context}" if self._screen_context else None
         bus_state = "Disconnected"
         active_spans = 0
         active_pulses = 0
@@ -1854,6 +2015,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         parts = [
             f"Source: {self._source}",
             f"Lens: {lens_title}",
+            screen_label,
             f"Live: {live_state}",
             f"Diff: {diff_state}",
             f"Delta: {diff_counts}" if diff_counts else None,
@@ -1953,6 +2115,10 @@ def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None
         if combo.itemData(idx) == value:
             combo.setCurrentIndex(idx)
             return
+
+
+def _format_active_total(active: int, total: int) -> str:
+    return f"{int(active)} / {int(total)}"
 
 
 def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:

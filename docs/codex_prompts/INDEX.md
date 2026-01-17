@@ -28,4 +28,7 @@ Definition of Done:
 | Prompt file | Commit | Notes |
 | --- | --- | --- |
 | V5.5/2026-01-07__V5.5a__codesee__edge_following_pulses.md | TBD | CodeSee pulses follow edge paths for rendering and animation |
-| V5.5/2026-01-07__V5.5b NOT appended yet
+| V5.5/2026-01-07__V5.5b__codesee__node_activity_visibility_and_screen_context.md | TBD | Node activity visibility + minimal screen-context tracking in CodeSee |
+| V5.5/2026-01-11__V5.5b1__codesee__context_sticky_highlight_and_badge_overflow.md | TBD | Context-sticky highlight and compressed status badges with overflow menu |
+| V5.5/2026-01-12__V5.5b1__codesee__badge_overflow_pill_fix.md | TBD | Fix badge overflow pill + clipping + aggregated dropdown counts |
+
