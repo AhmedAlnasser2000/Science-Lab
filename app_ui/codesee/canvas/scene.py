@@ -43,6 +43,10 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._node_activity_ts: Dict[str, float] = {}
         self._node_activity_color: Dict[str, QtGui.QColor] = {}
         self._activity_fade_s = 2.0
+        # Status semantics:
+        # - active_count reflects current concurrent/visible states (decay/cap applies).
+        # - total_count reflects session occurrences (monotonic while CodeSee is open).
+        self._status_totals: Dict[str, Dict[str, int]] = {}
         self._context_nodes: set[str] = set()
         self._context_label: Optional[str] = None
         self._signal_timer = QtCore.QTimer(self)
@@ -109,6 +113,10 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 for node_id, color in self._node_activity_color.items()
                 if node_id in self._node_activity_ts
             }
+        if self._status_totals:
+            self._status_totals = {
+                node_id: totals for node_id, totals in self._status_totals.items() if node_id in self._nodes
+            }
 
         self._apply_tints()
         self._apply_context()
@@ -152,6 +160,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
     def set_context_nodes(self, node_ids: Optional[set[str]], *, label: Optional[str] = None) -> None:
         self._context_nodes = set(node_ids or [])
         self._context_label = label
+        for node_id in self._context_nodes:
+            self._bump_status_total(node_id, "context", 1)
         self._apply_context()
         self._update_node_statuses()
 
@@ -264,6 +274,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         if not target_item:
             return
         self._record_activity(target_id, color)
+        self._bump_status_total(target_id, "signal", 1)
         speed = _setting_value(settings, "travel_speed_px_per_s", 900)
         travel_duration_ms = _setting_value(settings, "travel_duration_ms", 0)
         linger_ms = _setting_value(settings, "arrive_linger_ms", 300)
@@ -482,6 +493,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         if node_id not in self._nodes:
             return
         self._record_activity(node_id, color)
+        self._bump_status_total(node_id, "pulse", 1)
         self._pulses[node_id] = {
             "t0": time.monotonic(),
             "color": color,
@@ -583,6 +595,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._node_activity_ts[node_id] = time.monotonic()
         if isinstance(color, QtGui.QColor):
             self._node_activity_color[node_id] = color
+        self._bump_status_total(node_id, "activity", 1)
         if not self._signal_timer.isActive():
             self._signal_timer.start()
 
@@ -620,6 +633,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
             return
         now = time.monotonic()
         for node_id, item in self._nodes.items():
+            totals = self._status_totals.get(node_id, {})
             statuses: list[dict] = []
             if node_id in self._context_nodes:
                 statuses.append(
@@ -628,6 +642,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                         "label": "Current screen context",
                         "detail": self._context_label,
                         "color": "#2f9e44",
+                        "active_count": 1,
+                        "total_count": int(totals.get("context", 1)),
                     }
                 )
             ts = self._node_activity_ts.get(node_id)
@@ -640,6 +656,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                             "label": "Recent activity",
                             "last_seen": age,
                             "color": "#4c6ef5",
+                            "active_count": 1,
+                            "total_count": int(totals.get("activity", 0)),
                         }
                     )
             if node_id in self._pulses:
@@ -648,6 +666,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
                         "key": "pulse",
                         "label": "Pulse active",
                         "color": "#845ef7",
+                        "active_count": 1,
+                        "total_count": int(totals.get("pulse", 0)),
                     }
                 )
             signal_count = sum(1 for state in self._signals if state.get("target") == node_id)
@@ -658,9 +678,18 @@ class GraphScene(QtWidgets.QGraphicsScene):
                         "label": "Signals",
                         "count": signal_count,
                         "color": "#2b8a3e",
+                        "active_count": int(signal_count),
+                        "total_count": int(totals.get("signal", 0)),
                     }
                 )
             item.set_status_badges(statuses)
+
+    def _bump_status_total(self, node_id: str, key: str, delta: int) -> None:
+        totals = self._status_totals.get(node_id)
+        if totals is None:
+            totals = {}
+            self._status_totals[node_id] = totals
+        totals[key] = int(totals.get(key, 0)) + int(delta)
 
     def _apply_span_tints(self) -> None:
         self._apply_tints()

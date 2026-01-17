@@ -428,6 +428,13 @@ class NodeItem(QtWidgets.QGraphicsItem):
             for existing in items:
                 if str(existing.get("key") or "") == key:
                     existing["count"] = int(existing.get("count", 1)) + int(entry.get("count", 1))
+                    existing["active_count"] = int(existing.get("active_count", 0)) + int(
+                        entry.get("active_count", 0)
+                    )
+                    if "total_count" in entry:
+                        existing["total_count"] = max(
+                            int(existing.get("total_count", 0)), int(entry.get("total_count", 0))
+                        )
                     if not existing.get("detail") and entry.get("detail"):
                         existing["detail"] = entry.get("detail")
                     last_seen = entry.get("last_seen")
@@ -446,8 +453,14 @@ class NodeItem(QtWidgets.QGraphicsItem):
                 if self._badge_visible(badge)
             )
         for entry in _aggregate_badges(rail_badges):
+            count = int(entry.get("count", 1))
+            entry["active_count"] = count
+            entry["total_count"] = count
             _merge(entry)
         for entry in self._dedupe_status_badges():
+            entry = dict(entry)
+            if "active_count" not in entry:
+                entry["active_count"] = int(entry.get("count", 1))
             _merge(entry)
         return items
 

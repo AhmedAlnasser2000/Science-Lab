@@ -1158,35 +1158,51 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 if match:
                     count = int(match.group(1))
             total += count
-            normalized.append({**status, "count": count, "label": label, "detail": detail})
+            normalized.append(
+                {
+                    **status,
+                    "count": count,
+                    "label": label,
+                    "detail": detail,
+                    "active_count": int(status.get("active_count", count)),
+                    "total_count": int(status.get("total_count", count)),
+                }
+            )
         totals = {
-            "Context": 0,
-            "Activity": 0,
-            "Pulses": 0,
-            "Signals": 0,
-            "Errors": 0,
+            "Context": [0, 0],
+            "Activity": [0, 0],
+            "Pulses": [0, 0],
+            "Signals": [0, 0],
+            "Errors": [0, 0],
         }
         for status in normalized:
             key = str(status.get("key") or "")
-            count = int(status.get("count", 1))
+            active_count = int(status.get("active_count", status.get("count", 1)))
+            total_count = int(status.get("total_count", status.get("count", 1)))
             if key == "context":
-                totals["Context"] += count
+                totals["Context"][0] += active_count
+                totals["Context"][1] += total_count
             elif key == "pulse":
-                totals["Pulses"] += count
+                totals["Pulses"][0] += active_count
+                totals["Pulses"][1] += total_count
             elif key == "signal":
-                totals["Signals"] += count
+                totals["Signals"][0] += active_count
+                totals["Signals"][1] += total_count
             elif key == "activity" or key.startswith("activity."):
-                totals["Activity"] += count
+                totals["Activity"][0] += active_count
+                totals["Activity"][1] += total_count
             elif key in ("error", "state.error", "state.crash", "state.warn", "probe.fail", "expect.mismatch"):
-                totals["Errors"] += count
-        if any(value > 0 for value in totals.values()):
-            totals_action = QtGui.QAction("Totals:", menu)
+                totals["Errors"][0] += active_count
+                totals["Errors"][1] += total_count
+        if any(active or total for active, total in totals.values()):
+            totals_action = QtGui.QAction("Counts: Active now / Total (session)", menu)
             totals_action.setEnabled(False)
             menu.addAction(totals_action)
             for name, value in totals.items():
-                if value <= 0:
+                active, total = value
+                if active <= 0 and total <= 0:
                     continue
-                total_line = QtGui.QAction(f"{name}: {value}", menu)
+                total_line = QtGui.QAction(f"{name}: {_format_active_total(active, total)}", menu)
                 total_line.setEnabled(False)
                 menu.addAction(total_line)
         menu.addSeparator()
@@ -1195,9 +1211,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
             detail = status.get("detail")
             if detail:
                 label = f"{label}: {detail}"
-            count = status.get("count")
-            if count:
-                label = f"{label} ({count})"
+            active_count = int(status.get("active_count", status.get("count", 1)))
+            total_count = int(status.get("total_count", status.get("count", 1)))
+            label = f"{label} ({_format_active_total(active_count, total_count)})"
             last_seen = status.get("last_seen")
             if isinstance(last_seen, (int, float)):
                 label = f"{label} — {self._format_age(float(last_seen))} ago"
@@ -2099,6 +2115,10 @@ def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None
         if combo.itemData(idx) == value:
             combo.setCurrentIndex(idx)
             return
+
+
+def _format_active_total(active: int, total: int) -> str:
+    return f"{int(active)} / {int(total)}"
 
 
 def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:
