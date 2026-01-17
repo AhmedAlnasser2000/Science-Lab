@@ -28,7 +28,11 @@ Definition of Done:
 | Prompt file | Commit | Notes |
 | --- | --- | --- |
 | V5.5/2026-01-07__V5.5a__codesee__edge_following_pulses.md | TBD | CodeSee pulses follow edge paths for rendering and animation |
-| V5.5/2026-01-07__V5.5b__codesee__node_activity_visibility_and_screen_context.md | TBD | Node activity visibility + minimal screen-context tracking in CodeSee |
+| V5.5/2026-01-07__V5.5b__codesee__node_activity_visibility_and_screen_context.md | 13a299a | Node activity visibility + minimal screen-context tracking in CodeSee |
 | V5.5/2026-01-11__V5.5b1__codesee__context_sticky_highlight_and_badge_overflow.md | TBD | Context-sticky highlight and compressed status badges with overflow menu |
-| V5.5/2026-01-12__V5.5b1__codesee__badge_overflow_pill_fix.md | TBD | Fix badge overflow pill + clipping + aggregated dropdown counts |
+| V5.5/2026-01-12__V5.5b1__codesee__badge_overflow_pill_fix.md | 20b4673 | Fix badge overflow pill + clipping + aggregated dropdown counts |
+| V5.5/2026-01-12__V5.5b1.1__codesee__overflow_pill_label_bugfix.md | 85fac3 | Fix overflow pill label and error badge correctness |
+| V5.5/2026-01-12__V5.5b1.1__codesee__dropdown_breakdown_before_legend__patch.md | 2202c17 | Ensure dropdown breakdown appears before legend |
+| V5.5b1.2 (uncommitted in github because i forgot and went to 5.5b.3 directly) | TBD | Uncommitted work: dropdown totals shown per type (active vs session) |
+| V5.5/docs/codex_prompts/V5.5/2026-01-17__V5.5b1.3__codesee__totals_semantics_active_vs_occurrences.md | 1238492 | Clarify totals: active now vs session occurrences |
 
