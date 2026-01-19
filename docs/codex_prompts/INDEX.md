@@ -35,4 +35,4 @@ Definition of Done:
 | V5.5/2026-01-12__V5.5b1.1__codesee__dropdown_breakdown_before_legend__patch.md | 2202c17 | Ensure dropdown breakdown appears before legend |
 | V5.5b1.2 (uncommitted in github because i forgot and went to 5.5b.3 directly) | TBD | Uncommitted work: dropdown totals shown per type (active vs session) |
 | V5.5/docs/codex_prompts/V5.5/2026-01-17__V5.5b1.3__codesee__totals_semantics_active_vs_occurrences.md | 1238492 | Clarify totals: active now vs session occurrences |
-
+| V5.5/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |

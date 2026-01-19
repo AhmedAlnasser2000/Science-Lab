@@ -9,7 +9,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
-from app_ui.versioning import get_build_info
+from app_ui.versioning import (
+    detect_git_available,
+    get_build_info,
+    get_latest_milestone_from_git_log,
+)
 
 REPORT_VERSION = 1
 
@@ -67,6 +71,19 @@ def _check_build_identity() -> PillarEntry:
             reason="Build identity missing app_version",
             evidence=["app_ui.versioning.get_build_info"],
         )
+    if detect_git_available():
+        milestone = get_latest_milestone_from_git_log()
+        if milestone and milestone not in app_version:
+            return PillarEntry(
+                id=1,
+                title=PILLAR_TITLES[0][1],
+                status="FAIL",
+                reason="app_version does not match latest git milestone",
+                evidence=[
+                    f"app_version={app_version}",
+                    f"git_milestone={milestone}",
+                ],
+            )
     return PillarEntry(
         id=1,
         title=PILLAR_TITLES[0][1],
