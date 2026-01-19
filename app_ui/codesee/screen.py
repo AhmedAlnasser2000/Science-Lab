@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+import os
 import re
 import time
 from pathlib import Path
@@ -52,6 +54,10 @@ ICON_STYLE_LABELS = {
     icon_pack.ICON_STYLE_COLOR: "Color",
     icon_pack.ICON_STYLE_MONO: "Mono",
 }
+
+
+def _lens_palette_lens_ids() -> list[str]:
+    return [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS, LENS_EXT]
 
 
 class CodeSeeScreen(QtWidgets.QWidget):
@@ -168,7 +174,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.lens_combo = QtWidgets.QComboBox()
         self._lens_map = get_lenses()
         self._lens_map[LENS_EXT] = LensSpec(LENS_EXT, "Extensibility/Dependencies", _ext_nodes, _ext_edges)
-        for lens_id in [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS, LENS_EXT]:
+        for lens_id in _lens_palette_lens_ids():
             lens = self._lens_map.get(lens_id)
             if lens:
                 self.lens_combo.addItem(lens.title, lens_id)
@@ -231,6 +237,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addWidget(self.more_button)
         source_row.addStretch()
         layout.addLayout(source_row)
+
+        self._lens_palette_host = QtWidgets.QWidget()
+        self._lens_palette_host_layout = QtWidgets.QHBoxLayout(self._lens_palette_host)
+        self._lens_palette_host_layout.setContentsMargins(0, 0, 0, 0)
+        self._lens_palette_host_layout.setSpacing(0)
+        self._lens_palette_host_layout.addStretch()
+        self._lens_palette_host.setVisible(False)
+        layout.addWidget(self._lens_palette_host)
 
         self._build_view_menu()
         self._build_filter_menu()
@@ -783,6 +797,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 break
         self._sync_lens_palette_selection()
 
+    def _log_lens_palette(self, message: str) -> None:
+        if os.getenv("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
+            return
+        print(f"[codesee.lens_palette] {message}")
+
     def _on_lens_palette_button_clicked(self) -> None:
         if self._is_typing_widget():
             return
@@ -795,6 +814,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._toggle_lens_palette()
 
     def _toggle_lens_palette(self) -> None:
+        if self._lens_palette_pinned and self._lens_palette_visible:
+            return
         if self._lens_palette_visible:
             self._hide_lens_palette()
         else:
@@ -849,7 +870,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             btn = QtWidgets.QPushButton(lens.title)
             btn.setProperty("lens_item", True)
             btn.setCheckable(True)
-            btn.clicked.connect(lambda _checked=False, lid=lens_id: self._select_lens_from_palette(lid))
+            btn.clicked.connect(functools.partial(self._select_lens_from_palette, lens_id))
             self._lens_palette_buttons[lens_id] = btn
             palette_layout.addWidget(btn)
         self._lens_palette.installEventFilter(self)
@@ -857,26 +878,45 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._lens_palette_pinned:
             self._apply_lens_palette_flags()
 
+    def _attach_palette_to_host(self) -> None:
+        if not self._lens_palette:
+            return
+        self._lens_palette_host.setVisible(True)
+        self._lens_palette.setParent(self._lens_palette_host)
+        self._lens_palette.setWindowFlags(QtCore.Qt.WindowType.Widget)
+        if self._lens_palette_host_layout.indexOf(self._lens_palette) == -1:
+            self._lens_palette_host_layout.addWidget(self._lens_palette)
+
+    def _detach_palette_from_host(self) -> None:
+        if not self._lens_palette:
+            return
+        if self._lens_palette_host_layout.indexOf(self._lens_palette) != -1:
+            self._lens_palette_host_layout.removeWidget(self._lens_palette)
+        self._lens_palette_host.setVisible(False)
+        self._lens_palette.setParent(self)
+        self._lens_palette.setWindowFlags(
+            QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
+        )
+
     def _apply_lens_palette_flags(self) -> None:
         if not self._lens_palette:
             return
         if self._lens_palette_pinned:
-            self._lens_palette.setWindowFlags(
-                QtCore.Qt.WindowType.Tool | QtCore.Qt.WindowType.FramelessWindowHint
-            )
+            self._attach_palette_to_host()
         else:
-            self._lens_palette.setWindowFlags(
-                QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
-            )
+            self._detach_palette_from_host()
 
     def _show_lens_palette(self) -> None:
         self._ensure_lens_palette()
         if not self._lens_palette:
             return
         self._apply_lens_palette_flags()
-        self._position_lens_palette()
-        self._lens_palette.show()
-        self._lens_palette.raise_()
+        if not self._lens_palette_pinned:
+            self._position_lens_palette()
+            self._lens_palette.show()
+            self._lens_palette.raise_()
+        else:
+            self._lens_palette.show()
         self._lens_palette_visible = True
         self.lens_palette_btn.setChecked(True)
         if not self._lens_palette_pinned:
@@ -906,18 +946,31 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._lens_palette:
             self._apply_lens_palette_flags()
             if self._lens_palette_visible:
-                self._position_lens_palette()
+                if not self._lens_palette_pinned:
+                    self._position_lens_palette()
         if hasattr(self, "_lens_palette_pin_btn"):
             self._lens_palette_pin_btn.setChecked(self._lens_palette_pinned)
+        if self._lens_palette_pinned and not self._lens_palette_visible:
+            self._show_lens_palette()
 
     def _select_lens_from_palette(self, lens_id: str) -> None:
+        prev = self._lens
         if lens_id and lens_id != self._lens:
+            target_index = None
             for idx in range(self.lens_combo.count()):
                 if self.lens_combo.itemData(idx) == lens_id:
-                    self.lens_combo.setCurrentIndex(idx)
+                    target_index = idx
                     break
+            if target_index is None:
+                self._log_lens_palette(f"lens_id not found: {lens_id}")
+            else:
+                self._log_lens_palette(f"select {prev} -> {lens_id} (index {target_index})")
+                self.lens_combo.setCurrentIndex(target_index)
+        else:
+            self._log_lens_palette(f"select ignored: {lens_id} (current {prev})")
+        self._sync_lens_palette_selection()
         if not self._lens_palette_pinned:
-            self._hide_lens_palette()
+            QtCore.QTimer.singleShot(0, self._hide_lens_palette)
 
     def _sync_lens_palette_selection(self) -> None:
         if not self._lens_palette_buttons:
@@ -998,6 +1051,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         lens_id = self.lens_combo.itemData(index)
         if not lens_id or lens_id == self._lens:
             return
+        self._log_lens_palette(f"apply lens change: {self._lens} -> {lens_id}")
         self._save_layout()
         view_config.save_view_config(
             self._workspace_id(),
