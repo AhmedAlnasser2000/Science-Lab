@@ -88,6 +88,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
         self._build_info = versioning.get_build_info()
+        palette_state = view_config.load_lens_palette_state(self._workspace_id())
+        self._lens_palette_pinned = bool(palette_state.get("pinned", False))
+        self._lens_palette: Optional[QtWidgets.QFrame] = None
+        self._lens_palette_buttons: Dict[str, QtWidgets.QAbstractButton] = {}
+        self._lens_palette_visible = False
+        self._lens_palette_event_filter_installed = False
         if self._runtime_hub:
             self._runtime_hub.set_workspace_id(self._workspace_id())
 
@@ -149,6 +155,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row = QtWidgets.QHBoxLayout()
         self._source_row = source_row
         source_row.addWidget(QtWidgets.QLabel("Lens:"))
+        self.lens_palette_btn = QtWidgets.QToolButton()
+        self.lens_palette_btn.setText("Lenses")
+        self.lens_palette_btn.setToolTip("Open lens palette (L)")
+        self.lens_palette_btn.setCheckable(True)
+        self.lens_palette_btn.clicked.connect(self._on_lens_palette_button_clicked)
+        self.lens_palette_btn.setStyleSheet(
+            "QToolButton { background: #1e88e5; color: #fff; border-radius: 4px; padding: 3px 8px; }"
+            "QToolButton:checked { background: #1565c0; }"
+        )
+        source_row.addWidget(self.lens_palette_btn)
         self.lens_combo = QtWidgets.QComboBox()
         self._lens_map = get_lenses()
         self._lens_map[LENS_EXT] = LensSpec(LENS_EXT, "Extensibility/Dependencies", _ext_nodes, _ext_edges)
@@ -261,6 +277,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.filter_status_row.setVisible(False)
         layout.addWidget(self.filter_status_row)
 
+        self._lens_palette_shortcut = QtGui.QShortcut(QtGui.QKeySequence("L"), self)
+        self._lens_palette_shortcut.activated.connect(self._toggle_lens_palette)
+        self._lens_palette_escape = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape), self)
+        self._lens_palette_escape.activated.connect(self._on_lens_palette_escape)
+
         self.debug_status_row = QtWidgets.QWidget()
         debug_layout = QtWidgets.QHBoxLayout(self.debug_status_row)
         self._debug_status_layout = debug_layout
@@ -316,6 +337,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_debug_status()
         if harness.is_enabled() and self.status_label:
             self.status_label.setText("Harness enabled (PHYSICSLAB_CODESEE_HARNESS=1).")
+        if self._lens_palette_pinned:
+            self._show_lens_palette()
 
     def open_root(self) -> None:
         if not self._active_root:
@@ -757,7 +780,210 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self.lens_combo.blockSignals(True)
                 self.lens_combo.setCurrentIndex(idx)
                 self.lens_combo.blockSignals(False)
-                return
+                break
+        self._sync_lens_palette_selection()
+
+    def _on_lens_palette_button_clicked(self) -> None:
+        if self._is_typing_widget():
+            return
+        modifiers = QtWidgets.QApplication.keyboardModifiers()
+        if modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
+            self._set_lens_palette_pinned(not self._lens_palette_pinned)
+            if self._lens_palette_pinned and not self._lens_palette_visible:
+                self._show_lens_palette()
+            return
+        self._toggle_lens_palette()
+
+    def _toggle_lens_palette(self) -> None:
+        if self._lens_palette_visible:
+            self._hide_lens_palette()
+        else:
+            self._show_lens_palette()
+
+    def _on_lens_palette_escape(self) -> None:
+        if self._is_typing_widget():
+            return
+        if self._lens_palette_visible:
+            if self._lens_palette_pinned:
+                self._set_lens_palette_pinned(False)
+            self._hide_lens_palette()
+
+    def _ensure_lens_palette(self) -> None:
+        if self._lens_palette is not None:
+            return
+        self._lens_palette = QtWidgets.QFrame(self)
+        self._lens_palette.setObjectName("codeseeLensPalette")
+        self._lens_palette.setWindowFlags(
+            QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
+        )
+        self._lens_palette.setStyleSheet(
+            "QFrame#codeseeLensPalette { background: #1f232a; border: 1px solid #2a2f38; border-radius: 6px; }"
+            "QLabel { color: #cfd8dc; }"
+            "QToolButton#lensPalettePin { color: #cfd8dc; padding: 2px 6px; }"
+            "QToolButton#lensPalettePin:checked { background: #2b3b55; border-radius: 4px; }"
+            "QPushButton[lens_item=\"true\"] { text-align: left; padding: 4px 8px; color: #cfd8dc; background: transparent; border: none; }"
+            "QPushButton[lens_item=\"true\"]:checked { background: #2b3b55; color: #ffffff; border-radius: 4px; }"
+        )
+        palette_layout = QtWidgets.QVBoxLayout(self._lens_palette)
+        palette_layout.setContentsMargins(8, 8, 8, 8)
+        palette_layout.setSpacing(6)
+
+        header_row = QtWidgets.QHBoxLayout()
+        header_label = QtWidgets.QLabel("Lenses")
+        header_row.addWidget(header_label)
+        header_row.addStretch()
+        self._lens_palette_pin_btn = QtWidgets.QToolButton()
+        self._lens_palette_pin_btn.setObjectName("lensPalettePin")
+        self._lens_palette_pin_btn.setText("Pin")
+        self._lens_palette_pin_btn.setToolTip("Pin palette")
+        self._lens_palette_pin_btn.setCheckable(True)
+        self._lens_palette_pin_btn.setChecked(self._lens_palette_pinned)
+        self._lens_palette_pin_btn.toggled.connect(self._set_lens_palette_pinned)
+        header_row.addWidget(self._lens_palette_pin_btn)
+        palette_layout.addLayout(header_row)
+
+        for lens_id in [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS, LENS_EXT]:
+            lens = self._lens_map.get(lens_id)
+            if not lens:
+                continue
+            btn = QtWidgets.QPushButton(lens.title)
+            btn.setProperty("lens_item", True)
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _checked=False, lid=lens_id: self._select_lens_from_palette(lid))
+            self._lens_palette_buttons[lens_id] = btn
+            palette_layout.addWidget(btn)
+        self._lens_palette.installEventFilter(self)
+        self._sync_lens_palette_selection()
+        if self._lens_palette_pinned:
+            self._apply_lens_palette_flags()
+
+    def _apply_lens_palette_flags(self) -> None:
+        if not self._lens_palette:
+            return
+        if self._lens_palette_pinned:
+            self._lens_palette.setWindowFlags(
+                QtCore.Qt.WindowType.Tool | QtCore.Qt.WindowType.FramelessWindowHint
+            )
+        else:
+            self._lens_palette.setWindowFlags(
+                QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
+            )
+
+    def _show_lens_palette(self) -> None:
+        self._ensure_lens_palette()
+        if not self._lens_palette:
+            return
+        self._apply_lens_palette_flags()
+        self._position_lens_palette()
+        self._lens_palette.show()
+        self._lens_palette.raise_()
+        self._lens_palette_visible = True
+        self.lens_palette_btn.setChecked(True)
+        if not self._lens_palette_pinned:
+            self._install_lens_palette_event_filter()
+        else:
+            self._remove_lens_palette_event_filter()
+
+    def _hide_lens_palette(self) -> None:
+        if self._lens_palette:
+            self._lens_palette.hide()
+        self._lens_palette_visible = False
+        self.lens_palette_btn.setChecked(False)
+        self._remove_lens_palette_event_filter()
+
+    def _position_lens_palette(self) -> None:
+        if not self._lens_palette:
+            return
+        anchor = self.lens_palette_btn
+        if not anchor:
+            return
+        global_pos = anchor.mapToGlobal(QtCore.QPoint(0, anchor.height()))
+        self._lens_palette.move(global_pos + QtCore.QPoint(0, 6))
+
+    def _set_lens_palette_pinned(self, pinned: bool) -> None:
+        self._lens_palette_pinned = bool(pinned)
+        view_config.save_lens_palette_state(self._workspace_id(), pinned=self._lens_palette_pinned)
+        if self._lens_palette:
+            self._apply_lens_palette_flags()
+            if self._lens_palette_visible:
+                self._position_lens_palette()
+        if hasattr(self, "_lens_palette_pin_btn"):
+            self._lens_palette_pin_btn.setChecked(self._lens_palette_pinned)
+
+    def _select_lens_from_palette(self, lens_id: str) -> None:
+        if lens_id and lens_id != self._lens:
+            for idx in range(self.lens_combo.count()):
+                if self.lens_combo.itemData(idx) == lens_id:
+                    self.lens_combo.setCurrentIndex(idx)
+                    break
+        if not self._lens_palette_pinned:
+            self._hide_lens_palette()
+
+    def _sync_lens_palette_selection(self) -> None:
+        if not self._lens_palette_buttons:
+            return
+        for lens_id, button in self._lens_palette_buttons.items():
+            button.setChecked(lens_id == self._lens)
+
+    def _install_lens_palette_event_filter(self) -> None:
+        if self._lens_palette_event_filter_installed:
+            return
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+        app.installEventFilter(self)
+        self._lens_palette_event_filter_installed = True
+
+    def _remove_lens_palette_event_filter(self) -> None:
+        if not self._lens_palette_event_filter_installed:
+            return
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+        self._lens_palette_event_filter_installed = False
+
+    def _global_rect(self, widget: QtWidgets.QWidget) -> QtCore.QRect:
+        top_left = widget.mapToGlobal(QtCore.QPoint(0, 0))
+        return QtCore.QRect(top_left, widget.size())
+
+    def _is_typing_widget(self) -> bool:
+        focus = QtWidgets.QApplication.focusWidget()
+        if focus is None:
+            return False
+        return isinstance(
+            focus,
+            (
+                QtWidgets.QLineEdit,
+                QtWidgets.QTextEdit,
+                QtWidgets.QPlainTextEdit,
+                QtWidgets.QSpinBox,
+                QtWidgets.QDoubleSpinBox,
+                QtWidgets.QComboBox,
+            ),
+        )
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if self._lens_palette and obj is self._lens_palette:
+            if event.type() == QtCore.QEvent.Type.Hide:
+                self._lens_palette_visible = False
+                self.lens_palette_btn.setChecked(False)
+                self._remove_lens_palette_event_filter()
+        if (
+            self._lens_palette_visible
+            and not self._lens_palette_pinned
+            and event.type() == QtCore.QEvent.Type.MouseButtonPress
+        ):
+            mouse_event = event  # type: ignore[assignment]
+            global_pos = None
+            if hasattr(mouse_event, "globalPosition"):
+                global_pos = mouse_event.globalPosition().toPoint()
+            elif hasattr(mouse_event, "globalPos"):
+                global_pos = mouse_event.globalPos()
+            if global_pos and self._lens_palette:
+                if not self._lens_palette.frameGeometry().contains(global_pos):
+                    if not self._global_rect(self.lens_palette_btn).contains(global_pos):
+                        self._hide_lens_palette()
+        return super().eventFilter(obj, event)
 
     def _sync_icon_style_combo(self) -> None:
         for idx in range(self.icon_style_combo.count()):
