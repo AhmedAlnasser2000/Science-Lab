@@ -44,3 +44,4 @@ Definition of Done:
 | V5.5/2026-01-20__V5.5c5__codesee__lens_palette_build_from_combo_and_status_line.md | TBD | Lens palette builds from combo inventory; status line + search filtering; never-blank grid |
 | V5.5/2026-01-20__V5.5c6__codesee__lens_palette_rebuild_from_scratch.md | TBD | Rebuild lens palette from scratch with combo-driven tiles and always-visible status |
 | V5.5/2026-01-20__V5.5c7__codesee__icon_pack_style_recursion_and_palette_growth.md | TBD | Fix icon style normalization to stop Path recursion; prevent palette refresh loop/growth |
+| V5.5/2026-01-20__V5.5c8__codesee__stability_recursion_and_palette_resize.md | TBD | CodeSee stability hotfix: safe mode + hook reentrancy guard + palette resize safeguards |

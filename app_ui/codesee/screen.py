@@ -312,7 +312,10 @@ class LensPaletteWidget(QtWidgets.QFrame):
 
     def set_pinned(self, pinned: bool) -> None:
         self._pinned = bool(pinned)
+        # Prevent recursive pin toggles when syncing state programmatically.
+        blocker = QtCore.QSignalBlocker(self._pin_btn)
         self._pin_btn.setChecked(self._pinned)
+        del blocker
         self._apply_sizing()
 
     def is_pinned(self) -> bool:
@@ -1302,9 +1305,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._sync_lens_palette_selection()
 
     def _log_lens_palette(self, message: str) -> None:
-        if os.getenv("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
+        try:
+            if os.environ.get("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
+                return
+        except Exception:
             return
-        print(f"[codesee.lens_palette] {message}")
+        try:
+            print(f"[codesee.lens_palette] {message}")
+        except Exception:
+            return
 
     def _bind_lens_palette_model_signals(self) -> None:
         return

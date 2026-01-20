@@ -2766,9 +2766,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(900, 600)
         self.adapter = ContentSystemAdapter()
         self.current_profile = initial_profile
+        self._codesee_disabled = False
         self.codesee_hub = CodeSeeRuntimeHub()
         set_global_hub(self.codesee_hub)
-        install_exception_hooks(self.codesee_hub)
+        try:
+            if os.environ.get("PHYSICSLAB_CODESEE_DISABLE", "0") == "1":
+                self._codesee_disabled = True
+        except Exception:
+            self._codesee_disabled = True
+        if not self._codesee_disabled:
+            install_exception_hooks(self.codesee_hub)
         self.codesee_window: Optional[CodeSeeWindow] = None
         self._codesee_context: str = "Main Menu"
         self.codesee_bus_bridge: Optional[BusBridge] = None
@@ -2888,19 +2895,37 @@ class MainWindow(QtWidgets.QMainWindow):
             component_policy_provider=self._get_component_policy,
             bus=APP_BUS,
         )
-        self.codesee = CodeSeeScreen(
-            on_back=self._show_main_menu,
-            workspace_info_provider=self._get_workspace_info,
-            bus=APP_BUS,
-            content_adapter=self.adapter,
-            workspace_selector_factory=selector_factory,
-            runtime_hub=self.codesee_hub,
-            on_open_window=self._open_code_see_window,
-        )
         try:
-            self.codesee.set_screen_context(self._codesee_context)
-        except Exception:
-            pass
+            if self._codesee_disabled:
+                raise RuntimeError("CodeSee disabled")
+            self.codesee = CodeSeeScreen(
+                on_back=self._show_main_menu,
+                workspace_info_provider=self._get_workspace_info,
+                bus=APP_BUS,
+                content_adapter=self.adapter,
+                workspace_selector_factory=selector_factory,
+                runtime_hub=self.codesee_hub,
+                on_open_window=self._open_code_see_window,
+            )
+            try:
+                self.codesee.set_screen_context(self._codesee_context)
+            except Exception:
+                pass
+        except Exception as exc:
+            self._codesee_disabled = True
+            self.codesee = QtWidgets.QWidget()
+            disabled_layout = QtWidgets.QVBoxLayout(self.codesee)
+            disabled_layout.setContentsMargins(24, 24, 24, 24)
+            disabled_label = QtWidgets.QLabel(
+                "Code See is disabled for this session.\n"
+                "Set PHYSICSLAB_CODESEE_DISABLE=0 and restart to re-enable."
+            )
+            disabled_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            disabled_layout.addWidget(disabled_label)
+            try:
+                sys.stderr.write(f"[codesee] disabled due to init error: {exc}\n")
+            except Exception:
+                pass
         self.component_host = ComponentHostScreen(
             self._show_content_browser, workspace_selector_factory=selector_factory
         )
@@ -3481,6 +3506,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_code_see_window(self) -> None:
         if self.current_profile != "Explorer":
+            return
+        if getattr(self, "_codesee_disabled", False):
+            try:
+                sys.stderr.write("[codesee] disabled; window not available\n")
+            except Exception:
+                pass
             return
         if self.codesee_window is not None:
             self.codesee_window.raise_()
