@@ -148,8 +148,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette_search: Optional[QtWidgets.QLineEdit] = None
         self._lens_palette_more_btn: Optional[QtWidgets.QToolButton] = None
         self._lens_palette_recent_btn: Optional[QtWidgets.QToolButton] = None
+        self._lens_palette_scroll: Optional[QtWidgets.QScrollArea] = None
         self._lens_palette_visible = False
         self._lens_palette_event_filter_installed = False
+        self._lens_palette_expanded = False
         if self._runtime_hub:
             self._runtime_hub.set_workspace_id(self._workspace_id())
 
@@ -293,6 +295,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette_host_layout.setContentsMargins(0, 0, 0, 0)
         self._lens_palette_host_layout.setSpacing(0)
         self._lens_palette_host_layout.addStretch()
+        self._lens_palette_host.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+        )
         self._lens_palette_host.setVisible(False)
         layout.addWidget(self._lens_palette_host)
 
@@ -897,6 +903,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
             "QToolButton[lens_tile=\"true\"]:hover { border: 1px solid #2f3540; background: #222733; }"
             "QToolButton[lens_tile=\"true\"]:checked { border: 1px solid #3b5bdb; background: #222733; color: #ffffff; }"
         )
+        self._lens_palette.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+        )
         palette_layout = QtWidgets.QVBoxLayout(self._lens_palette)
         palette_layout.setContentsMargins(8, 8, 8, 8)
         palette_layout.setSpacing(6)
@@ -931,10 +941,20 @@ class CodeSeeScreen(QtWidgets.QWidget):
         palette_layout.addLayout(search_row)
 
         grid_container = QtWidgets.QWidget()
+        grid_container.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         self._lens_palette_grid = QtWidgets.QGridLayout(grid_container)
         self._lens_palette_grid.setContentsMargins(0, 0, 0, 0)
         self._lens_palette_grid.setSpacing(8)
-        palette_layout.addWidget(grid_container)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(grid_container)
+        self._lens_palette_scroll = scroll
+        palette_layout.addWidget(scroll)
 
         footer_row = QtWidgets.QHBoxLayout()
         self._lens_palette_recent_btn = QtWidgets.QToolButton()
@@ -945,11 +965,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         footer_row.addStretch()
         self._lens_palette_more_btn = QtWidgets.QToolButton()
         self._lens_palette_more_btn.setText("More… >")
-        self._lens_palette_more_btn.clicked.connect(self._clear_lens_search)
+        self._lens_palette_more_btn.clicked.connect(self._toggle_lens_palette_expanded)
         footer_row.addWidget(self._lens_palette_more_btn)
         palette_layout.addLayout(footer_row)
 
         self._rebuild_lens_tiles()
+        self._update_lens_palette_sizing()
         self._lens_palette.installEventFilter(self)
         self._sync_lens_palette_selection()
         if self._lens_palette_pinned:
@@ -1021,6 +1042,25 @@ class CodeSeeScreen(QtWidgets.QWidget):
         else:
             self._rebuild_lens_tiles()
 
+    def _toggle_lens_palette_expanded(self) -> None:
+        self._lens_palette_expanded = not self._lens_palette_expanded
+        if self._lens_palette_more_btn is not None:
+            self._lens_palette_more_btn.setText(
+                "Less" if self._lens_palette_expanded else "More… >"
+            )
+        self._update_lens_palette_sizing()
+
+    def _update_lens_palette_sizing(self) -> None:
+        if not self._lens_palette:
+            return
+        base = 260 if not self._lens_palette_expanded else 420
+        min_height = int(ui_scale.scale_px(base))
+        self._lens_palette.setMinimumHeight(min_height)
+        if self._lens_palette_pinned:
+            self._lens_palette.setMaximumHeight(16777215)
+        else:
+            self._lens_palette.setMaximumHeight(min_height)
+
     def _show_recent_lenses_menu(self) -> None:
         if not self._lens_palette_recent_btn:
             return
@@ -1062,6 +1102,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette.setWindowFlags(QtCore.Qt.WindowType.Widget)
         if self._lens_palette_host_layout.indexOf(self._lens_palette) == -1:
             self._lens_palette_host_layout.addWidget(self._lens_palette)
+        self._update_lens_palette_sizing()
 
     def _detach_palette_from_host(self) -> None:
         if not self._lens_palette:
@@ -1073,6 +1114,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette.setWindowFlags(
             QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
         )
+        self._update_lens_palette_sizing()
 
     def _apply_lens_palette_flags(self) -> None:
         if not self._lens_palette:
@@ -1124,6 +1166,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             if self._lens_palette_visible:
                 if not self._lens_palette_pinned:
                     self._position_lens_palette()
+            self._update_lens_palette_sizing()
         if hasattr(self, "_lens_palette_pin_btn"):
             self._lens_palette_pin_btn.setChecked(self._lens_palette_pinned)
         if self._lens_palette_pinned and not self._lens_palette_visible:
