@@ -36,3 +36,11 @@ Definition of Done:
 | V5.5b1.2 (uncommitted in github because i forgot and went to 5.5b.3 directly) | TBD | Uncommitted work: dropdown totals shown per type (active vs session) |
 | V5.5/docs/codex_prompts/V5.5/2026-01-17__V5.5b1.3__codesee__totals_semantics_active_vs_occurrences.md | 1238492 | Clarify totals: active now vs session occurrences |
 | V5.5/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |
+| V5.5/2026-01-19__V5.5c1__codesee__lens_palette_launcher.md | TBD | Floating lens palette launcher with pin + persistence |
+| V5.5/2026-01-19__V5.5c1__codesee__lens_palette_selection_fix.md | TBD | Fix lens palette selection wiring and add diagnostics |
+| V5.5/2026-01-19__V5.5c2__codesee__lens_palette_box_ui.md | TBD | Box-style lens palette UI with search + tile grid using reference design |
+| V5.5/2026-01-20__V5.5c3__codesee__lens_palette_pinned_layout_and_more.md | TBD | Fix pinned palette layout so tiles render; wire More/Less expansion |
+| V5.5/2026-01-20__V5.5c4__codesee__lens_palette_tiles_render_and_search.md | TBD | Ensure lens palette tiles render and search shows results or empty state |
+| V5.5/2026-01-20__V5.5c5__codesee__lens_palette_build_from_combo_and_status_line.md | TBD | Lens palette builds from combo inventory; status line + search filtering; never-blank grid |
+| V5.5/2026-01-20__V5.5c6__codesee__lens_palette_rebuild_from_scratch.md | TBD | Rebuild lens palette from scratch with combo-driven tiles and always-visible status |
+| V5.5/2026-01-20__V5.5c7__codesee__icon_pack_style_recursion_and_palette_growth.md | TBD | Fix icon style normalization to stop Path recursion; prevent palette refresh loop/growth |
