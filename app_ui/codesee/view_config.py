@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
@@ -360,18 +361,67 @@ def _default_pulse_topics() -> Dict[str, bool]:
     }
 
 
+def _debug_log(message: str) -> None:
+    try:
+        if os.environ.get("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
+            return
+    except Exception:
+        return
+    try:
+        print(f"[codesee.view_config] {message}")
+    except Exception:
+        return
+
+
+def _safe_workspace_id(workspace_id: object) -> str:
+    try:
+        safe_id = str(workspace_id or "default").strip()
+    except Exception:
+        safe_id = "default"
+    return safe_id or "default"
+
+
 def _settings_path(workspace_id: str) -> Path:
-    safe_id = str(workspace_id or "default").strip() or "default"
-    return Path("data") / "workspaces" / safe_id / "codesee" / "settings.json"
+    safe_id = _safe_workspace_id(workspace_id)
+    try:
+        return Path("data") / "workspaces" / safe_id / "codesee" / "settings.json"
+    except Exception:
+        return Path("data") / "workspaces" / "default" / "codesee" / "settings.json"
+
+
+def _safe_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except Exception:
+        return False
+
+
+def _sanitize_settings(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        sanitized: dict[str, object] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                continue
+            sanitized[key] = _sanitize_settings(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_settings(item) for item in value]
+    try:
+        return str(value)
+    except Exception:
+        return None
 
 
 def _load_settings(workspace_id: str) -> Dict:
     path = _settings_path(workspace_id)
-    if not path.exists():
+    if not _safe_exists(path):
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
+        _debug_log(f"settings load failed path={path}")
         return {}
 
 
@@ -379,6 +429,8 @@ def _save_settings(workspace_id: str, settings: Dict) -> None:
     path = _settings_path(workspace_id)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    except Exception:
+        sanitized = _sanitize_settings(settings)
+        path.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+    except Exception as exc:
+        _debug_log(f"settings save failed path={path} err={exc}")
         return

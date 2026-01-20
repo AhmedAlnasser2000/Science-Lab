@@ -86,12 +86,38 @@ def _filter_lens_tiles(query: str, tiles: list[dict[str, str]]) -> list[dict[str
     return filtered
 
 
+def _fallback_lens_pixmap(size: int, tint: Optional[QtGui.QColor]) -> QtGui.QPixmap:
+    tint_key = tint.name() if tint else ""
+    cache_key = ("__fallback__", "color", int(size), tint_key)
+    cached = _LENS_ICON_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    side = max(1, int(size))
+    pixmap = QtGui.QPixmap(side, side)
+    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(pixmap)
+    color = tint if tint is not None else QtGui.QColor("#8aa0b5")
+    pen = QtGui.QPen(color)
+    pen.setWidth(max(1, int(side * 0.08)))
+    painter.setPen(pen)
+    margin = max(2, int(side * 0.18))
+    rect = pixmap.rect().adjusted(margin, margin, -margin, -margin)
+    radius = max(2, int(side * 0.18))
+    painter.drawRoundedRect(rect, radius, radius)
+    painter.end()
+    _LENS_ICON_CACHE[cache_key] = pixmap
+    return pixmap
+
+
 def _lens_palette_icon_pixmap(
     icon_key: str, style: str, size: int, tint: Optional[QtGui.QColor]
 ) -> Optional[QtGui.QPixmap]:
-    path = icon_pack.resolve_icon_path(icon_key, style)
+    try:
+        path = icon_pack.resolve_icon_path(icon_key, style)
+    except Exception:
+        return _fallback_lens_pixmap(size, tint)
     if not path:
-        return None
+        return _fallback_lens_pixmap(size, tint)
     tint_key = tint.name() if tint else ""
     cache_key = (str(path), style, int(size), tint_key)
     cached = _LENS_ICON_CACHE.get(cache_key)
@@ -100,13 +126,18 @@ def _lens_palette_icon_pixmap(
     side = max(1, int(size))
     pixmap = QtGui.QPixmap(side, side)
     pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-    renderer = QtSvg.QSvgRenderer(str(path))
-    painter = QtGui.QPainter(pixmap)
-    renderer.render(painter)
-    if tint is not None:
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceIn)
-        painter.fillRect(pixmap.rect(), tint)
-    painter.end()
+    try:
+        renderer = QtSvg.QSvgRenderer(str(path))
+        if not renderer.isValid():
+            return _fallback_lens_pixmap(size, tint)
+        painter = QtGui.QPainter(pixmap)
+        renderer.render(painter)
+        if tint is not None:
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceIn)
+            painter.fillRect(pixmap.rect(), tint)
+        painter.end()
+    except Exception:
+        return _fallback_lens_pixmap(size, tint)
     _LENS_ICON_CACHE[cache_key] = pixmap
     return pixmap
 
@@ -115,7 +146,12 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self._lens_combo: Optional[QtWidgets.QComboBox] = None
-        self._model_bound = False
+        self._bound_model: Optional[QtCore.QAbstractItemModel] = None
+        self._refresh_count = 0
+        self._refresh_scheduled = False
+        self._refreshing = False
+        self._pending_refresh_reason = ""
+        self._model_connect_count = 0
         self._on_select: Optional[Callable[[str], None]] = None
         self._on_close: Optional[Callable[[], None]] = None
         self._on_pin: Optional[Callable[[bool], None]] = None
@@ -169,8 +205,8 @@ class LensPaletteWidget(QtWidgets.QFrame):
         search_row = QtWidgets.QHBoxLayout()
         self._search = QtWidgets.QLineEdit()
         self._search.setPlaceholderText("Search")
-        self._search.textChanged.connect(self.refresh)
-        self._search.returnPressed.connect(self.refresh)
+        self._search.textChanged.connect(lambda: self.request_refresh("search"))
+        self._search.returnPressed.connect(lambda: self.request_refresh("search_enter"))
         search_icon = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogContentsView)
         self._search.addAction(search_icon, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
         search_row.addWidget(self._search)
@@ -178,7 +214,7 @@ class LensPaletteWidget(QtWidgets.QFrame):
         search_btn.setIcon(search_icon)
         search_btn.setToolTip("Search lenses")
         search_btn.setAutoRaise(True)
-        search_btn.clicked.connect(self.refresh)
+        search_btn.clicked.connect(lambda: self.request_refresh("search_button"))
         search_row.addWidget(search_btn)
         layout.addLayout(search_row)
 
@@ -255,7 +291,7 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def set_lens_combo(self, combo: QtWidgets.QComboBox) -> None:
         self._lens_combo = combo
         self._bind_model_signals()
-        self.refresh()
+        self.request_refresh("set_lens_combo")
 
     def set_on_select(self, callback: Callable[[str], None]) -> None:
         self._on_select = callback
@@ -282,14 +318,41 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def is_pinned(self) -> bool:
         return self._pinned
 
+    def request_refresh(self, reason: str = "signal") -> None:
+        if self._refreshing or self._refresh_scheduled:
+            self._pending_refresh_reason = reason
+            self._log(
+                f"request_refresh ignored reason={reason} scheduled={self._refresh_scheduled} refreshing={self._refreshing}"
+            )
+            return
+        self._refresh_scheduled = True
+        self._pending_refresh_reason = reason
+        self._log(f"request_refresh reason={reason} scheduled=True")
+        QtCore.QTimer.singleShot(0, self._refresh_once)
+
     def refresh(self) -> None:
+        self.request_refresh("explicit")
+
+    def _refresh_once(self) -> None:
+        if self._refreshing:
+            return
+        self._refresh_scheduled = False
+        self._refreshing = True
+        try:
+            self._refresh_impl()
+        finally:
+            self._refreshing = False
+
+    def _refresh_impl(self) -> None:
         if not self._lens_combo:
             return
+        self._refresh_count += 1
         entries = self._lens_entries()
         query = self._search.text() if self._search else ""
         tiles = _filter_lens_tiles(query, entries)
         self._log(
-            f"available_lenses_total={len(entries)} filtered={len(tiles)} query={query!r}"
+            "refresh=%d reason=%s available_lenses_total=%d filtered=%d query=%r"
+            % (self._refresh_count, self._pending_refresh_reason, len(entries), len(tiles), query)
         )
         if entries:
             sample = ", ".join(f"{t.get('id')}:{t.get('title')}" for t in entries[:5])
@@ -366,21 +429,38 @@ class LensPaletteWidget(QtWidgets.QFrame):
             )
         return entries
 
+    def _on_model_changed(self, *_args: object) -> None:
+        self.request_refresh("model_changed")
+
+    def _disconnect_model_signals(self, model: QtCore.QAbstractItemModel) -> None:
+        for signal in (
+            model.modelReset,
+            model.rowsInserted,
+            model.rowsRemoved,
+            model.dataChanged,
+        ):
+            try:
+                signal.disconnect(self._on_model_changed)
+            except TypeError:
+                pass
+
     def _bind_model_signals(self) -> None:
-        if self._model_bound or not self._lens_combo:
+        if not self._lens_combo:
             return
         model = self._lens_combo.model()
         if model is None:
             return
-
-        def _schedule_refresh(*_args) -> None:
-            QtCore.QTimer.singleShot(0, self.refresh)
-
-        model.modelReset.connect(_schedule_refresh)
-        model.rowsInserted.connect(_schedule_refresh)
-        model.rowsRemoved.connect(_schedule_refresh)
-        model.dataChanged.connect(_schedule_refresh)
-        self._model_bound = True
+        if model is self._bound_model:
+            return
+        if self._bound_model is not None:
+            self._disconnect_model_signals(self._bound_model)
+        self._bound_model = model
+        model.modelReset.connect(self._on_model_changed)
+        model.rowsInserted.connect(self._on_model_changed)
+        model.rowsRemoved.connect(self._on_model_changed)
+        model.dataChanged.connect(self._on_model_changed)
+        self._model_connect_count += 1
+        self._log(f"model_connect_count={self._model_connect_count}")
 
     def _update_status(self, entries: list[dict[str, str]], tiles: list[dict[str, str]], query: str) -> None:
         q = query.strip()
@@ -469,9 +549,15 @@ class LensPaletteWidget(QtWidgets.QFrame):
         return lens_id
 
     def _log(self, message: str) -> None:
-        if os.getenv("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
+        try:
+            if os.environ.get("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
+                return
+        except Exception:
             return
-        print(f"[codesee.lens_palette] {message}")
+        try:
+            print(f"[codesee.lens_palette] {message}")
+        except Exception:
+            return
 
 
 class CodeSeeScreen(QtWidgets.QWidget):

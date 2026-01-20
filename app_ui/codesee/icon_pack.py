@@ -9,8 +9,28 @@ ICON_STYLE_COLOR = "color"
 ICON_STYLE_MONO = "mono"
 
 
+def _normalize_style(style) -> str:
+    default = ICON_STYLE_COLOR
+    if style is None:
+        return default
+    if hasattr(style, "value"):
+        try:
+            style = style.value
+        except Exception:
+            return default
+    if isinstance(style, str):
+        value = style.strip().lower()
+        return value if value in (ICON_STYLE_COLOR, ICON_STYLE_MONO) else default
+    try:
+        value = str(style).strip().lower()
+    except Exception:
+        return default
+    return value if value in (ICON_STYLE_COLOR, ICON_STYLE_MONO) else default
+
+
 def resolve_icon_path(key: str, style: str) -> Optional[Path]:
-    base = Path(__file__).resolve().parent / "assets" / "icons" / style
+    style_dir = _normalize_style(style)
+    base = Path(__file__).resolve().parent / "assets" / "icons" / style_dir
     path = base / f"{key}.svg"
     if path.exists():
         return path
