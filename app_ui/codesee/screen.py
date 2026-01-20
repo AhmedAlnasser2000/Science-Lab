@@ -77,7 +77,13 @@ def _filter_lens_tiles(query: str, tiles: list[dict[str, str]]) -> list[dict[str
     needle = query.strip().lower()
     if not needle:
         return list(tiles)
-    return [tile for tile in tiles if needle in tile.get("title", "").lower()]
+    filtered = []
+    for tile in tiles:
+        title = tile.get("title", "").lower()
+        lens_id = tile.get("id", "").lower()
+        if needle in title or needle in lens_id:
+            filtered.append(tile)
+    return filtered
 
 
 def _lens_palette_icon_pixmap(
@@ -103,6 +109,369 @@ def _lens_palette_icon_pixmap(
     painter.end()
     _LENS_ICON_CACHE[cache_key] = pixmap
     return pixmap
+
+
+class LensPaletteWidget(QtWidgets.QFrame):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self._lens_combo: Optional[QtWidgets.QComboBox] = None
+        self._model_bound = False
+        self._on_select: Optional[Callable[[str], None]] = None
+        self._on_close: Optional[Callable[[], None]] = None
+        self._on_pin: Optional[Callable[[bool], None]] = None
+        self._pinned = False
+        self._expanded = False
+        self._active_lens_id = ""
+        self._recent: list[str] = []
+        self._tile_buttons: Dict[str, QtWidgets.QToolButton] = {}
+        self._tile_widgets: list[QtWidgets.QToolButton] = []
+
+        self.setObjectName("codeseeLensPalette")
+        self.setWindowFlags(QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint)
+        self.setStyleSheet(
+            "QFrame#codeseeLensPalette { background: #1b1f27; border: 1px solid #2a2f38; border-radius: 12px; }"
+            "QLabel { color: #cfd8dc; }"
+            "QLineEdit { background: #252a33; color: #cfd8dc; border: 1px solid #2f3540; border-radius: 8px; padding: 6px 8px; }"
+            "QToolButton#lensPalettePin { color: #cfd8dc; padding: 2px 6px; }"
+            "QToolButton#lensPalettePin:checked { background: #2b3b55; border-radius: 4px; }"
+            "QToolButton[lens_tile=\"true\"] { color: #cfd8dc; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 6px; }"
+            "QToolButton[lens_tile=\"true\"]:hover { border: 1px solid #2f3540; background: #222733; }"
+            "QToolButton[lens_tile=\"true\"]:checked { border: 1px solid #3b5bdb; background: #222733; color: #ffffff; }"
+        )
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+        )
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        header_row = QtWidgets.QHBoxLayout()
+        header_label = QtWidgets.QLabel("Lenses")
+        header_row.addWidget(header_label)
+        header_row.addStretch()
+        self._close_btn = QtWidgets.QToolButton()
+        self._close_btn.setText("×")
+        self._close_btn.setToolTip("Close")
+        self._close_btn.setAutoRaise(True)
+        self._close_btn.clicked.connect(self._emit_close)
+        header_row.addWidget(self._close_btn)
+        self._pin_btn = QtWidgets.QToolButton()
+        self._pin_btn.setObjectName("lensPalettePin")
+        self._pin_btn.setText("Pin")
+        self._pin_btn.setToolTip("Pin palette")
+        self._pin_btn.setCheckable(True)
+        self._pin_btn.toggled.connect(self._emit_pin)
+        header_row.addWidget(self._pin_btn)
+        layout.addLayout(header_row)
+
+        search_row = QtWidgets.QHBoxLayout()
+        self._search = QtWidgets.QLineEdit()
+        self._search.setPlaceholderText("Search")
+        self._search.textChanged.connect(self.refresh)
+        self._search.returnPressed.connect(self.refresh)
+        search_icon = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogContentsView)
+        self._search.addAction(search_icon, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
+        search_row.addWidget(self._search)
+        search_btn = QtWidgets.QToolButton()
+        search_btn.setIcon(search_icon)
+        search_btn.setToolTip("Search lenses")
+        search_btn.setAutoRaise(True)
+        search_btn.clicked.connect(self.refresh)
+        search_row.addWidget(search_btn)
+        layout.addLayout(search_row)
+
+        self._status = QtWidgets.QLabel("")
+        self._status.setStyleSheet("color: #9aa4b2; padding: 2px 4px;")
+        self._status.setMinimumHeight(int(ui_scale.scale_px(18)))
+        layout.addWidget(self._status)
+
+        self._empty_banner = QtWidgets.QLabel("")
+        self._empty_banner.setStyleSheet("color: #9aa4b2; padding: 2px 4px;")
+        self._empty_banner.setVisible(False)
+        layout.addWidget(self._empty_banner)
+
+        self._grid_container = QtWidgets.QWidget()
+        self._grid_container.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+        self._grid_container.setMinimumHeight(int(ui_scale.scale_px(160)))
+        self._grid = QtWidgets.QGridLayout(self._grid_container)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(8)
+
+        empty_state = QtWidgets.QWidget()
+        empty_layout = QtWidgets.QVBoxLayout(empty_state)
+        empty_layout.setContentsMargins(8, 20, 8, 20)
+        empty_layout.setSpacing(6)
+        empty_layout.addStretch()
+        self._empty_title = QtWidgets.QLabel("No results")
+        self._empty_title.setStyleSheet("color: #cfd8dc; font-weight: 600;")
+        empty_layout.addWidget(self._empty_title, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
+        self._empty_subtitle = QtWidgets.QLabel("Try a different search")
+        self._empty_subtitle.setStyleSheet("color: #9aa4b2;")
+        empty_layout.addWidget(self._empty_subtitle, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
+        empty_layout.addStretch()
+
+        stack_widget = QtWidgets.QWidget()
+        stack_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+        self._stack = QtWidgets.QStackedLayout(stack_widget)
+        self._stack.setContentsMargins(0, 0, 0, 0)
+        self._stack.addWidget(self._grid_container)
+        self._stack.addWidget(empty_state)
+
+        self._scroll = QtWidgets.QScrollArea()
+        self._scroll.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setWidget(stack_widget)
+        layout.addWidget(self._scroll)
+        layout.setStretch(layout.indexOf(self._scroll), 1)
+
+        footer_row = QtWidgets.QHBoxLayout()
+        self._recent_btn = QtWidgets.QToolButton()
+        self._recent_btn.setText("Recent")
+        self._recent_btn.setToolTip("Recently used lenses")
+        self._recent_btn.clicked.connect(self._show_recent_menu)
+        footer_row.addWidget(self._recent_btn)
+        footer_row.addStretch()
+        self._more_btn = QtWidgets.QToolButton()
+        self._more_btn.setText("More… >")
+        self._more_btn.clicked.connect(self._toggle_expanded)
+        footer_row.addWidget(self._more_btn)
+        layout.addLayout(footer_row)
+
+        self._apply_sizing()
+
+    def set_lens_combo(self, combo: QtWidgets.QComboBox) -> None:
+        self._lens_combo = combo
+        self._bind_model_signals()
+        self.refresh()
+
+    def set_on_select(self, callback: Callable[[str], None]) -> None:
+        self._on_select = callback
+
+    def set_on_close(self, callback: Callable[[], None]) -> None:
+        self._on_close = callback
+
+    def set_on_pin(self, callback: Callable[[bool], None]) -> None:
+        self._on_pin = callback
+
+    def set_recent(self, recent: list[str]) -> None:
+        self._recent = list(recent or [])
+
+    def set_active_lens(self, lens_id: str) -> None:
+        self._active_lens_id = lens_id or ""
+        for tile_id, button in self._tile_buttons.items():
+            button.setChecked(tile_id == self._active_lens_id)
+
+    def set_pinned(self, pinned: bool) -> None:
+        self._pinned = bool(pinned)
+        self._pin_btn.setChecked(self._pinned)
+        self._apply_sizing()
+
+    def is_pinned(self) -> bool:
+        return self._pinned
+
+    def refresh(self) -> None:
+        if not self._lens_combo:
+            return
+        entries = self._lens_entries()
+        query = self._search.text() if self._search else ""
+        tiles = _filter_lens_tiles(query, entries)
+        self._log(
+            f"available_lenses_total={len(entries)} filtered={len(tiles)} query={query!r}"
+        )
+        if entries:
+            sample = ", ".join(f"{t.get('id')}:{t.get('title')}" for t in entries[:5])
+            self._log(f"sample_labels=[{sample}]")
+        self._update_status(entries, tiles, query)
+        self._clear_grid()
+        if not tiles:
+            self._show_empty(entries, query)
+            return
+        self._empty_banner.setVisible(False)
+        self._stack.setCurrentIndex(0)
+        columns = 3
+        icon_style = icon_pack.ICON_STYLE_MONO
+        icon_size = int(ui_scale.scale_px(26))
+        tint = QtGui.QColor("#86b7ff")
+        row = 0
+        col = 0
+        for entry in tiles:
+            lens_id = entry.get("id") or ""
+            title = entry.get("title") or lens_id
+            icon_key = entry.get("icon") or "probe.pass"
+            button = QtWidgets.QToolButton(self._grid_container)
+            button.setProperty("lens_tile", True)
+            button.setText(title)
+            button.setToolButtonStyle(
+                QtCore.Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+            )
+            button.setCheckable(True)
+            button.setAutoRaise(False)
+            button.setIconSize(QtCore.QSize(icon_size, icon_size))
+            button.setFixedSize(
+                int(ui_scale.scale_px(92)),
+                int(ui_scale.scale_px(76)),
+            )
+            pixmap = _lens_palette_icon_pixmap(icon_key, icon_style, icon_size, tint)
+            if pixmap:
+                button.setIcon(QtGui.QIcon(pixmap))
+            button.clicked.connect(
+                functools.partial(self._emit_select, lens_id)
+            )
+            self._grid.addWidget(button, row, col)
+            self._tile_buttons[lens_id] = button
+            self._tile_widgets.append(button)
+            col += 1
+            if col >= columns:
+                col = 0
+                row += 1
+        self.set_active_lens(self._active_lens_id)
+        self._log(
+            f"tiles_created={len(self._tile_widgets)} grid_count={self._grid.count()}"
+        )
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        self.refresh()
+
+    def _lens_entries(self) -> list[dict[str, str]]:
+        if not self._lens_combo:
+            return []
+        tile_icon_map = {tile.get("id"): tile.get("icon") for tile in _lens_tile_spec()}
+        entries: list[dict[str, str]] = []
+        for idx in range(self._lens_combo.count()):
+            lens_id = self._lens_combo.itemData(idx)
+            title = self._lens_combo.itemText(idx)
+            lens_id_str = str(lens_id) if isinstance(lens_id, str) and lens_id else ""
+            title_str = str(title) if title else lens_id_str
+            entry_id = lens_id_str or title_str or f"lens-{idx}"
+            entries.append(
+                {
+                    "id": entry_id,
+                    "title": title_str or entry_id,
+                    "icon": tile_icon_map.get(entry_id) or "probe.pass",
+                }
+            )
+        return entries
+
+    def _bind_model_signals(self) -> None:
+        if self._model_bound or not self._lens_combo:
+            return
+        model = self._lens_combo.model()
+        if model is None:
+            return
+
+        def _schedule_refresh(*_args) -> None:
+            QtCore.QTimer.singleShot(0, self.refresh)
+
+        model.modelReset.connect(_schedule_refresh)
+        model.rowsInserted.connect(_schedule_refresh)
+        model.rowsRemoved.connect(_schedule_refresh)
+        model.dataChanged.connect(_schedule_refresh)
+        self._model_bound = True
+
+    def _update_status(self, entries: list[dict[str, str]], tiles: list[dict[str, str]], query: str) -> None:
+        q = query.strip()
+        if not entries:
+            self._status.setText("No lenses available (try Refresh)")
+        elif q and not tiles:
+            self._status.setText(f'No results for "{q}" (Lenses: {len(entries)})')
+        else:
+            self._status.setText(f"Lenses: {len(entries)} | Matches: {len(tiles)}")
+
+    def _show_empty(self, entries: list[dict[str, str]], query: str) -> None:
+        if not entries:
+            self._empty_title.setText("No lenses available")
+            self._empty_subtitle.setText("Try Refresh")
+            self._empty_banner.setText("No lenses available")
+        elif query.strip():
+            self._empty_title.setText("No results")
+            self._empty_subtitle.setText(f'No results for "{query.strip()}"')
+            self._empty_banner.setText(f'No results for "{query.strip()}"')
+        else:
+            self._empty_title.setText("No results")
+            self._empty_subtitle.setText("Try a different search")
+            self._empty_banner.setText("No lenses to show")
+        self._empty_banner.setVisible(True)
+        self._stack.setCurrentIndex(1)
+
+    def _clear_grid(self) -> None:
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._tile_buttons.clear()
+        self._tile_widgets.clear()
+
+    def _emit_select(self, lens_id: str) -> None:
+        if self._on_select:
+            self._on_select(lens_id)
+
+    def _emit_close(self) -> None:
+        if self._on_close:
+            self._on_close()
+
+    def _emit_pin(self, checked: bool) -> None:
+        if self._on_pin:
+            self._on_pin(bool(checked))
+
+    def _toggle_expanded(self) -> None:
+        self._expanded = not self._expanded
+        self._more_btn.setText("Less" if self._expanded else "More… >")
+        self._apply_sizing()
+
+    def _apply_sizing(self) -> None:
+        base = 260 if not self._expanded else 420
+        min_height = int(ui_scale.scale_px(base))
+        self.setMinimumHeight(min_height)
+        if self._pinned:
+            self.setMaximumHeight(16777215)
+        else:
+            self.setMaximumHeight(min_height)
+        scroll_min = 160 if not self._expanded else 280
+        self._scroll.setMinimumHeight(int(ui_scale.scale_px(scroll_min)))
+
+    def _show_recent_menu(self) -> None:
+        menu = QtWidgets.QMenu(self)
+        menu.setStyleSheet("QMenu { background: #1b1f27; color: #cfd8dc; }")
+        added = False
+        for lens_id in self._recent:
+            label = self._label_for_id(lens_id)
+            action = menu.addAction(label)
+            action.triggered.connect(
+                functools.partial(self._emit_select, lens_id)
+            )
+            added = True
+        if not added:
+            action = menu.addAction("No recent lenses")
+            action.setEnabled(False)
+        menu.exec(self._recent_btn.mapToGlobal(QtCore.QPoint(0, 24)))
+
+    def _label_for_id(self, lens_id: str) -> str:
+        if not self._lens_combo:
+            return lens_id
+        for idx in range(self._lens_combo.count()):
+            if self._lens_combo.itemData(idx) == lens_id:
+                return self._lens_combo.itemText(idx) or lens_id
+        return lens_id
+
+    def _log(self, message: str) -> None:
+        if os.getenv("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
+            return
+        print(f"[codesee.lens_palette] {message}")
 
 
 class CodeSeeScreen(QtWidgets.QWidget):
@@ -142,16 +511,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         palette_state = view_config.load_lens_palette_state(self._workspace_id())
         self._lens_palette_pinned = bool(palette_state.get("pinned", False))
         self._lens_palette_recent = list(palette_state.get("recent", []))
-        self._lens_palette: Optional[QtWidgets.QFrame] = None
-        self._lens_palette_buttons: Dict[str, QtWidgets.QAbstractButton] = {}
-        self._lens_palette_grid: Optional[QtWidgets.QGridLayout] = None
-        self._lens_palette_search: Optional[QtWidgets.QLineEdit] = None
-        self._lens_palette_more_btn: Optional[QtWidgets.QToolButton] = None
-        self._lens_palette_recent_btn: Optional[QtWidgets.QToolButton] = None
-        self._lens_palette_scroll: Optional[QtWidgets.QScrollArea] = None
+        self._lens_palette: Optional[LensPaletteWidget] = None
         self._lens_palette_visible = False
         self._lens_palette_event_filter_installed = False
-        self._lens_palette_expanded = False
         if self._runtime_hub:
             self._runtime_hub.set_workspace_id(self._workspace_id())
 
@@ -858,6 +1220,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         print(f"[codesee.lens_palette] {message}")
 
+    def _bind_lens_palette_model_signals(self) -> None:
+        return
+
     def _on_lens_palette_button_clicked(self) -> None:
         if self._is_typing_widget():
             return
@@ -888,206 +1253,45 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _ensure_lens_palette(self) -> None:
         if self._lens_palette is not None:
             return
-        self._lens_palette = QtWidgets.QFrame(self)
-        self._lens_palette.setObjectName("codeseeLensPalette")
-        self._lens_palette.setWindowFlags(
-            QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
-        )
-        self._lens_palette.setStyleSheet(
-            "QFrame#codeseeLensPalette { background: #1b1f27; border: 1px solid #2a2f38; border-radius: 12px; }"
-            "QLabel { color: #cfd8dc; }"
-            "QLineEdit { background: #252a33; color: #cfd8dc; border: 1px solid #2f3540; border-radius: 8px; padding: 6px 8px; }"
-            "QToolButton#lensPalettePin { color: #cfd8dc; padding: 2px 6px; }"
-            "QToolButton#lensPalettePin:checked { background: #2b3b55; border-radius: 4px; }"
-            "QToolButton[lens_tile=\"true\"] { color: #cfd8dc; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 6px; }"
-            "QToolButton[lens_tile=\"true\"]:hover { border: 1px solid #2f3540; background: #222733; }"
-            "QToolButton[lens_tile=\"true\"]:checked { border: 1px solid #3b5bdb; background: #222733; color: #ffffff; }"
-        )
-        self._lens_palette.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
-        )
-        palette_layout = QtWidgets.QVBoxLayout(self._lens_palette)
-        palette_layout.setContentsMargins(8, 8, 8, 8)
-        palette_layout.setSpacing(6)
-
-        header_row = QtWidgets.QHBoxLayout()
-        header_label = QtWidgets.QLabel("Lenses")
-        header_row.addWidget(header_label)
-        header_row.addStretch()
-        close_btn = QtWidgets.QToolButton()
-        close_btn.setText("×")
-        close_btn.setToolTip("Close")
-        close_btn.setAutoRaise(True)
-        close_btn.clicked.connect(self._hide_lens_palette)
-        header_row.addWidget(close_btn)
-        self._lens_palette_pin_btn = QtWidgets.QToolButton()
-        self._lens_palette_pin_btn.setObjectName("lensPalettePin")
-        self._lens_palette_pin_btn.setText("Pin")
-        self._lens_palette_pin_btn.setToolTip("Pin palette")
-        self._lens_palette_pin_btn.setCheckable(True)
-        self._lens_palette_pin_btn.setChecked(self._lens_palette_pinned)
-        self._lens_palette_pin_btn.toggled.connect(self._set_lens_palette_pinned)
-        header_row.addWidget(self._lens_palette_pin_btn)
-        palette_layout.addLayout(header_row)
-
-        search_row = QtWidgets.QHBoxLayout()
-        self._lens_palette_search = QtWidgets.QLineEdit()
-        self._lens_palette_search.setPlaceholderText("Search")
-        self._lens_palette_search.textChanged.connect(self._rebuild_lens_tiles)
-        search_icon = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogContentsView)
-        self._lens_palette_search.addAction(search_icon, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
-        search_row.addWidget(self._lens_palette_search)
-        palette_layout.addLayout(search_row)
-
-        grid_container = QtWidgets.QWidget()
-        grid_container.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.Expanding,
-        )
-        self._lens_palette_grid = QtWidgets.QGridLayout(grid_container)
-        self._lens_palette_grid.setContentsMargins(0, 0, 0, 0)
-        self._lens_palette_grid.setSpacing(8)
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setWidget(grid_container)
-        self._lens_palette_scroll = scroll
-        palette_layout.addWidget(scroll)
-
-        footer_row = QtWidgets.QHBoxLayout()
-        self._lens_palette_recent_btn = QtWidgets.QToolButton()
-        self._lens_palette_recent_btn.setText("Recent")
-        self._lens_palette_recent_btn.setToolTip("Recently used lenses")
-        self._lens_palette_recent_btn.clicked.connect(self._show_recent_lenses_menu)
-        footer_row.addWidget(self._lens_palette_recent_btn)
-        footer_row.addStretch()
-        self._lens_palette_more_btn = QtWidgets.QToolButton()
-        self._lens_palette_more_btn.setText("More… >")
-        self._lens_palette_more_btn.clicked.connect(self._toggle_lens_palette_expanded)
-        footer_row.addWidget(self._lens_palette_more_btn)
-        palette_layout.addLayout(footer_row)
-
-        self._rebuild_lens_tiles()
-        self._update_lens_palette_sizing()
-        self._lens_palette.installEventFilter(self)
-        self._sync_lens_palette_selection()
+        palette = LensPaletteWidget(self)
+        palette.set_lens_combo(self.lens_combo)
+        palette.set_on_select(self._select_lens_from_palette)
+        palette.set_on_close(self._hide_lens_palette)
+        palette.set_on_pin(self._set_lens_palette_pinned)
+        palette.set_recent(self._lens_palette_recent)
+        palette.set_active_lens(self._lens)
+        palette.set_pinned(self._lens_palette_pinned)
+        palette.installEventFilter(self)
+        self._lens_palette = palette
         if self._lens_palette_pinned:
             self._apply_lens_palette_flags()
 
     def _rebuild_lens_tiles(self) -> None:
-        if not self._lens_palette_grid or not self._lens_palette_search:
-            return
-        while self._lens_palette_grid.count():
-            item = self._lens_palette_grid.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self._lens_palette_buttons.clear()
-        tiles = [
-            tile
-            for tile in _lens_tile_spec()
-            if tile.get("id") in self._lens_map
-        ]
-        query = self._lens_palette_search.text()
-        tiles = _filter_lens_tiles(query, tiles)
-        if not tiles:
-            empty = QtWidgets.QLabel("No matches")
-            empty.setStyleSheet("color: #9aa4b2; padding: 6px 2px;")
-            self._lens_palette_grid.addWidget(empty, 0, 0)
-            return
-        columns = 3
-        icon_style = icon_pack.ICON_STYLE_MONO
-        icon_size = int(ui_scale.scale_px(26))
-        tint = QtGui.QColor("#86b7ff")
-        row = 0
-        col = 0
-        for tile in tiles:
-            lens_id = tile.get("id") or ""
-            title = tile.get("title") or lens_id
-            icon_key = tile.get("icon") or ""
-            button = QtWidgets.QToolButton()
-            button.setProperty("lens_tile", True)
-            button.setText(title)
-            button.setToolButtonStyle(
-                QtCore.Qt.ToolButtonStyle.ToolButtonTextUnderIcon
-            )
-            button.setCheckable(True)
-            button.setAutoRaise(False)
-            button.setIconSize(QtCore.QSize(icon_size, icon_size))
-            button.setFixedSize(
-                int(ui_scale.scale_px(92)),
-                int(ui_scale.scale_px(76)),
-            )
-            pixmap = _lens_palette_icon_pixmap(icon_key, icon_style, icon_size, tint)
-            if pixmap:
-                button.setIcon(QtGui.QIcon(pixmap))
-            button.clicked.connect(
-                functools.partial(self._select_lens_from_palette, lens_id)
-            )
-            self._lens_palette_grid.addWidget(button, row, col)
-            self._lens_palette_buttons[lens_id] = button
-            col += 1
-            if col >= columns:
-                col = 0
-                row += 1
-        self._sync_lens_palette_selection()
+        if self._lens_palette:
+            self._lens_palette.refresh()
 
     def _clear_lens_search(self) -> None:
-        if not self._lens_palette_search:
-            return
-        if self._lens_palette_search.text():
-            self._lens_palette_search.setText("")
-        else:
-            self._rebuild_lens_tiles()
+        return
 
     def _toggle_lens_palette_expanded(self) -> None:
-        self._lens_palette_expanded = not self._lens_palette_expanded
-        if self._lens_palette_more_btn is not None:
-            self._lens_palette_more_btn.setText(
-                "Less" if self._lens_palette_expanded else "More… >"
-            )
-        self._update_lens_palette_sizing()
+        return
 
     def _update_lens_palette_sizing(self) -> None:
-        if not self._lens_palette:
-            return
-        base = 260 if not self._lens_palette_expanded else 420
-        min_height = int(ui_scale.scale_px(base))
-        self._lens_palette.setMinimumHeight(min_height)
-        if self._lens_palette_pinned:
-            self._lens_palette.setMaximumHeight(16777215)
-        else:
-            self._lens_palette.setMaximumHeight(min_height)
+        return
 
     def _show_recent_lenses_menu(self) -> None:
-        if not self._lens_palette_recent_btn:
-            return
-        menu = QtWidgets.QMenu(self)
-        menu.setStyleSheet("QMenu { background: #1b1f27; color: #cfd8dc; }")
-        added = False
-        for lens_id in self._lens_palette_recent:
-            lens = self._lens_map.get(lens_id)
-            if not lens:
-                continue
-            action = menu.addAction(lens.title)
-            action.triggered.connect(
-                functools.partial(self._select_lens_from_palette, lens_id)
-            )
-            added = True
-        if not added:
-            action = menu.addAction("No recent lenses")
-            action.setEnabled(False)
-        menu.exec(self._lens_palette_recent_btn.mapToGlobal(QtCore.QPoint(0, 24)))
+        return
 
     def _remember_recent_lens(self, lens_id: str) -> None:
+
         if not lens_id:
             return
         recent = [item for item in self._lens_palette_recent if item != lens_id]
         recent.insert(0, lens_id)
         recent = recent[:6]
         self._lens_palette_recent = recent
+        if self._lens_palette:
+            self._lens_palette.set_recent(self._lens_palette_recent)
         view_config.save_lens_palette_state(
             self._workspace_id(),
             pinned=self._lens_palette_pinned,
@@ -1102,7 +1306,6 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette.setWindowFlags(QtCore.Qt.WindowType.Widget)
         if self._lens_palette_host_layout.indexOf(self._lens_palette) == -1:
             self._lens_palette_host_layout.addWidget(self._lens_palette)
-        self._update_lens_palette_sizing()
 
     def _detach_palette_from_host(self) -> None:
         if not self._lens_palette:
@@ -1114,7 +1317,6 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette.setWindowFlags(
             QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
         )
-        self._update_lens_palette_sizing()
 
     def _apply_lens_palette_flags(self) -> None:
         if not self._lens_palette:
@@ -1123,11 +1325,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._attach_palette_to_host()
         else:
             self._detach_palette_from_host()
+        self._lens_palette.set_pinned(self._lens_palette_pinned)
 
     def _show_lens_palette(self) -> None:
         self._ensure_lens_palette()
         if not self._lens_palette:
             return
+        self._rebuild_lens_tiles()
         self._apply_lens_palette_flags()
         if not self._lens_palette_pinned:
             self._position_lens_palette()
@@ -1160,24 +1364,30 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _set_lens_palette_pinned(self, pinned: bool) -> None:
         self._lens_palette_pinned = bool(pinned)
-        view_config.save_lens_palette_state(self._workspace_id(), pinned=self._lens_palette_pinned)
+        view_config.save_lens_palette_state(
+            self._workspace_id(),
+            pinned=self._lens_palette_pinned,
+            recent=self._lens_palette_recent,
+        )
         if self._lens_palette:
             self._apply_lens_palette_flags()
             if self._lens_palette_visible:
                 if not self._lens_palette_pinned:
                     self._position_lens_palette()
-            self._update_lens_palette_sizing()
-        if hasattr(self, "_lens_palette_pin_btn"):
-            self._lens_palette_pin_btn.setChecked(self._lens_palette_pinned)
         if self._lens_palette_pinned and not self._lens_palette_visible:
             self._show_lens_palette()
 
     def _select_lens_from_palette(self, lens_id: str) -> None:
         prev = self._lens
+        lens_id = str(lens_id or "")
         if lens_id and lens_id != self._lens:
             target_index = None
             for idx in range(self.lens_combo.count()):
-                if self.lens_combo.itemData(idx) == lens_id:
+                item_id = self.lens_combo.itemData(idx)
+                item_label = self.lens_combo.itemText(idx)
+                if item_id == lens_id or (
+                    item_label and item_label.lower() == lens_id.lower()
+                ):
                     target_index = idx
                     break
             if target_index is None:
@@ -1187,15 +1397,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self.lens_combo.setCurrentIndex(target_index)
         else:
             self._log_lens_palette(f"select ignored: {lens_id} (current {prev})")
+        if lens_id:
+            self._remember_recent_lens(lens_id)
         self._sync_lens_palette_selection()
         if not self._lens_palette_pinned:
             QtCore.QTimer.singleShot(0, self._hide_lens_palette)
 
     def _sync_lens_palette_selection(self) -> None:
-        if not self._lens_palette_buttons:
-            return
-        for lens_id, button in self._lens_palette_buttons.items():
-            button.setChecked(lens_id == self._lens)
+        if self._lens_palette:
+            self._lens_palette.set_active_lens(self._lens)
 
     def _install_lens_palette_event_filter(self) -> None:
         if self._lens_palette_event_filter_installed:
@@ -1290,7 +1500,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_mode_status(0, 0)
         self._remember_recent_lens(str(lens_id))
         if self._lens_palette:
-            self._rebuild_lens_tiles()
+            self._lens_palette.set_active_lens(self._lens)
+            self._lens_palette.refresh()
 
     def _on_icon_style_changed(self, _index: int) -> None:
         style = self.icon_style_combo.currentData()

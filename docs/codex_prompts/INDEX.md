@@ -39,3 +39,7 @@ Definition of Done:
 | V5.5/2026-01-19__V5.5c1__codesee__lens_palette_launcher.md | TBD | Floating lens palette launcher with pin + persistence |
 | V5.5/2026-01-19__V5.5c1__codesee__lens_palette_selection_fix.md | TBD | Fix lens palette selection wiring and add diagnostics |
 | V5.5/2026-01-19__V5.5c2__codesee__lens_palette_box_ui.md | TBD | Box-style lens palette UI with search + tile grid using reference design |
+| V5.5/2026-01-20__V5.5c3__codesee__lens_palette_pinned_layout_and_more.md | TBD | Fix pinned palette layout so tiles render; wire More/Less expansion |
+| V5.5/2026-01-20__V5.5c4__codesee__lens_palette_tiles_render_and_search.md | TBD | Ensure lens palette tiles render and search shows results or empty state |
+| V5.5/2026-01-20__V5.5c5__codesee__lens_palette_build_from_combo_and_status_line.md | TBD | Lens palette builds from combo inventory; status line + search filtering; never-blank grid |
+| V5.5/2026-01-20__V5.5c6__codesee__lens_palette_rebuild_from_scratch.md | TBD | Rebuild lens palette from scratch with combo-driven tiles and always-visible status |

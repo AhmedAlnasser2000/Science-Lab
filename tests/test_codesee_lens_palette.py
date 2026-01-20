@@ -11,8 +11,12 @@ def test_lens_palette_ids_unique_and_ordered() -> None:
 def test_filter_lens_tiles_case_insensitive() -> None:
     tiles = [
         {"id": "atlas", "title": "Atlas"},
+        {"id": "platform", "title": "Platform"},
         {"id": "content", "title": "Content"},
         {"id": "bus", "title": "Bus"},
+        {"id": "extensibility", "title": "Extensibility/Dependencies"},
     ]
-    filtered = _filter_lens_tiles("at", tiles)
-    assert [tile["id"] for tile in filtered] == ["atlas"]
+    filtered = _filter_lens_tiles("pla", tiles)
+    assert [tile["id"] for tile in filtered] == ["platform"]
+    assert _filter_lens_tiles("", tiles) == tiles
+    assert _filter_lens_tiles("zz", tiles) == []
