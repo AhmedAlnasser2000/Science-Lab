@@ -374,11 +374,16 @@ def _debug_log(message: str) -> None:
 
 
 def _safe_workspace_id(workspace_id: object) -> str:
-    try:
-        safe_id = str(workspace_id or "default").strip()
-    except Exception:
-        safe_id = "default"
-    return safe_id or "default"
+    if isinstance(workspace_id, str):
+        safe_id = workspace_id.strip()
+        return safe_id or "default"
+    if isinstance(workspace_id, bytes):
+        try:
+            safe_id = workspace_id.decode("utf-8", errors="ignore").strip()
+        except Exception:
+            safe_id = ""
+        return safe_id or "default"
+    return "default"
 
 
 def _settings_path(workspace_id: str) -> Path:
