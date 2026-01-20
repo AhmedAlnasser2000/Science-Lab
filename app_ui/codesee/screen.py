@@ -152,6 +152,8 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._refreshing = False
         self._pending_refresh_reason = ""
         self._model_connect_count = 0
+        self._dbg_seen: set[str] = set()
+        self._dbg_last_status: tuple[int, int, str] | None = None
         self._on_select: Optional[Callable[[str], None]] = None
         self._on_close: Optional[Callable[[], None]] = None
         self._on_pin: Optional[Callable[[bool], None]] = None
@@ -309,6 +311,8 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._active_lens_id = lens_id or ""
         for tile_id, button in self._tile_buttons.items():
             button.setChecked(tile_id == self._active_lens_id)
+        if self._active_lens_id:
+            self._dbg_once(f"active:{self._active_lens_id}", f"palette active lens={self._active_lens_id}")
 
     def set_pinned(self, pinned: bool) -> None:
         self._pinned = bool(pinned)
@@ -317,6 +321,7 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._pin_btn.setChecked(self._pinned)
         del blocker
         self._apply_sizing()
+        self._dbg_once(f"pin:{self._pinned}", f"palette pin={self._pinned}")
 
     def is_pinned(self) -> bool:
         return self._pinned
@@ -324,13 +329,9 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def request_refresh(self, reason: str = "signal") -> None:
         if self._refreshing or self._refresh_scheduled:
             self._pending_refresh_reason = reason
-            self._log(
-                f"request_refresh ignored reason={reason} scheduled={self._refresh_scheduled} refreshing={self._refreshing}"
-            )
             return
         self._refresh_scheduled = True
         self._pending_refresh_reason = reason
-        self._log(f"request_refresh reason={reason} scheduled=True")
         QtCore.QTimer.singleShot(0, self._refresh_once)
 
     def refresh(self) -> None:
@@ -353,13 +354,13 @@ class LensPaletteWidget(QtWidgets.QFrame):
         entries = self._lens_entries()
         query = self._search.text() if self._search else ""
         tiles = _filter_lens_tiles(query, entries)
-        self._log(
-            "refresh=%d reason=%s available_lenses_total=%d filtered=%d query=%r"
-            % (self._refresh_count, self._pending_refresh_reason, len(entries), len(tiles), query)
-        )
-        if entries:
-            sample = ", ".join(f"{t.get('id')}:{t.get('title')}" for t in entries[:5])
-            self._log(f"sample_labels=[{sample}]")
+        status_key = (len(entries), len(tiles), query)
+        if status_key != self._dbg_last_status:
+            self._dbg_last_status = status_key
+            self._dbg(
+                "palette status lenses=%d matches=%d query=%r"
+                % (len(entries), len(tiles), query)
+            )
         self._update_status(entries, tiles, query)
         self._clear_grid()
         if not tiles:
@@ -404,13 +405,14 @@ class LensPaletteWidget(QtWidgets.QFrame):
                 col = 0
                 row += 1
         self.set_active_lens(self._active_lens_id)
-        self._log(
-            f"tiles_created={len(self._tile_widgets)} grid_count={self._grid.count()}"
+        self._dbg_once(
+            f"tiles:{len(self._tile_widgets)}",
+            f"tiles_created={len(self._tile_widgets)} grid_count={self._grid.count()}",
         )
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
-        self.refresh()
+        self.request_refresh("show")
 
     def _lens_entries(self) -> list[dict[str, str]]:
         if not self._lens_combo:
@@ -515,6 +517,27 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._expanded = not self._expanded
         self._more_btn.setText("Less" if self._expanded else "More… >")
         self._apply_sizing()
+        self._dbg_once(f"expanded:{self._expanded}", f"palette expanded={self._expanded}")
+
+    def _debug_enabled(self) -> bool:
+        try:
+            return os.environ.get("PHYSICSLAB_CODESEE_DEBUG", "0") == "1"
+        except Exception:
+            return False
+
+    def _dbg(self, message: str) -> None:
+        if not self._debug_enabled():
+            return
+        try:
+            print(f"[codesee.lens_palette] {message}")
+        except Exception:
+            return
+
+    def _dbg_once(self, key: str, message: str) -> None:
+        if key in self._dbg_seen:
+            return
+        self._dbg_seen.add(key)
+        self._dbg(message)
 
     def _apply_sizing(self) -> None:
         base = 260 if not self._expanded else 420
@@ -552,15 +575,7 @@ class LensPaletteWidget(QtWidgets.QFrame):
         return lens_id
 
     def _log(self, message: str) -> None:
-        try:
-            if os.environ.get("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
-                return
-        except Exception:
-            return
-        try:
-            print(f"[codesee.lens_palette] {message}")
-        except Exception:
-            return
+        self._dbg(message)
 
 
 class CodeSeeScreen(QtWidgets.QWidget):
