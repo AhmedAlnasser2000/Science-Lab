@@ -37,12 +37,13 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
             workspace_selector_factory=workspace_selector_factory,
             runtime_hub=runtime_hub,
             allow_detach=False,
+            dock_host=self,
         )
         self.screen.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Ignored,
+            QtWidgets.QSizePolicy.Policy.Ignored,
         )
-        self.setCentralWidget(self.screen)
+        self.setCentralWidget(self.screen.dock_container())
         central = self.centralWidget()
         if central:
             central.setSizePolicy(

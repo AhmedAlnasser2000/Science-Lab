@@ -142,11 +142,22 @@ def load_lens_palette_state(workspace_id: str) -> Dict[str, object]:
     return {
         "pinned": bool(raw.get("pinned", False)),
         "recent": [str(item) for item in recent if isinstance(item, str)],
+        "dock_state": raw.get("dock_state") if isinstance(raw.get("dock_state"), str) else "",
+        "dock_geometry": raw.get("dock_geometry") if isinstance(raw.get("dock_geometry"), str) else "",
+        "palette_visible": bool(raw.get("palette_visible", False)),
+        "palette_floating": bool(raw.get("palette_floating", False)),
     }
 
 
 def save_lens_palette_state(
-    workspace_id: str, *, pinned: bool, recent: Optional[list[str]] = None
+    workspace_id: str,
+    *,
+    pinned: bool,
+    recent: Optional[list[str]] = None,
+    dock_state: Optional[str] = None,
+    dock_geometry: Optional[str] = None,
+    palette_visible: Optional[bool] = None,
+    palette_floating: Optional[bool] = None,
 ) -> None:
     settings = _load_settings(workspace_id)
     raw = settings.get("lens_palette")
@@ -155,6 +166,14 @@ def save_lens_palette_state(
     raw["pinned"] = bool(pinned)
     if recent is not None:
         raw["recent"] = [str(item) for item in recent if isinstance(item, str)]
+    if dock_state is not None:
+        raw["dock_state"] = dock_state
+    if dock_geometry is not None:
+        raw["dock_geometry"] = dock_geometry
+    if palette_visible is not None:
+        raw["palette_visible"] = bool(palette_visible)
+    if palette_floating is not None:
+        raw["palette_floating"] = bool(palette_floating)
     settings["lens_palette"] = raw
     _save_settings(workspace_id, settings)
 

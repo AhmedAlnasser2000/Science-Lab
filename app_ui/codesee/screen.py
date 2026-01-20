@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import functools
 import os
 import re
@@ -147,13 +148,11 @@ class LensPaletteWidget(QtWidgets.QFrame):
         super().__init__(parent)
         self._lens_combo: Optional[QtWidgets.QComboBox] = None
         self._bound_model: Optional[QtCore.QAbstractItemModel] = None
-        self._refresh_count = 0
         self._refresh_scheduled = False
         self._refreshing = False
         self._pending_refresh_reason = ""
         self._model_connect_count = 0
         self._dbg_seen: set[str] = set()
-        self._dbg_last_status: tuple[int, int, str] | None = None
         self._on_select: Optional[Callable[[str], None]] = None
         self._on_close: Optional[Callable[[], None]] = None
         self._on_pin: Optional[Callable[[bool], None]] = None
@@ -165,7 +164,7 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._tile_widgets: list[QtWidgets.QToolButton] = []
 
         self.setObjectName("codeseeLensPalette")
-        self.setWindowFlags(QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(QtCore.Qt.WindowType.Widget)
         self.setStyleSheet(
             "QFrame#codeseeLensPalette { background: #1b1f27; border: 1px solid #2a2f38; border-radius: 12px; }"
             "QLabel { color: #cfd8dc; }"
@@ -350,17 +349,17 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def _refresh_impl(self) -> None:
         if not self._lens_combo:
             return
-        self._refresh_count += 1
         entries = self._lens_entries()
         query = self._search.text() if self._search else ""
         tiles = _filter_lens_tiles(query, entries)
-        status_key = (len(entries), len(tiles), query)
-        if status_key != self._dbg_last_status:
-            self._dbg_last_status = status_key
-            self._dbg(
-                "palette status lenses=%d matches=%d query=%r"
-                % (len(entries), len(tiles), query)
+        query_key = query.strip()
+        if query_key:
+            self._dbg_once(
+                f"query:{query_key}",
+                f"palette query={query_key!r} matches={len(tiles)}",
             )
+        else:
+            self._dbg_once("query:empty", f"palette query='' matches={len(tiles)}")
         self._update_status(entries, tiles, query)
         self._clear_grid()
         if not tiles:
@@ -405,13 +404,10 @@ class LensPaletteWidget(QtWidgets.QFrame):
                 col = 0
                 row += 1
         self.set_active_lens(self._active_lens_id)
-        self._dbg_once(
-            f"tiles:{len(self._tile_widgets)}",
-            f"tiles_created={len(self._tile_widgets)} grid_count={self._grid.count()}",
-        )
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
+        self._dbg_once("palette_open", "palette opened")
         self.request_refresh("show")
 
     def _lens_entries(self) -> list[dict[str, str]]:
@@ -465,7 +461,10 @@ class LensPaletteWidget(QtWidgets.QFrame):
         model.rowsRemoved.connect(self._on_model_changed)
         model.dataChanged.connect(self._on_model_changed)
         self._model_connect_count += 1
-        self._log(f"model_connect_count={self._model_connect_count}")
+        self._dbg_once(
+            f"model_connect:{self._model_connect_count}",
+            f"palette model connected count={self._model_connect_count}",
+        )
 
     def _update_status(self, entries: list[dict[str, str]], tiles: list[dict[str, str]], query: str) -> None:
         q = query.strip()
@@ -592,6 +591,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         allow_detach: bool = True,
         safe_mode: bool = False,
         crash_view: bool = False,
+        dock_host: Optional[QtWidgets.QMainWindow] = None,
     ) -> None:
         super().__init__()
         self.on_back = on_back
@@ -616,7 +616,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette_pinned = bool(palette_state.get("pinned", False))
         self._lens_palette_recent = list(palette_state.get("recent", []))
         self._lens_palette: Optional[LensPaletteWidget] = None
-        self._lens_palette_visible = False
+        self._lens_palette_visible = bool(palette_state.get("palette_visible", False))
         self._lens_palette_event_filter_installed = False
         if self._runtime_hub:
             self._runtime_hub.set_workspace_id(self._workspace_id())
@@ -656,7 +656,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._status_timer.timeout.connect(self._on_status_tick)
         self._last_span_pulse = 0.0
 
-        layout = QtWidgets.QVBoxLayout(self)
+        self._dock_host_external = dock_host is not None
+        if dock_host is not None:
+            self._dock_host = dock_host
+        else:
+            self._dock_host = QtWidgets.QMainWindow(self)
+            self._dock_host.setObjectName("codeseeDockHost")
+            self._dock_host.setDockNestingEnabled(False)
+        self._dock_container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(self._dock_container)
         self._root_layout = layout
         selector = workspace_selector_factory() if workspace_selector_factory else None
         header = AppHeader(title="Code See", on_back=self._handle_back, workspace_selector=selector)
@@ -756,17 +764,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addStretch()
         layout.addLayout(source_row)
 
-        self._lens_palette_host = QtWidgets.QWidget()
-        self._lens_palette_host_layout = QtWidgets.QHBoxLayout(self._lens_palette_host)
-        self._lens_palette_host_layout.setContentsMargins(0, 0, 0, 0)
-        self._lens_palette_host_layout.setSpacing(0)
-        self._lens_palette_host_layout.addStretch()
-        self._lens_palette_host.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
-        )
-        self._lens_palette_host.setVisible(False)
-        layout.addWidget(self._lens_palette_host)
+        self._lens_palette_dock: Optional[QtWidgets.QDockWidget] = None
+        self._dock_state_restored = False
+        self._dock_syncing = False
+        self._dock_save_timer = QtCore.QTimer(self)
+        self._dock_save_timer.setSingleShot(True)
+        self._dock_save_timer.timeout.connect(self._persist_lens_palette_dock_state)
 
         self._build_view_menu()
         self._build_filter_menu()
@@ -848,6 +851,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         layout.addWidget(self.view, stretch=1)
 
+        if not self._dock_host_external:
+            self._dock_host.setCentralWidget(self._dock_container)
+            outer_layout = QtWidgets.QVBoxLayout(self)
+            outer_layout.setContentsMargins(0, 0, 0, 0)
+            outer_layout.setSpacing(0)
+            outer_layout.addWidget(self._dock_host)
+
         ui_scale.register_listener(self._on_ui_scale_changed)
         self._apply_density(ui_scale.get_config())
         self._refresh_snapshot_history()
@@ -873,7 +883,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_debug_status()
         if harness.is_enabled() and self.status_label:
             self.status_label.setText("Harness enabled (PHYSICSLAB_CODESEE_HARNESS=1).")
-        if self._lens_palette_pinned:
+        if self._lens_palette_pinned or self._lens_palette_visible:
             self._show_lens_palette()
 
     def open_root(self) -> None:
@@ -881,6 +891,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         self._graph_stack = [self._active_root.graph_id]
         self._set_graph(self._active_root.graph_id)
+
+    def dock_container(self) -> QtWidgets.QWidget:
+        return self._dock_container
 
     def on_workspace_changed(self) -> None:
         self._lens = view_config.load_last_lens_id(self._workspace_id()) or DEFAULT_LENS
@@ -1371,10 +1384,40 @@ class CodeSeeScreen(QtWidgets.QWidget):
         palette.set_recent(self._lens_palette_recent)
         palette.set_active_lens(self._lens)
         palette.set_pinned(self._lens_palette_pinned)
-        palette.installEventFilter(self)
         self._lens_palette = palette
-        if self._lens_palette_pinned:
-            self._apply_lens_palette_flags()
+        self._ensure_lens_palette_dock()
+        if self._lens_palette:
+            self._lens_palette.refresh()
+
+    def _ensure_lens_palette_dock(self) -> None:
+        if self._lens_palette_dock is not None:
+            return
+        if not self._lens_palette:
+            return
+        dock = QtWidgets.QDockWidget("Lenses", self._dock_host)
+        dock.setObjectName("codeseeLensPaletteDock")
+        dock.setFeatures(
+            QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        dock.setAllowedAreas(
+            QtCore.Qt.DockWidgetArea.LeftDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.RightDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.BottomDockWidgetArea
+        )
+        dock.setTitleBarWidget(QtWidgets.QWidget(dock))
+        dock.setWidget(self._lens_palette)
+        self._dock_host.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        dock.installEventFilter(self)
+        dock.topLevelChanged.connect(self._on_lens_palette_dock_floating_changed)
+        dock.visibilityChanged.connect(self._on_lens_palette_dock_visibility_changed)
+        dock.dockLocationChanged.connect(self._on_lens_palette_dock_location_changed)
+        self._lens_palette_dock = dock
+        if not self._dock_state_restored:
+            self._restore_lens_palette_dock_state()
+            self._dock_state_restored = True
+        self._apply_lens_palette_flags()
 
     def _rebuild_lens_tiles(self) -> None:
         if self._lens_palette:
@@ -1408,69 +1451,133 @@ class CodeSeeScreen(QtWidgets.QWidget):
             recent=self._lens_palette_recent,
         )
 
-    def _attach_palette_to_host(self) -> None:
-        if not self._lens_palette:
+    def _apply_lens_palette_flags(self) -> None:
+        if not self._lens_palette_dock or not self._lens_palette:
             return
-        self._lens_palette_host.setVisible(True)
-        self._lens_palette.setParent(self._lens_palette_host)
-        self._lens_palette.setWindowFlags(QtCore.Qt.WindowType.Widget)
-        if self._lens_palette_host_layout.indexOf(self._lens_palette) == -1:
-            self._lens_palette_host_layout.addWidget(self._lens_palette)
+        pinned = bool(self._lens_palette_pinned)
+        self._dock_syncing = True
+        try:
+            self._lens_palette_dock.setFloating(not pinned)
+        finally:
+            self._dock_syncing = False
+        self._lens_palette.set_pinned(pinned)
 
-    def _detach_palette_from_host(self) -> None:
-        if not self._lens_palette:
+    def _on_lens_palette_dock_floating_changed(self, floating: bool) -> None:
+        if self._dock_syncing:
             return
-        if self._lens_palette_host_layout.indexOf(self._lens_palette) != -1:
-            self._lens_palette_host_layout.removeWidget(self._lens_palette)
-        self._lens_palette_host.setVisible(False)
-        self._lens_palette.setParent(self)
-        self._lens_palette.setWindowFlags(
-            QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint
+        pinned = not bool(floating)
+        if pinned != self._lens_palette_pinned:
+            self._lens_palette_pinned = pinned
+            if self._lens_palette:
+                self._lens_palette.set_pinned(pinned)
+        if floating and self._lens_palette_visible:
+            self._position_lens_palette()
+        self._schedule_lens_palette_dock_save()
+
+    def _on_lens_palette_dock_visibility_changed(self, visible: bool) -> None:
+        self._lens_palette_visible = bool(visible)
+        blocker = QtCore.QSignalBlocker(self.lens_palette_btn)
+        self.lens_palette_btn.setChecked(self._lens_palette_visible)
+        del blocker
+        if self._lens_palette_visible and not self._lens_palette_pinned:
+            self._install_lens_palette_event_filter()
+        else:
+            self._remove_lens_palette_event_filter()
+        self._schedule_lens_palette_dock_save()
+
+    def _on_lens_palette_dock_location_changed(self, _area: QtCore.Qt.DockWidgetArea) -> None:
+        self._schedule_lens_palette_dock_save()
+
+    def _schedule_lens_palette_dock_save(self) -> None:
+        if self._dock_save_timer:
+            self._dock_save_timer.start(350)
+
+    def _persist_lens_palette_dock_state(self) -> None:
+        if not self._lens_palette_dock:
+            return
+        try:
+            dock_state = bytes(self._dock_host.saveState())
+            dock_geom = bytes(self._lens_palette_dock.saveGeometry())
+        except Exception:
+            return
+        state_str = base64.b64encode(dock_state).decode("ascii") if dock_state else ""
+        geom_str = base64.b64encode(dock_geom).decode("ascii") if dock_geom else ""
+        view_config.save_lens_palette_state(
+            self._workspace_id(),
+            pinned=self._lens_palette_pinned,
+            recent=self._lens_palette_recent,
+            dock_state=state_str,
+            dock_geometry=geom_str,
+            palette_visible=self._lens_palette_visible,
+            palette_floating=self._lens_palette_dock.isFloating(),
         )
 
-    def _apply_lens_palette_flags(self) -> None:
-        if not self._lens_palette:
+    def _restore_lens_palette_dock_state(self) -> None:
+        if not self._lens_palette_dock:
             return
-        if self._lens_palette_pinned:
-            self._attach_palette_to_host()
-        else:
-            self._detach_palette_from_host()
-        self._lens_palette.set_pinned(self._lens_palette_pinned)
+        palette_state = view_config.load_lens_palette_state(self._workspace_id())
+        dock_state = palette_state.get("dock_state")
+        if isinstance(dock_state, str) and dock_state:
+            try:
+                self._dock_host.restoreState(
+                    QtCore.QByteArray.fromBase64(dock_state.encode("ascii"))
+                )
+            except Exception:
+                pass
+        dock_geom = palette_state.get("dock_geometry")
+        if isinstance(dock_geom, str) and dock_geom:
+            try:
+                self._lens_palette_dock.restoreGeometry(
+                    QtCore.QByteArray.fromBase64(dock_geom.encode("ascii"))
+                )
+            except Exception:
+                pass
+        visible = bool(palette_state.get("palette_visible", False))
+        self._lens_palette_dock.setVisible(visible)
+        floating = bool(palette_state.get("palette_floating", False))
+        self._dock_syncing = True
+        try:
+            self._lens_palette_dock.setFloating(floating)
+        finally:
+            self._dock_syncing = False
 
     def _show_lens_palette(self) -> None:
         self._ensure_lens_palette()
-        if not self._lens_palette:
+        self._ensure_lens_palette_dock()
+        if not self._lens_palette_dock:
             return
         self._rebuild_lens_tiles()
         self._apply_lens_palette_flags()
         if not self._lens_palette_pinned:
             self._position_lens_palette()
-            self._lens_palette.show()
-            self._lens_palette.raise_()
-        else:
-            self._lens_palette.show()
+        self._lens_palette_dock.show()
+        self._lens_palette_dock.raise_()
         self._lens_palette_visible = True
         self.lens_palette_btn.setChecked(True)
         if not self._lens_palette_pinned:
             self._install_lens_palette_event_filter()
         else:
             self._remove_lens_palette_event_filter()
+        self._schedule_lens_palette_dock_save()
 
     def _hide_lens_palette(self) -> None:
-        if self._lens_palette:
-            self._lens_palette.hide()
+        if self._lens_palette_dock:
+            self._lens_palette_dock.hide()
         self._lens_palette_visible = False
         self.lens_palette_btn.setChecked(False)
         self._remove_lens_palette_event_filter()
+        self._schedule_lens_palette_dock_save()
 
     def _position_lens_palette(self) -> None:
-        if not self._lens_palette:
+        if not self._lens_palette_dock:
+            return
+        if not self._lens_palette_dock.isFloating():
             return
         anchor = self.lens_palette_btn
         if not anchor:
             return
         global_pos = anchor.mapToGlobal(QtCore.QPoint(0, anchor.height()))
-        self._lens_palette.move(global_pos + QtCore.QPoint(0, 6))
+        self._lens_palette_dock.move(global_pos + QtCore.QPoint(0, 6))
 
     def _set_lens_palette_pinned(self, pinned: bool) -> None:
         self._lens_palette_pinned = bool(pinned)
@@ -1479,13 +1586,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
             pinned=self._lens_palette_pinned,
             recent=self._lens_palette_recent,
         )
-        if self._lens_palette:
+        if self._lens_palette_dock:
             self._apply_lens_palette_flags()
-            if self._lens_palette_visible:
-                if not self._lens_palette_pinned:
-                    self._position_lens_palette()
+            if self._lens_palette_visible and not self._lens_palette_pinned:
+                self._position_lens_palette()
         if self._lens_palette_pinned and not self._lens_palette_visible:
             self._show_lens_palette()
+        self._schedule_lens_palette_dock_save()
 
     def _select_lens_from_palette(self, lens_id: str) -> None:
         prev = self._lens
@@ -1555,7 +1662,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
-        if self._lens_palette and obj is self._lens_palette:
+        if self._lens_palette_dock and obj is self._lens_palette_dock:
             if event.type() == QtCore.QEvent.Type.Hide:
                 self._lens_palette_visible = False
                 self.lens_palette_btn.setChecked(False)
@@ -1571,8 +1678,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 global_pos = mouse_event.globalPosition().toPoint()
             elif hasattr(mouse_event, "globalPos"):
                 global_pos = mouse_event.globalPos()
-            if global_pos and self._lens_palette:
-                if not self._lens_palette.frameGeometry().contains(global_pos):
+            target = self._lens_palette_dock if self._lens_palette_dock else self._lens_palette
+            if global_pos and target:
+                if not target.frameGeometry().contains(global_pos):
                     if not self._global_rect(self.lens_palette_btn).contains(global_pos):
                         self._hide_lens_palette()
         return super().eventFilter(obj, event)
