@@ -130,22 +130,30 @@ def load_window_geometry(workspace_id: str) -> Optional[str]:
     return None
 
 
-def load_lens_palette_state(workspace_id: str) -> Dict[str, bool]:
+def load_lens_palette_state(workspace_id: str) -> Dict[str, object]:
     settings = _load_settings(workspace_id)
     raw = settings.get("lens_palette")
     if not isinstance(raw, dict):
         raw = {}
+    recent = raw.get("recent", [])
+    if not isinstance(recent, list):
+        recent = []
     return {
         "pinned": bool(raw.get("pinned", False)),
+        "recent": [str(item) for item in recent if isinstance(item, str)],
     }
 
 
-def save_lens_palette_state(workspace_id: str, *, pinned: bool) -> None:
+def save_lens_palette_state(
+    workspace_id: str, *, pinned: bool, recent: Optional[list[str]] = None
+) -> None:
     settings = _load_settings(workspace_id)
     raw = settings.get("lens_palette")
     if not isinstance(raw, dict):
         raw = {}
     raw["pinned"] = bool(pinned)
+    if recent is not None:
+        raw["recent"] = [str(item) for item in recent if isinstance(item, str)]
     settings["lens_palette"] = raw
     _save_settings(workspace_id, settings)
 

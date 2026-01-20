@@ -38,3 +38,4 @@ Definition of Done:
 | V5.5/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |
 | V5.5/2026-01-19__V5.5c1__codesee__lens_palette_launcher.md | TBD | Floating lens palette launcher with pin + persistence |
 | V5.5/2026-01-19__V5.5c1__codesee__lens_palette_selection_fix.md | TBD | Fix lens palette selection wiring and add diagnostics |
+| V5.5/2026-01-19__V5.5c2__codesee__lens_palette_box_ui.md | TBD | Box-style lens palette UI with search + tile grid using reference design |
