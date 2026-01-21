@@ -594,6 +594,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         dock_host: Optional[QtWidgets.QMainWindow] = None,
     ) -> None:
         super().__init__()
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         self.on_back = on_back
         self._workspace_info_provider = workspace_info_provider
         self._bus = bus
@@ -663,7 +667,22 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._dock_host = QtWidgets.QMainWindow(self)
             self._dock_host.setObjectName("codeseeDockHost")
             self._dock_host.setDockNestingEnabled(False)
+            self._dock_host.setWindowFlags(QtCore.Qt.WindowType.Widget)
+            self._dock_host.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Expanding,
+            )
+        self._dock_host.setDockOptions(
+            QtWidgets.QMainWindow.DockOption.AnimatedDocks
+            | QtWidgets.QMainWindow.DockOption.AllowNestedDocks
+            | QtWidgets.QMainWindow.DockOption.AllowTabbedDocks
+            | QtWidgets.QMainWindow.DockOption.GroupedDragging
+        )
         self._dock_container = QtWidgets.QWidget()
+        self._dock_container.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         layout = QtWidgets.QVBoxLayout(self._dock_container)
         self._root_layout = layout
         selector = workspace_selector_factory() if workspace_selector_factory else None
@@ -852,11 +871,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
         layout.addWidget(self.view, stretch=1)
 
         if not self._dock_host_external:
+            self._dock_host.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Expanding,
+            )
             self._dock_host.setCentralWidget(self._dock_container)
             outer_layout = QtWidgets.QVBoxLayout(self)
             outer_layout.setContentsMargins(0, 0, 0, 0)
             outer_layout.setSpacing(0)
-            outer_layout.addWidget(self._dock_host)
+            outer_layout.addWidget(self._dock_host, stretch=1)
 
         ui_scale.register_listener(self._on_ui_scale_changed)
         self._apply_density(ui_scale.get_config())
@@ -1405,8 +1428,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             QtCore.Qt.DockWidgetArea.LeftDockWidgetArea
             | QtCore.Qt.DockWidgetArea.RightDockWidgetArea
             | QtCore.Qt.DockWidgetArea.BottomDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.TopDockWidgetArea
         )
-        dock.setTitleBarWidget(QtWidgets.QWidget(dock))
         dock.setWidget(self._lens_palette)
         self._dock_host.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
         dock.installEventFilter(self)

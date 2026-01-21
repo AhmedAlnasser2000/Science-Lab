@@ -46,3 +46,4 @@ Definition of Done:
 | V5.5/2026-01-20__V5.5c7__codesee__icon_pack_style_recursion_and_palette_growth.md | TBD | Fix icon style normalization to stop Path recursion; prevent palette refresh loop/growth |
 | V5.5/2026-01-20__V5.5c8__codesee__stability_recursion_and_palette_resize.md | TBD | CodeSee stability hotfix: safe mode + hook reentrancy guard + palette resize safeguards |
 | V5.5/2026-01-20__V5.5c10__codesee__floating_resizable_lens_palette_dockwidget.md | TBD | Make Lens Palette floatable/resizable via QDockWidget with persisted dock state |
+| V5.5/2026-01-21__V5.5c10.1__codesee__dockwidget_drag_float_and_multi_dock_areas.md | TBD | Restore drag-to-float and dock-anywhere behavior for Lens Palette |
