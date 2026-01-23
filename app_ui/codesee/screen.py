@@ -14,7 +14,18 @@ from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
-from . import crash_io, harness, icon_pack, layout_store, snapshot_index, snapshot_io, view_config
+from . import (
+    crash_io,
+    diagnostics,
+    diagnostics_dialog,
+    harness,
+    icon_pack,
+    layout_store,
+    log_buffer,
+    snapshot_index,
+    snapshot_io,
+    view_config,
+)
 from .badges import Badge, badge_from_key, sort_by_priority
 from .canvas.items import clear_icon_cache
 from .canvas.scene import GraphScene
@@ -156,6 +167,12 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._on_select: Optional[Callable[[str], None]] = None
         self._on_close: Optional[Callable[[], None]] = None
         self._on_pin: Optional[Callable[[bool], None]] = None
+        self._on_diagnostics: Optional[Callable[[], None]] = None
+        self._on_clear_recent: Optional[Callable[[], None]] = None
+        self._on_clear_search: Optional[Callable[[], None]] = None
+        self._on_float_palette: Optional[Callable[[], None]] = None
+        self._on_reset_layout: Optional[Callable[[], None]] = None
+        self._on_refresh_inventory: Optional[Callable[[], None]] = None
         self._pinned = False
         self._expanded = False
         self._active_lens_id = ""
@@ -282,10 +299,19 @@ class LensPaletteWidget(QtWidgets.QFrame):
         footer_row.addWidget(self._recent_btn)
         footer_row.addStretch()
         self._more_btn = QtWidgets.QToolButton()
-        self._more_btn.setText("More… >")
-        self._more_btn.clicked.connect(self._toggle_expanded)
+        self._more_btn.setText("More... >")
+        self._more_btn.setToolTip("Palette actions")
+        self._more_btn.clicked.connect(self._show_more_menu)
         footer_row.addWidget(self._more_btn)
         layout.addLayout(footer_row)
+
+        self._more_menu = QtWidgets.QMenu(self)
+        self._more_menu.setStyleSheet(
+            "QMenu { background: #1b1f27; color: #cfd8dc; border: 1px solid #2a2f38; }"
+            "QMenu::item { padding: 6px 24px 6px 24px; }"
+            "QMenu::item:selected { background: #242a35; }"
+            "QMenu::separator { height: 1px; background: #2a2f38; margin: 4px 8px; }"
+        )
 
         self._apply_sizing()
 
@@ -302,6 +328,24 @@ class LensPaletteWidget(QtWidgets.QFrame):
 
     def set_on_pin(self, callback: Callable[[bool], None]) -> None:
         self._on_pin = callback
+
+    def set_on_diagnostics(self, callback: Callable[[], None]) -> None:
+        self._on_diagnostics = callback
+
+    def set_on_clear_recent(self, callback: Callable[[], None]) -> None:
+        self._on_clear_recent = callback
+
+    def set_on_clear_search(self, callback: Callable[[], None]) -> None:
+        self._on_clear_search = callback
+
+    def set_on_float_palette(self, callback: Callable[[], None]) -> None:
+        self._on_float_palette = callback
+
+    def set_on_reset_layout(self, callback: Callable[[], None]) -> None:
+        self._on_reset_layout = callback
+
+    def set_on_refresh_inventory(self, callback: Callable[[], None]) -> None:
+        self._on_refresh_inventory = callback
 
     def set_recent(self, recent: list[str]) -> None:
         self._recent = list(recent or [])
@@ -512,9 +556,108 @@ class LensPaletteWidget(QtWidgets.QFrame):
         if self._on_pin:
             self._on_pin(bool(checked))
 
+    def _menu_icon(self, icon_key: str) -> QtGui.QIcon:
+        icon_size = int(ui_scale.scale_px(16))
+        tint = QtGui.QColor("#9fb8ff")
+        pixmap = _lens_palette_icon_pixmap(icon_key, icon_pack.ICON_STYLE_MONO, icon_size, tint)
+        if pixmap:
+            return QtGui.QIcon(pixmap)
+        return QtGui.QIcon()
+
+    def _build_more_menu(self) -> None:
+        self._more_menu.clear()
+        expand_action = QtGui.QAction(self._menu_icon("view.zoom"), "Expanded view", self._more_menu)
+        expand_action.setCheckable(True)
+        expand_action.setChecked(self._expanded)
+        expand_action.toggled.connect(self._set_expanded)
+        self._more_menu.addAction(expand_action)
+        self._more_menu.addSeparator()
+
+        manage_action = QtGui.QAction(self._menu_icon("state.info"), "Manage Lenses...", self._more_menu)
+        manage_action.setEnabled(False)
+        self._more_menu.addAction(manage_action)
+
+        add_action = QtGui.QAction(self._menu_icon("state.add"), "Add Lens... (Coming soon)", self._more_menu)
+        add_action.setEnabled(False)
+        self._more_menu.addAction(add_action)
+
+        delete_action = QtGui.QAction(self._menu_icon("state.delete"), "Delete Lens... (Coming soon)", self._more_menu)
+        delete_action.setEnabled(False)
+        self._more_menu.addAction(delete_action)
+
+        install_action = QtGui.QAction(self._menu_icon("state.download"), "Install Lens Pack...", self._more_menu)
+        install_action.setEnabled(False)
+        self._more_menu.addAction(install_action)
+
+        refresh_action = QtGui.QAction(self._menu_icon("state.refresh"), "Refresh Lens Inventory", self._more_menu)
+        refresh_action.triggered.connect(self._refresh_inventory_action)
+        self._more_menu.addAction(refresh_action)
+
+        plugin_action = QtGui.QAction(self._menu_icon("state.plugin"), "Plugin Registry... (Coming soon)", self._more_menu)
+        plugin_action.setEnabled(False)
+        self._more_menu.addAction(plugin_action)
+
+        self._more_menu.addSeparator()
+
+        float_action = QtGui.QAction(self._menu_icon("state.float"), "Float Palette", self._more_menu)
+        float_action.triggered.connect(self._float_palette_action)
+        self._more_menu.addAction(float_action)
+
+        reset_action = QtGui.QAction(self._menu_icon("state.reset"), "Reset Palette Layout", self._more_menu)
+        reset_action.triggered.connect(self._reset_layout_action)
+        self._more_menu.addAction(reset_action)
+
+        self._more_menu.addSeparator()
+
+        clear_recent = QtGui.QAction(self._menu_icon("state.clear"), "Clear Recent", self._more_menu)
+        clear_recent.triggered.connect(self._clear_recent_action)
+        self._more_menu.addAction(clear_recent)
+
+        clear_search = QtGui.QAction(self._menu_icon("state.search"), "Clear Search", self._more_menu)
+        clear_search.triggered.connect(self._clear_search_action)
+        self._more_menu.addAction(clear_search)
+
+        diagnostics_action = QtGui.QAction(self._menu_icon("state.info"), "Diagnostics (CodeSee)...", self._more_menu)
+        diagnostics_action.triggered.connect(self._emit_diagnostics)
+        self._more_menu.addAction(diagnostics_action)
+
+    def _show_more_menu(self) -> None:
+        self._build_more_menu()
+        self._more_menu.exec(self._more_btn.mapToGlobal(QtCore.QPoint(0, 24)))
+
+    def _emit_diagnostics(self) -> None:
+        if self._on_diagnostics:
+            self._on_diagnostics()
+
+    def _clear_recent_action(self) -> None:
+        if self._on_clear_recent:
+            self._on_clear_recent()
+
+    def _clear_search_action(self) -> None:
+        if self._search:
+            self._search.setText("")
+        if self._on_clear_search:
+            self._on_clear_search()
+
+    def _float_palette_action(self) -> None:
+        if self._on_float_palette:
+            self._on_float_palette()
+
+    def _reset_layout_action(self) -> None:
+        if self._on_reset_layout:
+            self._on_reset_layout()
+
+    def _refresh_inventory_action(self) -> None:
+        if self._on_refresh_inventory:
+            self._on_refresh_inventory()
+
     def _toggle_expanded(self) -> None:
-        self._expanded = not self._expanded
-        self._more_btn.setText("Less" if self._expanded else "More… >")
+        self._set_expanded(not self._expanded)
+
+    def _set_expanded(self, expanded: bool) -> None:
+        if self._expanded == bool(expanded):
+            return
+        self._expanded = bool(expanded)
         self._apply_sizing()
         self._dbg_once(f"expanded:{self._expanded}", f"palette expanded={self._expanded}")
 
@@ -620,6 +763,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette_pinned = bool(palette_state.get("pinned", False))
         self._lens_palette_recent = list(palette_state.get("recent", []))
         self._lens_palette: Optional[LensPaletteWidget] = None
+        self._diagnostics_dialog: Optional[diagnostics_dialog.CodeSeeDiagnosticsDialog] = None
         self._lens_palette_visible = bool(palette_state.get("palette_visible", False))
         self._lens_palette_event_filter_installed = False
         if self._runtime_hub:
@@ -1357,6 +1501,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _log_lens_palette(self, message: str) -> None:
         try:
+            log_buffer.LOG_BUFFER.append(f"lens_palette: {message}")
+        except Exception:
+            pass
+        try:
             if os.environ.get("PHYSICSLAB_CODESEE_DEBUG", "0") != "1":
                 return
         except Exception:
@@ -1404,6 +1552,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         palette.set_on_select(self._select_lens_from_palette)
         palette.set_on_close(self._hide_lens_palette)
         palette.set_on_pin(self._set_lens_palette_pinned)
+        palette.set_on_diagnostics(self._open_codesee_diagnostics)
+        palette.set_on_clear_recent(self._clear_lens_palette_recent)
+        palette.set_on_clear_search(self._clear_lens_search)
+        palette.set_on_float_palette(self._float_lens_palette)
+        palette.set_on_reset_layout(self._reset_lens_palette_layout)
+        palette.set_on_refresh_inventory(self._refresh_lens_inventory)
         palette.set_recent(self._lens_palette_recent)
         palette.set_active_lens(self._lens)
         palette.set_pinned(self._lens_palette_pinned)
@@ -1447,7 +1601,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._lens_palette.refresh()
 
     def _clear_lens_search(self) -> None:
-        return
+        if self._lens_palette and getattr(self._lens_palette, "_search", None):
+            self._lens_palette._search.setText("")
 
     def _toggle_lens_palette_expanded(self) -> None:
         return
@@ -1457,6 +1612,59 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _show_recent_lenses_menu(self) -> None:
         return
+
+    def _clear_lens_palette_recent(self) -> None:
+        self._lens_palette_recent = []
+        if self._lens_palette:
+            self._lens_palette.set_recent([])
+        view_config.save_lens_palette_state(
+            self._workspace_id(),
+            pinned=self._lens_palette_pinned,
+            recent=self._lens_palette_recent,
+            dock_state=None,
+            dock_geometry=None,
+            palette_visible=self._lens_palette_visible,
+            palette_floating=self._lens_palette_dock.isFloating() if self._lens_palette_dock else None,
+        )
+
+    def _float_lens_palette(self) -> None:
+        self._set_lens_palette_pinned(False)
+        if self._lens_palette_dock:
+            self._lens_palette_dock.setFloating(True)
+            self._lens_palette_dock.raise_()
+
+    def _reset_lens_palette_layout(self) -> None:
+        if self._lens_palette_dock:
+            self._lens_palette_dock.setFloating(False)
+            self._dock_host.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self._lens_palette_dock)
+        view_config.save_lens_palette_state(
+            self._workspace_id(),
+            pinned=self._lens_palette_pinned,
+            recent=self._lens_palette_recent,
+            dock_state="",
+            dock_geometry="",
+            palette_visible=self._lens_palette_visible,
+            palette_floating=self._lens_palette_dock.isFloating() if self._lens_palette_dock else None,
+        )
+
+    def _refresh_lens_inventory(self) -> None:
+        self._refresh_current_graph()
+
+    def _open_codesee_diagnostics(self) -> None:
+        if self._diagnostics_dialog is None:
+            self._diagnostics_dialog = diagnostics_dialog.CodeSeeDiagnosticsDialog(
+                snapshot_provider=lambda: diagnostics.codesee_diagnostics_snapshot(self),
+                log_provider=log_buffer.LOG_BUFFER.get_lines,
+                parent=self,
+            )
+            self._diagnostics_dialog.finished.connect(self._close_codesee_diagnostics)
+        self._diagnostics_dialog.refresh()
+        self._diagnostics_dialog.show()
+        self._diagnostics_dialog.raise_()
+        self._diagnostics_dialog.activateWindow()
+
+    def _close_codesee_diagnostics(self, _result: int = 0) -> None:
+        self._diagnostics_dialog = None
 
     def _remember_recent_lens(self, lens_id: str) -> None:
 
