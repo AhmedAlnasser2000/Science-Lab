@@ -47,3 +47,5 @@ Definition of Done:
 | V5.5/2026-01-20__V5.5c8__codesee__stability_recursion_and_palette_resize.md | TBD | CodeSee stability hotfix: safe mode + hook reentrancy guard + palette resize safeguards |
 | V5.5/2026-01-20__V5.5c10__codesee__floating_resizable_lens_palette_dockwidget.md | TBD | Make Lens Palette floatable/resizable via QDockWidget with persisted dock state |
 | V5.5/2026-01-21__V5.5c10.1__codesee__dockwidget_drag_float_and_multi_dock_areas.md | TBD | Restore drag-to-float and dock-anywhere behavior for Lens Palette |
+| V5.5/2026-01-21__V5.5c11__codesee__more_menu_codesee_diagnostics.md | TBD | Add CodeSee-scoped diagnostics dialog from lens palette More menu |
+| V5.5/2026-01-21__V5.5c11.1__codesee__dockwidget_height_resize_wm_destroy.md | TBD | Fix docked height resize stability and avoid WM_DESTROY spam during palette resizing |
