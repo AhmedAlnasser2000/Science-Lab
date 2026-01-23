@@ -582,12 +582,6 @@ class LensPaletteWidget(QtWidgets.QFrame):
 
     def _build_more_menu(self) -> None:
         self._more_menu.clear()
-        expand_action = QtGui.QAction(self._menu_icon("view.zoom"), "Expanded view", self._more_menu)
-        expand_action.setCheckable(True)
-        expand_action.setChecked(self._expanded)
-        expand_action.toggled.connect(self._set_expanded)
-        self._more_menu.addAction(expand_action)
-        self._more_menu.addSeparator()
 
         manage_action = QtGui.QAction(self._menu_icon("state.info"), "Manage Lenses...", self._more_menu)
         manage_action.setEnabled(False)
