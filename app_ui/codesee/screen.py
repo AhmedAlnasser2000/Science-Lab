@@ -98,6 +98,22 @@ def _filter_lens_tiles(query: str, tiles: list[dict[str, str]]) -> list[dict[str
     return filtered
 
 
+def lens_palette_dock_orientation(
+    area: QtCore.Qt.DockWidgetArea,
+) -> Optional[QtCore.Qt.Orientation]:
+    if area in (
+        QtCore.Qt.DockWidgetArea.LeftDockWidgetArea,
+        QtCore.Qt.DockWidgetArea.RightDockWidgetArea,
+    ):
+        return QtCore.Qt.Orientation.Horizontal
+    if area in (
+        QtCore.Qt.DockWidgetArea.TopDockWidgetArea,
+        QtCore.Qt.DockWidgetArea.BottomDockWidgetArea,
+    ):
+        return QtCore.Qt.Orientation.Vertical
+    return None
+
+
 def _fallback_lens_pixmap(size: int, tint: Optional[QtGui.QColor]) -> QtGui.QPixmap:
     tint_key = tint.name() if tint else ""
     cache_key = ("__fallback__", "color", int(size), tint_key)
@@ -684,11 +700,12 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def _apply_sizing(self) -> None:
         base = 260 if not self._expanded else 420
         min_height = int(ui_scale.scale_px(base))
+        max_height = int(ui_scale.scale_px(900))
         self.setMinimumHeight(min_height)
         if self._pinned:
             self.setMaximumHeight(16777215)
         else:
-            self.setMaximumHeight(min_height)
+            self.setMaximumHeight(max_height)
         scroll_min = 160 if not self._expanded else 280
         self._scroll.setMinimumHeight(int(ui_scale.scale_px(scroll_min)))
 
@@ -930,9 +947,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._lens_palette_dock: Optional[QtWidgets.QDockWidget] = None
         self._dock_state_restored = False
         self._dock_syncing = False
+        self._dock_size_syncing = False
         self._dock_save_timer = QtCore.QTimer(self)
         self._dock_save_timer.setSingleShot(True)
         self._dock_save_timer.timeout.connect(self._persist_lens_palette_dock_state)
+        self._dock_last_floating: Optional[bool] = None
 
         self._build_view_menu()
         self._build_filter_menu()
@@ -1701,6 +1720,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._lens_palette_pinned = pinned
             if self._lens_palette:
                 self._lens_palette.set_pinned(pinned)
+        self._apply_lens_palette_dock_size(floating=floating, force=not floating)
         if floating and self._lens_palette_visible:
             self._position_lens_palette()
         self._schedule_lens_palette_dock_save()
@@ -1717,6 +1737,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._schedule_lens_palette_dock_save()
 
     def _on_lens_palette_dock_location_changed(self, _area: QtCore.Qt.DockWidgetArea) -> None:
+        self._apply_lens_palette_dock_size(force=True)
         self._schedule_lens_palette_dock_save()
 
     def _schedule_lens_palette_dock_save(self) -> None:
@@ -1771,6 +1792,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._lens_palette_dock.setFloating(floating)
         finally:
             self._dock_syncing = False
+        if not dock_state and not dock_geom:
+            self._apply_lens_palette_dock_size(force=True)
+        else:
+            self._apply_lens_palette_dock_size(floating=floating)
+        self._apply_lens_palette_dock_size(floating=floating)
 
     def _show_lens_palette(self) -> None:
         self._ensure_lens_palette()
@@ -1779,6 +1805,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         self._rebuild_lens_tiles()
         self._apply_lens_palette_flags()
+        self._apply_lens_palette_dock_size()
         if not self._lens_palette_pinned:
             self._position_lens_palette()
         self._lens_palette_dock.show()
@@ -1819,11 +1846,57 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         if self._lens_palette_dock:
             self._apply_lens_palette_flags()
+            self._apply_lens_palette_dock_size(floating=self._lens_palette_dock.isFloating())
             if self._lens_palette_visible and not self._lens_palette_pinned:
                 self._position_lens_palette()
         if self._lens_palette_pinned and not self._lens_palette_visible:
             self._show_lens_palette()
         self._schedule_lens_palette_dock_save()
+
+    def _apply_lens_palette_dock_size(
+        self, *, floating: Optional[bool] = None, force: bool = False
+    ) -> None:
+        if not self._lens_palette_dock:
+            return
+        if self._dock_size_syncing:
+            return
+        if floating is None:
+            floating = self._lens_palette_dock.isFloating()
+        if floating:
+            # Let floating palette keep its own geometry without clamp.
+            self._lens_palette_dock.setMinimumSize(0, 0)
+            self._dock_last_floating = True
+            return
+        should_normalize = force or self._dock_last_floating in (True, None)
+        try:
+            self._dock_size_syncing = True
+            if should_normalize:
+                min_width = int(ui_scale.scale_px(320))
+                min_height = int(ui_scale.scale_px(360))
+                # Apply a one-time normalization size, then relax minimums for free resizing.
+                self._lens_palette_dock.setMinimumWidth(min_width)
+                self._lens_palette_dock.setMinimumHeight(min_height)
+                try:
+                    area = self._dock_host.dockWidgetArea(self._lens_palette_dock)
+                    orientation = lens_palette_dock_orientation(area)
+                    if orientation is not None:
+                        size_hint = min_width if orientation == QtCore.Qt.Orientation.Horizontal else min_height
+                        self._dock_host.resizeDocks(
+                            [self._lens_palette_dock],
+                            [size_hint],
+                            orientation,
+                        )
+                except Exception:
+                    pass
+                QtCore.QTimer.singleShot(
+                    0, lambda: self._lens_palette_dock.setMinimumSize(0, 0)
+                )
+            else:
+                # Already docked; don't re-normalize or clamp user resizing.
+                self._lens_palette_dock.setMinimumSize(0, 0)
+            self._dock_last_floating = False
+        finally:
+            self._dock_size_syncing = False
 
     def _select_lens_from_palette(self, lens_id: str) -> None:
         prev = self._lens

@@ -1,4 +1,10 @@
-from app_ui.codesee.screen import _filter_lens_tiles, _lens_palette_lens_ids
+from PyQt6 import QtCore
+
+from app_ui.codesee.screen import (
+    _filter_lens_tiles,
+    _lens_palette_lens_ids,
+    lens_palette_dock_orientation,
+)
 
 
 def test_lens_palette_ids_unique_and_ordered() -> None:
@@ -20,3 +26,23 @@ def test_filter_lens_tiles_case_insensitive() -> None:
     assert [tile["id"] for tile in filtered] == ["platform"]
     assert _filter_lens_tiles("", tiles) == tiles
     assert _filter_lens_tiles("zz", tiles) == []
+
+
+def test_lens_palette_dock_orientation() -> None:
+    assert (
+        lens_palette_dock_orientation(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea)
+        == QtCore.Qt.Orientation.Horizontal
+    )
+    assert (
+        lens_palette_dock_orientation(QtCore.Qt.DockWidgetArea.RightDockWidgetArea)
+        == QtCore.Qt.Orientation.Horizontal
+    )
+    assert (
+        lens_palette_dock_orientation(QtCore.Qt.DockWidgetArea.TopDockWidgetArea)
+        == QtCore.Qt.Orientation.Vertical
+    )
+    assert (
+        lens_palette_dock_orientation(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea)
+        == QtCore.Qt.Orientation.Vertical
+    )
+    assert lens_palette_dock_orientation(QtCore.Qt.DockWidgetArea.NoDockWidgetArea) is None
