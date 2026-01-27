@@ -12,10 +12,15 @@ This folder holds checkpoint summaries, plans, prompts, and overview notes for P
 
 ## Reference docs
 - `docs/handbook/app_handbook.md`: contributor handbook.
+- `docs/handbook/agent_safety_rules.md`: Codex/agent safety header.
+- `docs/handbook/workflow_rules.md`: workflow rules (MVP vs UX).
+- `docs/handbook/dev_setup.md`: development setup.
+- `docs/handbook/standard_terms.md`: standard UI terms.
 - `docs/overviews/`: version overviews.
 - `docs/plans/`: design plans.
 - `docs/prompts/`: diagram and tooling prompts.
 - `docs/snapshots/`: captured repo trees or other snapshots.
+- `docs/milestones/README.md`: milestone artifacts (migrated from repo-root Milestones).
 
 ## Adding a new checkpoint
 1) Update `docs/app_summary_latest.md`.
