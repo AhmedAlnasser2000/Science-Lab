@@ -1,7 +1,7 @@
 # PhysicsLab App Summary (Code-Verified Checkpoint)
 
 ## Scope, terminology, and versioning
-- UI terminology (see `docs/standard_terms.md`): Project, Pack, Block, Topic/Unit/Lesson/Activity.
+- UI terminology (see `docs/handbook/standard_terms.md`): Project, Pack, Block, Topic/Unit/Lesson/Activity.
 - Internal IDs remain: workspace, component pack, component, module/section/package/part.
 - Curriculum mapping: Topic = Module, Unit = Section, Lesson = Package, Activity = Part.
 - Versioning in commits/docs uses Vx.y (milestone) and Vx.y.z (fix/refactor), not chapter numbers.
@@ -116,5 +116,4 @@ Manual UI verification checklist:
 - Labs: gravity, projectile, electric_field, lens_ray, vector_add rendering and interactions.
 - System Health: Overview/Runs/Maintenance/Modules/Jobs tabs; run delete/prune.
 - Workspace Management: list/create/switch/delete Projects, template list loads, pack toggles persist.
-
 
