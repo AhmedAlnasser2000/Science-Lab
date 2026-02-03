@@ -54,3 +54,4 @@ Definition of Done:
 | V5.5/V5.5c/feat/2026-01-21__V5.5c11__codesee__more_menu_codesee_diagnostics.md | TBD | Add CodeSee-scoped diagnostics dialog from lens palette More menu |
 | V5.5/V5.5c/fix/2026-01-21__V5.5c11.1__codesee__dockwidget_height_resize_wm_destroy.md | TBD | Fix docked height resize stability and avoid WM_DESTROY spam during palette resizing |
 | V5.5/V5.5c/docs/2026-01-26__V5.5c12__docs__docs_and_milestones_organization.md | TBD | Docs taxonomy + milestones organization plan |
+| V5.5/V5.5c/chore/2026-02-03__V5.5c13__codesee__screen_py_declutter_split.md | TBD | Split CodeSee screen.py into focused modules (lens palette + dialogs) without behavior changes |
