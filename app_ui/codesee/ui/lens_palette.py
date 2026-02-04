@@ -1,4 +1,15 @@
-﻿from __future__ import annotations
+﻿# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Lens tile spec + filtering
+# [NAV-20] Dock orientation helper
+# [NAV-30] Icon/pixmap cache helpers
+# [NAV-40] LensPaletteWidget
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
+# region NAV-00 Imports / constants
+from __future__ import annotations
 
 import functools
 import os
@@ -13,8 +24,11 @@ from ..lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM
 
 LENS_EXT = "extensibility"
 _LENS_ICON_CACHE: Dict[tuple[str, str, int, str], QtGui.QPixmap] = {}
+# endregion NAV-00 Imports / constants
 
 
+# === [NAV-10] Lens tile spec + filtering =====================================
+# region NAV-10 Lens tile spec + filtering
 def _lens_palette_lens_ids() -> list[str]:
     return [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS, LENS_EXT]
 
@@ -42,8 +56,11 @@ def _filter_lens_tiles(query: str, tiles: list[dict[str, str]]) -> list[dict[str
         if needle in title or needle in lens_id:
             filtered.append(tile)
     return filtered
+# endregion NAV-10 Lens tile spec + filtering
 
 
+# === [NAV-20] Dock orientation helper ========================================
+# region NAV-20 Dock orientation helper
 def lens_palette_dock_orientation(
     area: QtCore.Qt.DockWidgetArea,
 ) -> Optional[QtCore.Qt.Orientation]:
@@ -58,8 +75,11 @@ def lens_palette_dock_orientation(
     ):
         return QtCore.Qt.Orientation.Vertical
     return None
+# endregion NAV-20 Dock orientation helper
 
 
+# === [NAV-30] Icon/pixmap cache helpers ======================================
+# region NAV-30 Icon/pixmap cache helpers
 def _fallback_lens_pixmap(size: int, tint: Optional[QtGui.QColor]) -> QtGui.QPixmap:
     tint_key = tint.name() if tint else ""
     cache_key = ("__fallback__", "color", int(size), tint_key)
@@ -114,8 +134,11 @@ def _lens_palette_icon_pixmap(
         return _fallback_lens_pixmap(size, tint)
     _LENS_ICON_CACHE[cache_key] = pixmap
     return pixmap
+# endregion NAV-30 Icon/pixmap cache helpers
 
 
+# === [NAV-40] LensPaletteWidget ==============================================
+# region NAV-40 LensPaletteWidget
 class LensPaletteWidget(QtWidgets.QFrame):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -676,3 +699,6 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def _log(self, message: str) -> None:
         self._dbg(message)
 
+
+
+# endregion NAV-40 LensPaletteWidget

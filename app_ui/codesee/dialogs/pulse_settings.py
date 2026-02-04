@@ -1,4 +1,13 @@
-﻿from __future__ import annotations
+﻿# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Topic label helpers
+# [NAV-20] open_pulse_settings entrypoint
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
+# region NAV-00 Imports / constants
+from __future__ import annotations
 
 from typing import Dict, Optional
 
@@ -6,7 +15,10 @@ from PyQt6 import QtWidgets
 
 from .. import view_config
 
+# endregion NAV-00 Imports / constants
 
+# === [NAV-10] Topic label helpers =========================================
+# region NAV-10 Topic label helpers
 def _pulse_topic_labels() -> Dict[str, str]:
     return {
         "app.activity": "App activity",
@@ -21,8 +33,11 @@ def _pulse_topic_labels() -> Dict[str, str]:
         "expect.check": "Expectation check",
         "codesee.test_pulse": "Test pulse",
     }
+# endregion NAV-10 Topic label helpers
 
 
+# === [NAV-20] open_pulse_settings entrypoint ===============================
+# region NAV-20 open_pulse_settings entrypoint
 def open_pulse_settings(
     parent: QtWidgets.QWidget,
     settings: view_config.PulseSettings,
@@ -150,3 +165,6 @@ def open_pulse_settings(
         topic_enabled={key: bool(check.isChecked()) for key, check in topic_checks.items()},
     )
 
+
+
+# endregion NAV-20 open_pulse_settings entrypoint

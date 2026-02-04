@@ -1,4 +1,13 @@
-﻿from __future__ import annotations
+﻿# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-20] CodeSeeRemovedDialog
+# [NAV-30] Formatting helpers
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
+# region NAV-00 Imports / constants
+from __future__ import annotations
 
 from typing import Optional
 
@@ -6,7 +15,10 @@ from PyQt6 import QtWidgets
 
 from ..diff import DiffResult
 
+# endregion NAV-00 Imports / constants
 
+# === [NAV-20] CodeSeeRemovedDialog ==========================================
+# region NAV-20 CodeSeeRemovedDialog
 class CodeSeeRemovedDialog(QtWidgets.QDialog):
     def __init__(self, diff_result: DiffResult, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -38,6 +50,10 @@ class CodeSeeRemovedDialog(QtWidgets.QDialog):
         layout.addLayout(close_row)
 
 
+# endregion NAV-20 CodeSeeRemovedDialog
+
+# === [NAV-30] Formatting helpers ==============================================
+# region NAV-30 Formatting helpers
 def _format_removed_nodes(diff_result: DiffResult) -> str:
     if not diff_result.nodes_removed:
         return "No removed nodes."
@@ -52,3 +68,6 @@ def _format_removed_edges(diff_result: DiffResult) -> str:
         lines.append(f"{kind}: {src} -> {dst}")
     return "\n".join(lines)
 
+
+
+# endregion NAV-30 Formatting helpers

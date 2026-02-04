@@ -1,4 +1,14 @@
-﻿from __future__ import annotations
+﻿# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Span helpers
+# [NAV-20] CodeSeeInspectorDialog
+# [NAV-30] Formatting helpers
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
+# region NAV-00 Imports / constants
+from __future__ import annotations
 
 import time
 from typing import Optional
@@ -11,7 +21,11 @@ from ..expectations import EVACheck
 from ..graph_model import ArchitectureGraph, Node
 from ..runtime.events import CodeSeeEvent, SpanRecord
 
+# endregion NAV-00 Imports / constants
 
+
+# === [NAV-10] Span helpers =================================================
+# region NAV-10 Span helpers
 def _span_is_stuck(span: SpanRecord, now: float, threshold: int) -> bool:
     if threshold <= 0:
         return False
@@ -19,8 +33,11 @@ def _span_is_stuck(span: SpanRecord, now: float, threshold: int) -> bool:
     if not updated:
         return False
     return (now - updated) > threshold
+# endregion NAV-10 Span helpers
 
 
+# === [NAV-20] CodeSeeInspectorDialog =======================================
+# region NAV-20 CodeSeeInspectorDialog
 class CodeSeeInspectorDialog(QtWidgets.QDialog):
     def __init__(
         self,
@@ -137,6 +154,10 @@ class CodeSeeInspectorDialog(QtWidgets.QDialog):
         layout.addLayout(close_row)
 
 
+# endregion NAV-20 CodeSeeInspectorDialog
+
+# === [NAV-30] Formatting helpers ==============================================
+# region NAV-30 Formatting helpers
 def _format_badges(badges: list[Badge]) -> str:
     if not badges:
         return "No badges."
@@ -308,3 +329,6 @@ def _format_crash_record(record: dict, limit_lines: int = 12) -> str:
         f"Traceback:\n{excerpt}"
     )
 
+
+
+# endregion NAV-30 Formatting helpers

@@ -1,3 +1,19 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-05] Stable re-exports for tests (lens palette + helpers)
+# [NAV-20] CodeSeeScreen
+# [NAV-30] CodeSeeScreen: graph navigation + layout persistence
+# [NAV-40] CodeSeeScreen: lens palette integration (dock/float/pin/persist)
+# [NAV-60] CodeSeeScreen: overlays + rendering helpers
+# [NAV-70] CodeSeeScreen: UI density + status tick + runtime events
+# [NAV-80] CodeSeeScreen: snapshots/diff/crash/presets (dialogs + actions)
+# [NAV-90] Module helpers (toggle/buttons/labels/filters/spans/badges)
+# [NAV-99] Smoke test entrypoints
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
+# region NAV-00 Imports / constants
 from __future__ import annotations
 
 import base64
@@ -52,6 +68,7 @@ from .runtime.events import (
     EVENT_TEST_PULSE,
     SpanRecord,
 )
+# --- [NAV-05] Stable re-exports for tests (lens palette + helpers)
 from .runtime.hub import CodeSeeRuntimeHub
 from .dialogs.inspector import CodeSeeInspectorDialog, _span_is_stuck
 from .dialogs.pulse_settings import open_pulse_settings
@@ -75,7 +92,10 @@ ICON_STYLE_LABELS = {
     icon_pack.ICON_STYLE_COLOR: "Color",
     icon_pack.ICON_STYLE_MONO: "Mono",
 }
+# endregion NAV-00 Imports / constants
 
+# === [NAV-20] CodeSeeScreen ===================================================
+# region NAV-20 CodeSeeScreen
 class CodeSeeScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -510,6 +530,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._save_layout()
         self.on_back()
 
+    # --- [NAV-30A] graph stack / set graph / enter-subgraph
     def _workspace_id(self) -> str:
         info = self._workspace_info_provider() or {}
         if isinstance(info, dict):
@@ -551,6 +572,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._refresh_breadcrumb()
         self._render_current_graph()
 
+    # --- [NAV-30B] layout save/restore
     def _save_layout(self) -> None:
         if not self._render_graph_id:
             return
@@ -902,6 +924,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self._set_lens_palette_pinned(False)
             self._hide_lens_palette()
 
+    # --- [NAV-40A] ensure palette widget
     def _ensure_lens_palette(self) -> None:
         if self._lens_palette is not None:
             return
@@ -924,6 +947,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._lens_palette:
             self._lens_palette.refresh()
 
+    # --- [NAV-40B] ensure dock + apply flags
     def _ensure_lens_palette_dock(self) -> None:
         if self._lens_palette_dock is not None:
             return
@@ -1083,6 +1107,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._dock_save_timer:
             self._dock_save_timer.start(350)
 
+    # --- [NAV-40C] persist/restore dock state
     def _persist_lens_palette_dock_state(self) -> None:
         if not self._lens_palette_dock:
             return
@@ -1103,6 +1128,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             palette_floating=self._lens_palette_dock.isFloating(),
         )
 
+    # --- [NAV-40C] persist/restore dock state
     def _restore_lens_palette_dock_state(self) -> None:
         if not self._lens_palette_dock:
             return
@@ -1192,6 +1218,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._show_lens_palette()
         self._schedule_lens_palette_dock_save()
 
+    # --- [NAV-40D] dock size + repaint
     def _apply_lens_palette_dock_size(
         self, *, floating: Optional[bool] = None, force: bool = False
     ) -> None:
@@ -1469,6 +1496,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return lens
         return get_lens(self._lens)
 
+    # --- [NAV-60A] apply runtime overlay
     def _apply_runtime_overlay(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         if not self._live_enabled or not self._overlay_badges:
             return graph
@@ -1498,6 +1526,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             edges=graph.edges,
         )
 
+    # --- [NAV-60B] apply expectation badges / span overlay
     def _apply_expectation_badges(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         if not self._overlay_checks and not any(node.checks for node in graph.nodes):
             return graph
@@ -1607,6 +1636,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._apply_density(cfg)
         self._render_current_graph()
 
+    # --- [NAV-70A] UI scale / density
     def _apply_density(self, cfg: ui_scale.UiScaleConfig) -> None:
         spacing = ui_scale.density_spacing(8)
         if self._root_layout:
@@ -1695,6 +1725,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             if not self._status_timer.isActive():
                 self._status_timer.start()
 
+    # --- [NAV-70B] status tick
     def _on_status_tick(self) -> None:
         self._update_debug_status()
         self._refresh_span_activity()
@@ -2021,6 +2052,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.status_label.setText(summary)
         self._update_action_state()
 
+    # --- [NAV-70C] runtime event handler
     def _on_runtime_event(self, event: CodeSeeEvent) -> None:
         for node_id in event.node_ids or []:
             events = self._events_by_node.setdefault(node_id, [])
@@ -2088,6 +2120,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             fade_ms=int(self._pulse_settings.fade_ms),
         )
 
+    # --- [NAV-80A] snapshot load + removed dialog + pulse settings
     def _load_snapshot_by_path(self, path_value: str) -> Optional[ArchitectureGraph]:
         try:
             return snapshot_io.read_snapshot(Path(path_value))
@@ -2515,6 +2548,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
 
 
+# endregion NAV-20 CodeSeeScreen
+
+# === [NAV-90] Module helpers (toggle/buttons/labels/filters/spans/badges) =====
+# region NAV-90 Module helpers
+# --- [NAV-90A] toggle/button UI helpers
 def _style_from_label(label: str) -> str:
     for style, value in ICON_STYLE_LABELS.items():
         if value == label:
@@ -2578,7 +2616,7 @@ def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None
 def _format_active_total(active: int, total: int) -> str:
     return f"{int(active)} / {int(total)}"
 
-
+# --- [NAV-90B] badge keys + labels + filter summaries
 def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:
     if event.kind == EVENT_EXPECT_CHECK:
         if isinstance(event.payload, dict) and not event.payload.get("passed", True):
@@ -2674,6 +2712,7 @@ def _diff_filter_summary(filters: Dict[str, bool]) -> str:
     return " + ".join(labels)
 
 
+# --- [NAV-90C] filters + pulse topic enablement
 def _pulse_topic_enabled(settings: view_config.PulseSettings, kind: str) -> bool:
     enabled = getattr(settings, "topic_enabled", None)
     if not isinstance(enabled, dict):
@@ -2777,6 +2816,7 @@ def _ext_edges(edge, src: Node, dst: Node) -> bool:
     return edge.kind in ("depends", "provides", "consumes", "loads", "contains")
 
 
+# --- [NAV-90D] span helpers
 def _node_has_active_span(node: Node) -> bool:
     for span in node.spans or []:
         if span.status == "active":
@@ -2805,6 +2845,7 @@ def _span_fallback_node_id(graph: ArchitectureGraph, workspace_id: str) -> Optio
     return None
 
 
+# --- [NAV-90E] badge builders + crash helpers
 def _badge_for_check(check: EVACheck) -> Badge:
     return Badge(
         key="expect.mismatch",
@@ -2913,6 +2954,9 @@ def _active_span_node_ids(spans: list[SpanRecord], limit: int = 4) -> list[str]:
     return nodes
 
 
+# endregion NAV-90 Module helpers
+
+# === [NAV-99] Smoke test entrypoints =========================================
 def run_pulse_smoke_test() -> None:
     app = QtWidgets.QApplication.instance()
     if app is None:
