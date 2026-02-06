@@ -1,3 +1,11 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Public API
+# [NAV-99] end
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 import json
@@ -5,6 +13,7 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 
+# === [NAV-10] Public API ======================================================
 def _normalize_workspace_id(workspace_id: str | None) -> str:
     value = str(workspace_id or "").strip()
     if not value:
@@ -75,3 +84,6 @@ def save_positions(
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except Exception:
         return
+
+
+# === [NAV-99] end =============================================================

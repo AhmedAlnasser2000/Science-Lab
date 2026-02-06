@@ -1,10 +1,20 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Public API
+# [NAV-99] end
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 from typing import Dict
 
-from .badges import badges_from_keys
-from .expectations import build_check
-from .graph_model import ArchitectureGraph, Edge, Node
+from ..badges import badges_from_keys
+from ..expectations import build_check
+from ..graph_model import ArchitectureGraph, Edge, Node
+
+# === [NAV-10] Public API ======================================================
 
 
 def build_demo_root_graph() -> ArchitectureGraph:
@@ -193,3 +203,6 @@ def build_demo_subgraphs() -> Dict[str, ArchitectureGraph]:
     )
 
     return subgraphs
+
+
+# === [NAV-99] end =============================================================

@@ -1,3 +1,11 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Public API
+# [NAV-99] end
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 from collections import deque
@@ -5,6 +13,7 @@ from typing import Deque, List, Optional
 import time
 
 
+# === [NAV-10] Public API ======================================================
 class CodeSeeLogBuffer:
     def __init__(self, max_lines: int = 400) -> None:
         self._lines: Deque[str] = deque(maxlen=max_lines)
@@ -25,3 +34,6 @@ class CodeSeeLogBuffer:
 
 
 LOG_BUFFER = CodeSeeLogBuffer(max_lines=500)
+
+
+# === [NAV-99] end =============================================================

@@ -1,3 +1,12 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-20] WorkspaceSelector widget
+# [NAV-30] Events + update flow
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional
@@ -7,6 +16,7 @@ from PyQt6 import QtCore, QtWidgets
 from app_ui.ui_helpers import terms
 
 
+# === [NAV-20] WorkspaceSelector widget =======================================
 class WorkspaceSelector(QtWidgets.QWidget):
     """
     Lightweight workspace picker that stays in the top-level UI.
@@ -52,6 +62,7 @@ class WorkspaceSelector(QtWidgets.QWidget):
 
         self.refresh()
 
+    # === [NAV-30] Events + update flow =======================================
     def refresh(self, active_id: Optional[str] = None) -> None:
         """Reload available workspaces and select the active one."""
         active = active_id or self._get_active_workspace_id() or ""
@@ -106,3 +117,4 @@ class WorkspaceSelector(QtWidgets.QWidget):
             self.set_active_workspace_id(self._get_active_workspace_id() or "")
 
 
+# === [NAV-99] End =============================================================

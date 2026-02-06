@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports/constants
+# [NAV-10] Host context/policy wiring
+# [NAV-20] LabHost ctor + layout
+# [NAV-30] Guide panel + tier gating
+# [NAV-40] Export/actions (policy gated)
+# [NAV-50] Plugin mount/lifecycle
+# [NAV-90] Helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports/constants ===============================================
 import json
 import time
 import uuid
@@ -37,9 +50,11 @@ DEFAULT_POLICY = {
 }
 
 
+# === [NAV-10] Host context/policy wiring =====================================
 class LabHost(QtWidgets.QWidget):
     """Wraps a lab widget with a markdown-based guide viewer and run context provisioning."""
 
+    # === [NAV-20] LabHost ctor + layout ======================================
     def __init__(
         self,
         lab_id: str,
@@ -145,6 +160,7 @@ class LabHost(QtWidgets.QWidget):
         self._update_export_controls()
         self._configure_telemetry()
 
+    # === [NAV-30] Guide panel + tier gating ==================================
     def update_guide(self, markdown_text: str) -> None:
         self._set_guide_text(markdown_text)
 
@@ -167,6 +183,7 @@ class LabHost(QtWidgets.QWidget):
         except AttributeError:
             self.guide_view.setPlainText(text)
 
+    # === [NAV-40] Export/actions (policy gated) ===============================
     def _resolve_export_actions(self) -> List[Dict[str, Any]]:
         actions: List[Dict[str, Any]] = []
         if not self.policy.get("exports_enabled"):
@@ -239,6 +256,7 @@ class LabHost(QtWidgets.QWidget):
         except Exception:
             pass
 
+    # === [NAV-50] Plugin mount/lifecycle =====================================
     def _export_run_metadata(self, context: dict) -> None:
         run_dir = Path(context.get("run_dir") or "")
         if not run_dir:
@@ -278,6 +296,7 @@ class LabHost(QtWidgets.QWidget):
         except Exception:
             pass
 
+    # === [NAV-90] Helpers =====================================================
     def _init_policy(self) -> dict:
         policy = dict(DEFAULT_POLICY)
         if self.bus and POLICY_REQUEST_TOPIC:
@@ -477,3 +496,6 @@ class LabHost(QtWidgets.QWidget):
             self.bus.publish(LAB_TELEMETRY_TOPIC, payload, source="app_ui")
         except Exception:
             self.telemetry_timer.stop()
+
+
+# === [NAV-99] End =============================================================

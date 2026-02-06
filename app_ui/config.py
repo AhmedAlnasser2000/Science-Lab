@@ -1,3 +1,13 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Config loading (defaults/roaming/policy)
+# [NAV-20] Public getters
+# [NAV-90] Helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 import json
@@ -10,6 +20,7 @@ EXPERIENCE_PROFILES = ["Learner", "Educator", "Explorer"]
 _DEFAULT_UI_CONFIG = {"active_pack_id": "default", "reduced_motion": False}
 
 
+# === [NAV-10] Config loading (defaults/roaming/policy) =======================
 def load_ui_config() -> Dict:
     path = CONFIG_PATH
     if not path.exists():
@@ -49,11 +60,13 @@ def save_experience_profile(profile: str) -> None:
     PROFILE_PATH.write_text(json.dumps({"profile": profile}, indent=2), encoding="utf-8")
 
 
+# === [NAV-20] Public getters ==================================================
 def get_reduced_motion() -> bool:
     config = load_ui_config()
     return bool(config.get("reduced_motion", False))
 
 
+# === [NAV-99] End =============================================================
 __all__ = [
     "CONFIG_PATH",
     "PROFILE_PATH",

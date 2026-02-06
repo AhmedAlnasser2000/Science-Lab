@@ -1,3 +1,12 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Build info / version API
+# [NAV-90] Helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 import os
@@ -9,6 +18,7 @@ from typing import Dict
 APP_VERSION = "5.2.0-dev"
 
 
+# === [NAV-10] Build info / version API =======================================
 def get_app_version() -> str:
     return compute_app_version()
 
@@ -60,6 +70,7 @@ def compute_app_version() -> str:
     return APP_VERSION
 
 
+# === [NAV-90] Helpers =========================================================
 def get_build_id() -> str:
     repo_root = Path(__file__).resolve().parent.parent
     try:
@@ -83,3 +94,6 @@ def get_build_info() -> Dict[str, str]:
         "app_version": compute_app_version(),
         "build_id": get_build_id(),
     }
+
+
+# === [NAV-99] End =============================================================

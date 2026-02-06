@@ -1,5 +1,16 @@
 ﻿from __future__ import annotations
 
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports/constants
+# [NAV-20] Screen ctor + wiring
+# [NAV-30] Component mount/host lifecycle
+# [NAV-40] Back/escape handling
+# [NAV-90] Helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports/constants ===============================================
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -59,6 +70,7 @@ class _SessionRow(QtWidgets.QWidget):
 
 
 class BlockHostScreen(QtWidgets.QWidget):
+    # === [NAV-20] Screen ctor + wiring =======================================
     def __init__(
         self,
         *,
@@ -246,6 +258,7 @@ class BlockHostScreen(QtWidgets.QWidget):
 
         self.open_picker(_pick)
 
+    # === [NAV-40] Back/escape handling ========================================
     def _close_active(self) -> None:
         if not self._active_component_id:
             return
@@ -341,6 +354,7 @@ class BlockHostScreen(QtWidgets.QWidget):
         else:
             self.activate_btn.setEnabled(False)
 
+    # === [NAV-30] Component mount/host lifecycle ==============================
     def _mount_active(self) -> None:
         if self._active_component_id is None:
             self._show_empty_state()
@@ -554,6 +568,7 @@ class BlockHostScreen(QtWidgets.QWidget):
         return _get_global_component_policy()
 
 
+# === [NAV-90] Helpers =========================================================
 def _prettify_component_id(component_id: str) -> str:
     if ":" in component_id:
         prefix, rest = component_id.split(":", 1)
@@ -577,3 +592,6 @@ def _status_style(status: str) -> str:
     if status == "Unavailable":
         return "color: #a33;"
     return "color: #333;"
+
+
+# === [NAV-99] End =============================================================

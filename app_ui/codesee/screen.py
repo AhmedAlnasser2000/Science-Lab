@@ -1,3 +1,19 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-05] Stable re-exports for tests (lens palette + helpers)
+# [NAV-20] CodeSeeScreen
+# [NAV-30] CodeSeeScreen: graph navigation + layout persistence
+# [NAV-40] CodeSeeScreen: lens palette integration (dock/float/pin/persist)
+# [NAV-60] CodeSeeScreen: overlays + rendering helpers
+# [NAV-70] CodeSeeScreen: UI density + status tick + runtime events
+# [NAV-80] CodeSeeScreen: snapshots/diff/crash/presets (dialogs + actions)
+# [NAV-90] Module helpers (toggle/buttons/labels/filters/spans/badges)
+# [NAV-99] Smoke test entrypoints
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
+# region NAV-00 Imports / constants
 from __future__ import annotations
 
 import base64
@@ -8,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from PyQt6 import QtCore, QtGui, QtSvg, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from app_ui import config as ui_config
 from app_ui.widgets.app_header import AppHeader
@@ -17,13 +33,8 @@ from app_ui.widgets.workspace_selector import WorkspaceSelector
 from . import (
     crash_io,
     diagnostics,
-    diagnostics_dialog,
     harness,
     icon_pack,
-    layout_store,
-    log_buffer,
-    snapshot_index,
-    snapshot_io,
     view_config,
 )
 from .badges import Badge, badge_from_key, sort_by_priority
@@ -32,7 +43,8 @@ from .canvas.scene import GraphScene
 from .canvas.view import GraphView
 from .collectors.atlas_builder import build_atlas_graph
 from .collectors.base import CollectorContext
-from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
+from .demos.demo_graphs import build_demo_root_graph, build_demo_subgraphs
+from .dialogs import diagnostics_dialog
 from .diff import DiffResult, NodeChange, diff_snapshots
 from .expectations import EVACheck, check_from_dict
 from .graph_model import ArchitectureGraph, Node
@@ -52,7 +64,19 @@ from .runtime.events import (
     EVENT_TEST_PULSE,
     SpanRecord,
 )
+# --- [NAV-05] Stable re-exports for tests (lens palette + helpers)
 from .runtime.hub import CodeSeeRuntimeHub
+from .storage import layout_store, snapshot_index, snapshot_io
+from .dialogs.inspector import CodeSeeInspectorDialog, _span_is_stuck
+from .dialogs.pulse_settings import open_pulse_settings
+from .dialogs.removed import CodeSeeRemovedDialog
+from .ui.lens_palette import (
+    LensPaletteWidget,
+    _filter_lens_tiles,
+    _lens_palette_lens_ids,
+    lens_palette_dock_orientation,
+)
+from .util import log_buffer
 from app_ui import ui_scale
 from app_ui import versioning
 
@@ -66,671 +90,10 @@ ICON_STYLE_LABELS = {
     icon_pack.ICON_STYLE_COLOR: "Color",
     icon_pack.ICON_STYLE_MONO: "Mono",
 }
-_LENS_ICON_CACHE: Dict[tuple[str, str, int, str], QtGui.QPixmap] = {}
+# endregion NAV-00 Imports / constants
 
-
-def _lens_palette_lens_ids() -> list[str]:
-    return [LENS_ATLAS, LENS_PLATFORM, LENS_CONTENT, LENS_BUS, LENS_EXT]
-
-
-def _lens_tile_spec() -> list[dict[str, str]]:
-    return [
-        {"id": LENS_EXT, "title": "Deps", "icon": "probe.pass"},
-        {"id": LENS_CONTENT, "title": "Content", "icon": "expect.value"},
-        {"id": LENS_ATLAS, "title": "Atlas", "icon": "conn.offline"},
-        {"id": LENS_PLATFORM, "title": "Platform", "icon": "state.warn"},
-        {"id": LENS_BUS, "title": "Bus", "icon": "perf.slow"},
-    ]
-
-
-def _filter_lens_tiles(query: str, tiles: list[dict[str, str]]) -> list[dict[str, str]]:
-    if not query:
-        return list(tiles)
-    needle = query.strip().lower()
-    if not needle:
-        return list(tiles)
-    filtered = []
-    for tile in tiles:
-        title = tile.get("title", "").lower()
-        lens_id = tile.get("id", "").lower()
-        if needle in title or needle in lens_id:
-            filtered.append(tile)
-    return filtered
-
-
-def lens_palette_dock_orientation(
-    area: QtCore.Qt.DockWidgetArea,
-) -> Optional[QtCore.Qt.Orientation]:
-    if area in (
-        QtCore.Qt.DockWidgetArea.LeftDockWidgetArea,
-        QtCore.Qt.DockWidgetArea.RightDockWidgetArea,
-    ):
-        return QtCore.Qt.Orientation.Horizontal
-    if area in (
-        QtCore.Qt.DockWidgetArea.TopDockWidgetArea,
-        QtCore.Qt.DockWidgetArea.BottomDockWidgetArea,
-    ):
-        return QtCore.Qt.Orientation.Vertical
-    return None
-
-
-def _fallback_lens_pixmap(size: int, tint: Optional[QtGui.QColor]) -> QtGui.QPixmap:
-    tint_key = tint.name() if tint else ""
-    cache_key = ("__fallback__", "color", int(size), tint_key)
-    cached = _LENS_ICON_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    side = max(1, int(size))
-    pixmap = QtGui.QPixmap(side, side)
-    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-    painter = QtGui.QPainter(pixmap)
-    color = tint if tint is not None else QtGui.QColor("#8aa0b5")
-    pen = QtGui.QPen(color)
-    pen.setWidth(max(1, int(side * 0.08)))
-    painter.setPen(pen)
-    margin = max(2, int(side * 0.18))
-    rect = pixmap.rect().adjusted(margin, margin, -margin, -margin)
-    radius = max(2, int(side * 0.18))
-    painter.drawRoundedRect(rect, radius, radius)
-    painter.end()
-    _LENS_ICON_CACHE[cache_key] = pixmap
-    return pixmap
-
-
-def _lens_palette_icon_pixmap(
-    icon_key: str, style: str, size: int, tint: Optional[QtGui.QColor]
-) -> Optional[QtGui.QPixmap]:
-    try:
-        path = icon_pack.resolve_icon_path(icon_key, style)
-    except Exception:
-        return _fallback_lens_pixmap(size, tint)
-    if not path:
-        return _fallback_lens_pixmap(size, tint)
-    tint_key = tint.name() if tint else ""
-    cache_key = (str(path), style, int(size), tint_key)
-    cached = _LENS_ICON_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    side = max(1, int(size))
-    pixmap = QtGui.QPixmap(side, side)
-    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-    try:
-        renderer = QtSvg.QSvgRenderer(str(path))
-        if not renderer.isValid():
-            return _fallback_lens_pixmap(size, tint)
-        painter = QtGui.QPainter(pixmap)
-        renderer.render(painter)
-        if tint is not None:
-            painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceIn)
-            painter.fillRect(pixmap.rect(), tint)
-        painter.end()
-    except Exception:
-        return _fallback_lens_pixmap(size, tint)
-    _LENS_ICON_CACHE[cache_key] = pixmap
-    return pixmap
-
-
-class LensPaletteWidget(QtWidgets.QFrame):
-    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
-        super().__init__(parent)
-        self._lens_combo: Optional[QtWidgets.QComboBox] = None
-        self._bound_model: Optional[QtCore.QAbstractItemModel] = None
-        self._refresh_scheduled = False
-        self._refreshing = False
-        self._pending_refresh_reason = ""
-        self._model_connect_count = 0
-        self._dbg_seen: set[str] = set()
-        self._on_select: Optional[Callable[[str], None]] = None
-        self._on_close: Optional[Callable[[], None]] = None
-        self._on_pin: Optional[Callable[[bool], None]] = None
-        self._on_diagnostics: Optional[Callable[[], None]] = None
-        self._on_clear_recent: Optional[Callable[[], None]] = None
-        self._on_clear_search: Optional[Callable[[], None]] = None
-        self._on_float_palette: Optional[Callable[[], None]] = None
-        self._on_reset_layout: Optional[Callable[[], None]] = None
-        self._on_refresh_inventory: Optional[Callable[[], None]] = None
-        self._pinned = False
-        self._expanded = False
-        self._active_lens_id = ""
-        self._recent: list[str] = []
-        self._tile_buttons: Dict[str, QtWidgets.QToolButton] = {}
-        self._tile_widgets: list[QtWidgets.QToolButton] = []
-
-        self.setObjectName("codeseeLensPalette")
-        self.setWindowFlags(QtCore.Qt.WindowType.Widget)
-        self.setStyleSheet(
-            "QFrame#codeseeLensPalette { background: #1b1f27; border: 1px solid #2a2f38; border-radius: 12px; }"
-            "QLabel { color: #cfd8dc; }"
-            "QLineEdit { background: #252a33; color: #cfd8dc; border: 1px solid #2f3540; border-radius: 8px; padding: 6px 8px; }"
-            "QToolButton#lensPalettePin { color: #cfd8dc; padding: 2px 6px; }"
-            "QToolButton#lensPalettePin:checked { background: #2b3b55; border-radius: 4px; }"
-            "QToolButton[lens_tile=\"true\"] { color: #cfd8dc; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 6px; }"
-            "QToolButton[lens_tile=\"true\"]:hover { border: 1px solid #2f3540; background: #222733; }"
-            "QToolButton[lens_tile=\"true\"]:checked { border: 1px solid #3b5bdb; background: #222733; color: #ffffff; }"
-        )
-        self.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
-        )
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-
-        header_row = QtWidgets.QHBoxLayout()
-        header_label = QtWidgets.QLabel("Lenses")
-        header_row.addWidget(header_label)
-        header_row.addStretch()
-        self._close_btn = QtWidgets.QToolButton()
-        self._close_btn.setText("×")
-        self._close_btn.setToolTip("Close")
-        self._close_btn.setAutoRaise(True)
-        self._close_btn.clicked.connect(self._emit_close)
-        header_row.addWidget(self._close_btn)
-        self._pin_btn = QtWidgets.QToolButton()
-        self._pin_btn.setObjectName("lensPalettePin")
-        self._pin_btn.setText("Pin")
-        self._pin_btn.setToolTip("Pin palette")
-        self._pin_btn.setCheckable(True)
-        self._pin_btn.toggled.connect(self._emit_pin)
-        header_row.addWidget(self._pin_btn)
-        layout.addLayout(header_row)
-
-        search_row = QtWidgets.QHBoxLayout()
-        self._search = QtWidgets.QLineEdit()
-        self._search.setPlaceholderText("Search")
-        self._search.textChanged.connect(lambda: self.request_refresh("search"))
-        self._search.returnPressed.connect(lambda: self.request_refresh("search_enter"))
-        search_icon = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogContentsView)
-        self._search.addAction(search_icon, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
-        search_row.addWidget(self._search)
-        search_btn = QtWidgets.QToolButton()
-        search_btn.setIcon(search_icon)
-        search_btn.setToolTip("Search lenses")
-        search_btn.setAutoRaise(True)
-        search_btn.clicked.connect(lambda: self.request_refresh("search_button"))
-        search_row.addWidget(search_btn)
-        layout.addLayout(search_row)
-
-        self._status = QtWidgets.QLabel("")
-        self._status.setStyleSheet("color: #9aa4b2; padding: 2px 4px;")
-        self._status.setMinimumHeight(int(ui_scale.scale_px(18)))
-        layout.addWidget(self._status)
-
-        self._empty_banner = QtWidgets.QLabel("")
-        self._empty_banner.setStyleSheet("color: #9aa4b2; padding: 2px 4px;")
-        self._empty_banner.setVisible(False)
-        layout.addWidget(self._empty_banner)
-
-        self._grid_container = QtWidgets.QWidget()
-        self._grid_container.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.Expanding,
-        )
-        self._grid_container.setMinimumHeight(int(ui_scale.scale_px(160)))
-        self._grid = QtWidgets.QGridLayout(self._grid_container)
-        self._grid.setContentsMargins(0, 0, 0, 0)
-        self._grid.setSpacing(8)
-
-        empty_state = QtWidgets.QWidget()
-        empty_layout = QtWidgets.QVBoxLayout(empty_state)
-        empty_layout.setContentsMargins(8, 20, 8, 20)
-        empty_layout.setSpacing(6)
-        empty_layout.addStretch()
-        self._empty_title = QtWidgets.QLabel("No results")
-        self._empty_title.setStyleSheet("color: #cfd8dc; font-weight: 600;")
-        empty_layout.addWidget(self._empty_title, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
-        self._empty_subtitle = QtWidgets.QLabel("Try a different search")
-        self._empty_subtitle.setStyleSheet("color: #9aa4b2;")
-        empty_layout.addWidget(self._empty_subtitle, alignment=QtCore.Qt.AlignmentFlag.AlignHCenter)
-        empty_layout.addStretch()
-
-        stack_widget = QtWidgets.QWidget()
-        stack_widget.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.Expanding,
-        )
-        self._stack = QtWidgets.QStackedLayout(stack_widget)
-        self._stack.setContentsMargins(0, 0, 0, 0)
-        self._stack.addWidget(self._grid_container)
-        self._stack.addWidget(empty_state)
-
-        self._scroll = QtWidgets.QScrollArea()
-        self._scroll.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.Expanding,
-        )
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setWidget(stack_widget)
-        layout.addWidget(self._scroll)
-        layout.setStretch(layout.indexOf(self._scroll), 1)
-
-        footer_row = QtWidgets.QHBoxLayout()
-        self._recent_btn = QtWidgets.QToolButton()
-        self._recent_btn.setText("Recent")
-        self._recent_btn.setToolTip("Recently used lenses")
-        self._recent_btn.clicked.connect(self._show_recent_menu)
-        footer_row.addWidget(self._recent_btn)
-        footer_row.addStretch()
-        self._more_btn = QtWidgets.QToolButton()
-        self._more_btn.setText("More... >")
-        self._more_btn.setToolTip("Palette actions")
-        self._more_btn.clicked.connect(self._show_more_menu)
-        footer_row.addWidget(self._more_btn)
-        layout.addLayout(footer_row)
-
-        self._more_menu = QtWidgets.QMenu(self)
-        self._more_menu.setStyleSheet(
-            "QMenu { background: #1b1f27; color: #cfd8dc; border: 1px solid #2a2f38; }"
-            "QMenu::item { padding: 6px 24px 6px 24px; }"
-            "QMenu::item:selected { background: #242a35; }"
-            "QMenu::separator { height: 1px; background: #2a2f38; margin: 4px 8px; }"
-        )
-
-        self._apply_sizing()
-
-    def set_lens_combo(self, combo: QtWidgets.QComboBox) -> None:
-        self._lens_combo = combo
-        self._bind_model_signals()
-        self.request_refresh("set_lens_combo")
-
-    def set_on_select(self, callback: Callable[[str], None]) -> None:
-        self._on_select = callback
-
-    def set_on_close(self, callback: Callable[[], None]) -> None:
-        self._on_close = callback
-
-    def set_on_pin(self, callback: Callable[[bool], None]) -> None:
-        self._on_pin = callback
-
-    def set_on_diagnostics(self, callback: Callable[[], None]) -> None:
-        self._on_diagnostics = callback
-
-    def set_on_clear_recent(self, callback: Callable[[], None]) -> None:
-        self._on_clear_recent = callback
-
-    def set_on_clear_search(self, callback: Callable[[], None]) -> None:
-        self._on_clear_search = callback
-
-    def set_on_float_palette(self, callback: Callable[[], None]) -> None:
-        self._on_float_palette = callback
-
-    def set_on_reset_layout(self, callback: Callable[[], None]) -> None:
-        self._on_reset_layout = callback
-
-    def set_on_refresh_inventory(self, callback: Callable[[], None]) -> None:
-        self._on_refresh_inventory = callback
-
-    def set_recent(self, recent: list[str]) -> None:
-        self._recent = list(recent or [])
-
-    def set_active_lens(self, lens_id: str) -> None:
-        self._active_lens_id = lens_id or ""
-        for tile_id, button in self._tile_buttons.items():
-            button.setChecked(tile_id == self._active_lens_id)
-        if self._active_lens_id:
-            self._dbg_once(f"active:{self._active_lens_id}", f"palette active lens={self._active_lens_id}")
-
-    def set_pinned(self, pinned: bool) -> None:
-        self._pinned = bool(pinned)
-        # Prevent recursive pin toggles when syncing state programmatically.
-        blocker = QtCore.QSignalBlocker(self._pin_btn)
-        self._pin_btn.setChecked(self._pinned)
-        del blocker
-        self._apply_sizing()
-        self._dbg_once(f"pin:{self._pinned}", f"palette pin={self._pinned}")
-
-    def is_pinned(self) -> bool:
-        return self._pinned
-
-    def request_refresh(self, reason: str = "signal") -> None:
-        if self._refreshing or self._refresh_scheduled:
-            self._pending_refresh_reason = reason
-            return
-        self._refresh_scheduled = True
-        self._pending_refresh_reason = reason
-        QtCore.QTimer.singleShot(0, self._refresh_once)
-
-    def refresh(self) -> None:
-        self.request_refresh("explicit")
-
-    def _refresh_once(self) -> None:
-        if self._refreshing:
-            return
-        self._refresh_scheduled = False
-        self._refreshing = True
-        try:
-            self._refresh_impl()
-        finally:
-            self._refreshing = False
-
-    def _refresh_impl(self) -> None:
-        if not self._lens_combo:
-            return
-        entries = self._lens_entries()
-        query = self._search.text() if self._search else ""
-        tiles = _filter_lens_tiles(query, entries)
-        query_key = query.strip()
-        if query_key:
-            self._dbg_once(
-                f"query:{query_key}",
-                f"palette query={query_key!r} matches={len(tiles)}",
-            )
-        else:
-            self._dbg_once("query:empty", f"palette query='' matches={len(tiles)}")
-        self._update_status(entries, tiles, query)
-        self._clear_grid()
-        if not tiles:
-            self._show_empty(entries, query)
-            return
-        self._empty_banner.setVisible(False)
-        self._stack.setCurrentIndex(0)
-        columns = 3
-        icon_style = icon_pack.ICON_STYLE_MONO
-        icon_size = int(ui_scale.scale_px(26))
-        tint = QtGui.QColor("#86b7ff")
-        row = 0
-        col = 0
-        for entry in tiles:
-            lens_id = entry.get("id") or ""
-            title = entry.get("title") or lens_id
-            icon_key = entry.get("icon") or "probe.pass"
-            button = QtWidgets.QToolButton(self._grid_container)
-            button.setProperty("lens_tile", True)
-            button.setText(title)
-            button.setToolButtonStyle(
-                QtCore.Qt.ToolButtonStyle.ToolButtonTextUnderIcon
-            )
-            button.setCheckable(True)
-            button.setAutoRaise(False)
-            button.setIconSize(QtCore.QSize(icon_size, icon_size))
-            button.setFixedSize(
-                int(ui_scale.scale_px(92)),
-                int(ui_scale.scale_px(76)),
-            )
-            pixmap = _lens_palette_icon_pixmap(icon_key, icon_style, icon_size, tint)
-            if pixmap:
-                button.setIcon(QtGui.QIcon(pixmap))
-            button.clicked.connect(
-                functools.partial(self._emit_select, lens_id)
-            )
-            self._grid.addWidget(button, row, col)
-            self._tile_buttons[lens_id] = button
-            self._tile_widgets.append(button)
-            col += 1
-            if col >= columns:
-                col = 0
-                row += 1
-        self.set_active_lens(self._active_lens_id)
-
-    def showEvent(self, event: QtGui.QShowEvent) -> None:
-        super().showEvent(event)
-        self._dbg_once("palette_open", "palette opened")
-        self.request_refresh("show")
-
-    def _lens_entries(self) -> list[dict[str, str]]:
-        if not self._lens_combo:
-            return []
-        tile_icon_map = {tile.get("id"): tile.get("icon") for tile in _lens_tile_spec()}
-        entries: list[dict[str, str]] = []
-        for idx in range(self._lens_combo.count()):
-            lens_id = self._lens_combo.itemData(idx)
-            title = self._lens_combo.itemText(idx)
-            lens_id_str = str(lens_id) if isinstance(lens_id, str) and lens_id else ""
-            title_str = str(title) if title else lens_id_str
-            entry_id = lens_id_str or title_str or f"lens-{idx}"
-            entries.append(
-                {
-                    "id": entry_id,
-                    "title": title_str or entry_id,
-                    "icon": tile_icon_map.get(entry_id) or "probe.pass",
-                }
-            )
-        return entries
-
-    def _on_model_changed(self, *_args: object) -> None:
-        self.request_refresh("model_changed")
-
-    def _disconnect_model_signals(self, model: QtCore.QAbstractItemModel) -> None:
-        for signal in (
-            model.modelReset,
-            model.rowsInserted,
-            model.rowsRemoved,
-            model.dataChanged,
-        ):
-            try:
-                signal.disconnect(self._on_model_changed)
-            except TypeError:
-                pass
-
-    def _bind_model_signals(self) -> None:
-        if not self._lens_combo:
-            return
-        model = self._lens_combo.model()
-        if model is None:
-            return
-        if model is self._bound_model:
-            return
-        if self._bound_model is not None:
-            self._disconnect_model_signals(self._bound_model)
-        self._bound_model = model
-        model.modelReset.connect(self._on_model_changed)
-        model.rowsInserted.connect(self._on_model_changed)
-        model.rowsRemoved.connect(self._on_model_changed)
-        model.dataChanged.connect(self._on_model_changed)
-        self._model_connect_count += 1
-        self._dbg_once(
-            f"model_connect:{self._model_connect_count}",
-            f"palette model connected count={self._model_connect_count}",
-        )
-
-    def _update_status(self, entries: list[dict[str, str]], tiles: list[dict[str, str]], query: str) -> None:
-        q = query.strip()
-        if not entries:
-            self._status.setText("No lenses available (try Refresh)")
-        elif q and not tiles:
-            self._status.setText(f'No results for "{q}" (Lenses: {len(entries)})')
-        else:
-            self._status.setText(f"Lenses: {len(entries)} | Matches: {len(tiles)}")
-
-    def _show_empty(self, entries: list[dict[str, str]], query: str) -> None:
-        if not entries:
-            self._empty_title.setText("No lenses available")
-            self._empty_subtitle.setText("Try Refresh")
-            self._empty_banner.setText("No lenses available")
-        elif query.strip():
-            self._empty_title.setText("No results")
-            self._empty_subtitle.setText(f'No results for "{query.strip()}"')
-            self._empty_banner.setText(f'No results for "{query.strip()}"')
-        else:
-            self._empty_title.setText("No results")
-            self._empty_subtitle.setText("Try a different search")
-            self._empty_banner.setText("No lenses to show")
-        self._empty_banner.setVisible(True)
-        self._stack.setCurrentIndex(1)
-
-    def _clear_grid(self) -> None:
-        while self._grid.count():
-            item = self._grid.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self._tile_buttons.clear()
-        self._tile_widgets.clear()
-
-    def _emit_select(self, lens_id: str) -> None:
-        if self._on_select:
-            self._on_select(lens_id)
-
-    def _emit_close(self) -> None:
-        if self._on_close:
-            self._on_close()
-
-    def _emit_pin(self, checked: bool) -> None:
-        if self._on_pin:
-            self._on_pin(bool(checked))
-
-    def _menu_icon(self, icon_key: str) -> QtGui.QIcon:
-        icon_size = int(ui_scale.scale_px(16))
-        tint = QtGui.QColor("#9fb8ff")
-        pixmap = _lens_palette_icon_pixmap(icon_key, icon_pack.ICON_STYLE_MONO, icon_size, tint)
-        if pixmap:
-            return QtGui.QIcon(pixmap)
-        return QtGui.QIcon()
-
-    def _build_more_menu(self) -> None:
-        self._more_menu.clear()
-
-        manage_action = QtGui.QAction(self._menu_icon("state.info"), "Manage Lenses...", self._more_menu)
-        manage_action.setEnabled(False)
-        self._more_menu.addAction(manage_action)
-
-        add_action = QtGui.QAction(self._menu_icon("state.add"), "Add Lens... (Coming soon)", self._more_menu)
-        add_action.setEnabled(False)
-        self._more_menu.addAction(add_action)
-
-        delete_action = QtGui.QAction(self._menu_icon("state.delete"), "Delete Lens... (Coming soon)", self._more_menu)
-        delete_action.setEnabled(False)
-        self._more_menu.addAction(delete_action)
-
-        install_action = QtGui.QAction(self._menu_icon("state.download"), "Install Lens Pack...", self._more_menu)
-        install_action.setEnabled(False)
-        self._more_menu.addAction(install_action)
-
-        refresh_action = QtGui.QAction(self._menu_icon("state.refresh"), "Refresh Lens Inventory", self._more_menu)
-        refresh_action.triggered.connect(self._refresh_inventory_action)
-        self._more_menu.addAction(refresh_action)
-
-        plugin_action = QtGui.QAction(self._menu_icon("state.plugin"), "Plugin Registry... (Coming soon)", self._more_menu)
-        plugin_action.setEnabled(False)
-        self._more_menu.addAction(plugin_action)
-
-        self._more_menu.addSeparator()
-
-        float_action = QtGui.QAction(self._menu_icon("state.float"), "Float Palette", self._more_menu)
-        float_action.triggered.connect(self._float_palette_action)
-        self._more_menu.addAction(float_action)
-
-        reset_action = QtGui.QAction(self._menu_icon("state.reset"), "Reset Palette Layout", self._more_menu)
-        reset_action.triggered.connect(self._reset_layout_action)
-        self._more_menu.addAction(reset_action)
-
-        self._more_menu.addSeparator()
-
-        clear_recent = QtGui.QAction(self._menu_icon("state.clear"), "Clear Recent", self._more_menu)
-        clear_recent.triggered.connect(self._clear_recent_action)
-        self._more_menu.addAction(clear_recent)
-
-        clear_search = QtGui.QAction(self._menu_icon("state.search"), "Clear Search", self._more_menu)
-        clear_search.triggered.connect(self._clear_search_action)
-        self._more_menu.addAction(clear_search)
-
-        diagnostics_action = QtGui.QAction(self._menu_icon("state.info"), "Diagnostics (CodeSee)...", self._more_menu)
-        diagnostics_action.triggered.connect(self._emit_diagnostics)
-        self._more_menu.addAction(diagnostics_action)
-
-    def _show_more_menu(self) -> None:
-        self._build_more_menu()
-        self._more_menu.exec(self._more_btn.mapToGlobal(QtCore.QPoint(0, 24)))
-
-    def _emit_diagnostics(self) -> None:
-        if self._on_diagnostics:
-            self._on_diagnostics()
-
-    def _clear_recent_action(self) -> None:
-        if self._on_clear_recent:
-            self._on_clear_recent()
-
-    def _clear_search_action(self) -> None:
-        if self._search:
-            self._search.setText("")
-        if self._on_clear_search:
-            self._on_clear_search()
-
-    def _float_palette_action(self) -> None:
-        if self._on_float_palette:
-            self._on_float_palette()
-
-    def _reset_layout_action(self) -> None:
-        if self._on_reset_layout:
-            self._on_reset_layout()
-
-    def _refresh_inventory_action(self) -> None:
-        if self._on_refresh_inventory:
-            self._on_refresh_inventory()
-
-    def _toggle_expanded(self) -> None:
-        self._set_expanded(not self._expanded)
-
-    def _set_expanded(self, expanded: bool) -> None:
-        if self._expanded == bool(expanded):
-            return
-        self._expanded = bool(expanded)
-        self._apply_sizing()
-        self._dbg_once(f"expanded:{self._expanded}", f"palette expanded={self._expanded}")
-
-    def _debug_enabled(self) -> bool:
-        try:
-            return os.environ.get("PHYSICSLAB_CODESEE_DEBUG", "0") == "1"
-        except Exception:
-            return False
-
-    def _dbg(self, message: str) -> None:
-        if not self._debug_enabled():
-            return
-        try:
-            print(f"[codesee.lens_palette] {message}")
-        except Exception:
-            return
-
-    def _dbg_once(self, key: str, message: str) -> None:
-        if key in self._dbg_seen:
-            return
-        self._dbg_seen.add(key)
-        self._dbg(message)
-
-    def _apply_sizing(self) -> None:
-        base = 260 if not self._expanded else 420
-        min_height = int(ui_scale.scale_px(base))
-        max_height = int(ui_scale.scale_px(900))
-        self.setMinimumHeight(min_height)
-        if self._pinned:
-            self.setMaximumHeight(16777215)
-        else:
-            self.setMaximumHeight(max_height)
-        scroll_min = 160 if not self._expanded else 280
-        self._scroll.setMinimumHeight(int(ui_scale.scale_px(scroll_min)))
-
-    def _show_recent_menu(self) -> None:
-        menu = QtWidgets.QMenu(self)
-        menu.setStyleSheet("QMenu { background: #1b1f27; color: #cfd8dc; }")
-        added = False
-        for lens_id in self._recent:
-            label = self._label_for_id(lens_id)
-            action = menu.addAction(label)
-            action.triggered.connect(
-                functools.partial(self._emit_select, lens_id)
-            )
-            added = True
-        if not added:
-            action = menu.addAction("No recent lenses")
-            action.setEnabled(False)
-        menu.exec(self._recent_btn.mapToGlobal(QtCore.QPoint(0, 24)))
-
-    def _label_for_id(self, lens_id: str) -> str:
-        if not self._lens_combo:
-            return lens_id
-        for idx in range(self._lens_combo.count()):
-            if self._lens_combo.itemData(idx) == lens_id:
-                return self._lens_combo.itemText(idx) or lens_id
-        return lens_id
-
-    def _log(self, message: str) -> None:
-        self._dbg(message)
-
-
+# === [NAV-20] CodeSeeScreen ===================================================
+# region NAV-20 CodeSeeScreen
 class CodeSeeScreen(QtWidgets.QWidget):
     def __init__(
         self,
@@ -1165,6 +528,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._save_layout()
         self.on_back()
 
+    # --- [NAV-30A] graph stack / set graph / enter-subgraph
     def _workspace_id(self) -> str:
         info = self._workspace_info_provider() or {}
         if isinstance(info, dict):
@@ -1206,6 +570,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._refresh_breadcrumb()
         self._render_current_graph()
 
+    # --- [NAV-30B] layout save/restore
     def _save_layout(self) -> None:
         if not self._render_graph_id:
             return
@@ -1557,6 +922,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self._set_lens_palette_pinned(False)
             self._hide_lens_palette()
 
+    # --- [NAV-40A] ensure palette widget
     def _ensure_lens_palette(self) -> None:
         if self._lens_palette is not None:
             return
@@ -1579,6 +945,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._lens_palette:
             self._lens_palette.refresh()
 
+    # --- [NAV-40B] ensure dock + apply flags
     def _ensure_lens_palette_dock(self) -> None:
         if self._lens_palette_dock is not None:
             return
@@ -1738,6 +1105,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._dock_save_timer:
             self._dock_save_timer.start(350)
 
+    # --- [NAV-40C] persist/restore dock state
     def _persist_lens_palette_dock_state(self) -> None:
         if not self._lens_palette_dock:
             return
@@ -1758,6 +1126,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             palette_floating=self._lens_palette_dock.isFloating(),
         )
 
+    # --- [NAV-40C] persist/restore dock state
     def _restore_lens_palette_dock_state(self) -> None:
         if not self._lens_palette_dock:
             return
@@ -1847,6 +1216,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._show_lens_palette()
         self._schedule_lens_palette_dock_save()
 
+    # --- [NAV-40D] dock size + repaint
     def _apply_lens_palette_dock_size(
         self, *, floating: Optional[bool] = None, force: bool = False
     ) -> None:
@@ -2124,6 +1494,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return lens
         return get_lens(self._lens)
 
+    # --- [NAV-60A] apply runtime overlay
     def _apply_runtime_overlay(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         if not self._live_enabled or not self._overlay_badges:
             return graph
@@ -2153,6 +1524,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             edges=graph.edges,
         )
 
+    # --- [NAV-60B] apply expectation badges / span overlay
     def _apply_expectation_badges(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         if not self._overlay_checks and not any(node.checks for node in graph.nodes):
             return graph
@@ -2262,6 +1634,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._apply_density(cfg)
         self._render_current_graph()
 
+    # --- [NAV-70A] UI scale / density
     def _apply_density(self, cfg: ui_scale.UiScaleConfig) -> None:
         spacing = ui_scale.density_spacing(8)
         if self._root_layout:
@@ -2350,6 +1723,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             if not self._status_timer.isActive():
                 self._status_timer.start()
 
+    # --- [NAV-70B] status tick
     def _on_status_tick(self) -> None:
         self._update_debug_status()
         self._refresh_span_activity()
@@ -2676,6 +2050,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.status_label.setText(summary)
         self._update_action_state()
 
+    # --- [NAV-70C] runtime event handler
     def _on_runtime_event(self, event: CodeSeeEvent) -> None:
         for node_id in event.node_ids or []:
             events = self._events_by_node.setdefault(node_id, [])
@@ -2743,6 +2118,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             fade_ms=int(self._pulse_settings.fade_ms),
         )
 
+    # --- [NAV-80A] snapshot load + removed dialog + pulse settings
     def _load_snapshot_by_path(self, path_value: str) -> Optional[ArchitectureGraph]:
         try:
             return snapshot_io.read_snapshot(Path(path_value))
@@ -2779,128 +2155,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.update()
 
     def _open_pulse_settings(self) -> None:
-        dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Pulse Settings")
-        layout = QtWidgets.QVBoxLayout(dialog)
-        form = QtWidgets.QFormLayout()
-
-        speed = QtWidgets.QSpinBox()
-        speed.setRange(100, 5000)
-        speed.setValue(int(self._pulse_settings.travel_speed_px_per_s))
-        form.addRow("Travel speed (px/s)", speed)
-
-        travel_duration = QtWidgets.QSpinBox()
-        travel_duration.setRange(0, 5000)
-        travel_duration.setValue(int(self._pulse_settings.travel_duration_ms))
-        form.addRow("Travel duration (ms, 0=auto)", travel_duration)
-
-        duration = QtWidgets.QSpinBox()
-        duration.setRange(150, 2000)
-        duration.setValue(int(self._pulse_settings.pulse_duration_ms))
-        form.addRow("Pulse duration (ms)", duration)
-
-        linger = QtWidgets.QSpinBox()
-        linger.setRange(0, 2000)
-        linger.setValue(int(self._pulse_settings.arrive_linger_ms))
-        form.addRow("Node sticky (ms)", linger)
-
-        fade = QtWidgets.QSpinBox()
-        fade.setRange(100, 3000)
-        fade.setValue(int(self._pulse_settings.fade_ms))
-        form.addRow("Fade (ms)", fade)
-
-        curve = QtWidgets.QComboBox()
-        curve.addItem("Linear", "linear")
-        curve.addItem("Ease Out", "ease")
-        curve_index = curve.findData(self._pulse_settings.fade_curve)
-        if curve_index >= 0:
-            curve.setCurrentIndex(curve_index)
-        form.addRow("Fade curve", curve)
-
-        radius = QtWidgets.QSpinBox()
-        radius.setRange(4, 24)
-        radius.setValue(int(self._pulse_settings.pulse_radius_px))
-        form.addRow("Pulse radius (px)", radius)
-
-        alpha = QtWidgets.QDoubleSpinBox()
-        alpha.setRange(0.1, 1.0)
-        alpha.setSingleStep(0.05)
-        alpha.setDecimals(2)
-        alpha.setValue(float(self._pulse_settings.pulse_alpha))
-        form.addRow("Pulse alpha", alpha)
-
-        min_alpha = QtWidgets.QDoubleSpinBox()
-        min_alpha.setRange(0.0, 0.8)
-        min_alpha.setSingleStep(0.05)
-        min_alpha.setDecimals(2)
-        min_alpha.setValue(float(self._pulse_settings.pulse_min_alpha))
-        form.addRow("Min intensity", min_alpha)
-
-        intensity = QtWidgets.QDoubleSpinBox()
-        intensity.setRange(0.2, 2.0)
-        intensity.setSingleStep(0.1)
-        intensity.setDecimals(2)
-        intensity.setValue(float(self._pulse_settings.intensity_multiplier))
-        form.addRow("Intensity multiplier", intensity)
-
-        trail_length = QtWidgets.QSpinBox()
-        trail_length.setRange(1, 8)
-        trail_length.setValue(int(getattr(self._pulse_settings, "trail_length", 3)))
-        form.addRow("Trail length (dots)", trail_length)
-
-        trail_spacing = QtWidgets.QSpinBox()
-        trail_spacing.setRange(30, 400)
-        trail_spacing.setValue(int(getattr(self._pulse_settings, "trail_spacing_ms", 70)))
-        form.addRow("Trail spacing (ms)", trail_spacing)
-
-        tint_active = QtWidgets.QCheckBox("Tint node while active span runs")
-        tint_active.setChecked(bool(self._pulse_settings.tint_active_spans))
-        form.addRow(tint_active)
-
-        max_signals = QtWidgets.QSpinBox()
-        max_signals.setRange(1, 20)
-        max_signals.setValue(int(self._pulse_settings.max_concurrent_signals))
-        form.addRow("Max concurrent", max_signals)
-
-        topic_group = QtWidgets.QGroupBox("Pulse topics")
-        topic_layout = QtWidgets.QVBoxLayout(topic_group)
-        topic_checks: Dict[str, QtWidgets.QCheckBox] = {}
-        for key, label in _pulse_topic_labels().items():
-            checkbox = QtWidgets.QCheckBox(label)
-            enabled = bool(getattr(self._pulse_settings, "topic_enabled", {}).get(key, True))
-            checkbox.setChecked(enabled)
-            topic_layout.addWidget(checkbox)
-            topic_checks[key] = checkbox
-        layout.addWidget(topic_group)
-
-        layout.addLayout(form)
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Ok
-            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+        new_settings = open_pulse_settings(self, self._pulse_settings)
+        if new_settings is None:
             return
-        self._pulse_settings = view_config.PulseSettings(
-            travel_speed_px_per_s=int(speed.value()),
-            travel_duration_ms=int(travel_duration.value()),
-            arrive_linger_ms=int(linger.value()),
-            fade_ms=int(fade.value()),
-            pulse_duration_ms=int(duration.value()),
-            pulse_radius_px=int(radius.value()),
-            pulse_alpha=float(alpha.value()),
-            pulse_min_alpha=float(min_alpha.value()),
-            intensity_multiplier=float(intensity.value()),
-            fade_curve=str(curve.currentData() or "linear"),
-            trail_length=int(trail_length.value()),
-            trail_spacing_ms=int(trail_spacing.value()),
-            max_concurrent_signals=int(max_signals.value()),
-            tint_active_spans=bool(tint_active.isChecked()),
-            topic_enabled={key: bool(check.isChecked()) for key, check in topic_checks.items()},
-        )
+        self._pulse_settings = new_settings
         self._view_config.pulse_settings = self._pulse_settings
         self._persist_view_config()
         self._render_current_graph()
@@ -3288,6 +2546,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
 
 
+# endregion NAV-20 CodeSeeScreen
+
+# === [NAV-90] Module helpers (toggle/buttons/labels/filters/spans/badges) =====
+# region NAV-90 Module helpers
+# --- [NAV-90A] toggle/button UI helpers
 def _style_from_label(label: str) -> str:
     for style, value in ICON_STYLE_LABELS.items():
         if value == label:
@@ -3351,7 +2614,7 @@ def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None
 def _format_active_total(active: int, total: int) -> str:
     return f"{int(active)} / {int(total)}"
 
-
+# --- [NAV-90B] badge keys + labels + filter summaries
 def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:
     if event.kind == EVENT_EXPECT_CHECK:
         if isinstance(event.payload, dict) and not event.payload.get("passed", True):
@@ -3431,22 +2694,6 @@ def _diff_filter_labels() -> Dict[str, str]:
     }
 
 
-def _pulse_topic_labels() -> Dict[str, str]:
-    return {
-        "app.activity": "App activity",
-        "app.error": "App error",
-        "app.crash": "App crash",
-        "job.update": "Job update",
-        "span.start": "Span start",
-        "span.update": "Span update",
-        "span.end": "Span end",
-        "bus.request": "Bus request",
-        "bus.reply": "Bus reply",
-        "expect.check": "Expectation check",
-        "codesee.test_pulse": "Test pulse",
-    }
-
-
 def _quick_filter_summary(config: view_config.ViewConfig) -> str:
     labels = []
     for key, label in _quick_filter_labels().items():
@@ -3463,6 +2710,7 @@ def _diff_filter_summary(filters: Dict[str, bool]) -> str:
     return " + ".join(labels)
 
 
+# --- [NAV-90C] filters + pulse topic enablement
 def _pulse_topic_enabled(settings: view_config.PulseSettings, kind: str) -> bool:
     enabled = getattr(settings, "topic_enabled", None)
     if not isinstance(enabled, dict):
@@ -3566,6 +2814,7 @@ def _ext_edges(edge, src: Node, dst: Node) -> bool:
     return edge.kind in ("depends", "provides", "consumes", "loads", "contains")
 
 
+# --- [NAV-90D] span helpers
 def _node_has_active_span(node: Node) -> bool:
     for span in node.spans or []:
         if span.status == "active":
@@ -3580,15 +2829,6 @@ def _node_has_stuck_span(node: Node, now: float, stuck_threshold: int) -> bool:
     return False
 
 
-def _span_is_stuck(span: SpanRecord, now: float, threshold: int) -> bool:
-    if span.status != "active":
-        return False
-    last_ts = span.updated_ts or span.started_ts
-    if not last_ts:
-        return False
-    return (now - last_ts) >= float(threshold)
-
-
 def _span_fallback_node_id(graph: ArchitectureGraph, workspace_id: str) -> Optional[str]:
     node_ids = {node.node_id for node in graph.nodes}
     if "system:content_system" in node_ids:
@@ -3601,6 +2841,44 @@ def _span_fallback_node_id(graph: ArchitectureGraph, workspace_id: str) -> Optio
     if graph.nodes:
         return graph.nodes[0].node_id
     return None
+
+
+# --- [NAV-90E] badge builders + crash helpers
+def _badge_for_check(check: EVACheck) -> Badge:
+    return Badge(
+        key="expect.mismatch",
+        rail="bottom",
+        title="Mismatch",
+        summary=check.message or "Expected vs actual mismatch.",
+        detail=str(check.context) if check.context else None,
+        severity="failure",
+        timestamp=str(check.ts),
+    )
+
+
+def _crash_badge_from_record(record: dict) -> Badge:
+    message = str(record.get("message") or "Crash detected.")
+    exc_type = str(record.get("exception_type") or "Crash")
+    summary = f"{exc_type}: {message}"
+    timestamp = str(record.get("ts") or "")
+    return Badge(
+        key="state.crash",
+        rail="top",
+        title="Crash",
+        summary=summary,
+        detail=str(record.get("where") or "startup"),
+        severity="crash",
+        timestamp=timestamp,
+    )
+
+
+def _format_crash_timestamp(record: Optional[dict]) -> str:
+    if not isinstance(record, dict):
+        return "n/a"
+    ts = record.get("ts")
+    if isinstance(ts, (int, float)):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    return "n/a"
 
 
 def _merge_span_badges(
@@ -3674,377 +2952,9 @@ def _active_span_node_ids(spans: list[SpanRecord], limit: int = 4) -> list[str]:
     return nodes
 
 
-class CodeSeeInspectorDialog(QtWidgets.QDialog):
-    def __init__(
-        self,
-        node: Node,
-        graph: ArchitectureGraph,
-        selected_badge: Optional[Badge],
-        diff_state: Optional[str],
-        diff_change: Optional[NodeChange],
-        events: list[CodeSeeEvent],
-        crash_record: Optional[dict],
-        build_info: Optional[dict],
-        crash_build_info: Optional[dict],
-        span_stuck_seconds: int,
-        parent: Optional[QtWidgets.QWidget] = None,
-    ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Code See Inspector")
-        self.setMinimumWidth(480)
+# endregion NAV-90 Module helpers
 
-        layout = QtWidgets.QVBoxLayout(self)
-        title = QtWidgets.QLabel(node.title)
-        title.setStyleSheet("font-weight: 600;")
-        layout.addWidget(title)
-
-        meta = QtWidgets.QLabel(f"ID: {node.node_id} | Type: {node.node_type}")
-        meta.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(meta)
-
-        meta_label = QtWidgets.QLabel("Extensions & Metadata")
-        meta_label.setStyleSheet("color: #444;")
-        layout.addWidget(meta_label)
-        meta_text = QtWidgets.QPlainTextEdit()
-        meta_text.setReadOnly(True)
-        meta_text.setPlainText(_format_metadata(node.metadata))
-        layout.addWidget(meta_text)
-
-        build_label = QtWidgets.QLabel("Build")
-        build_label.setStyleSheet("color: #444;")
-        layout.addWidget(build_label)
-        build_text = QtWidgets.QPlainTextEdit()
-        build_text.setReadOnly(True)
-        build_text.setPlainText(_format_build_info(build_info, crash_build_info))
-        layout.addWidget(build_text)
-
-        if selected_badge:
-            selected = QtWidgets.QLabel(f"Selected badge: {_format_badge_line(selected_badge)}")
-            selected.setWordWrap(True)
-            layout.addWidget(selected)
-
-        if diff_state:
-            diff_label = QtWidgets.QLabel(f"Diff status: {diff_state}")
-            diff_label.setStyleSheet("color: #555;")
-            layout.addWidget(diff_label)
-            if diff_change:
-                diff_details = QtWidgets.QPlainTextEdit()
-                diff_details.setReadOnly(True)
-                diff_details.setPlainText(_format_diff_change(diff_change))
-                layout.addWidget(diff_details)
-
-        badges_label = QtWidgets.QLabel("Badges")
-        badges_label.setStyleSheet("color: #444;")
-        layout.addWidget(badges_label)
-        badges_text = QtWidgets.QPlainTextEdit()
-        badges_text.setReadOnly(True)
-        badges_text.setPlainText(_format_badges(node.badges))
-        layout.addWidget(badges_text)
-
-        activity_label = QtWidgets.QLabel("Activity")
-        activity_label.setStyleSheet("color: #444;")
-        layout.addWidget(activity_label)
-        activity_text = QtWidgets.QPlainTextEdit()
-        activity_text.setReadOnly(True)
-        activity_text.setPlainText(_format_spans(node.spans, span_stuck_seconds))
-        layout.addWidget(activity_text)
-
-        edges_label = QtWidgets.QLabel("Edges")
-        edges_label.setStyleSheet("color: #444;")
-        layout.addWidget(edges_label)
-        edges_text = QtWidgets.QPlainTextEdit()
-        edges_text.setReadOnly(True)
-        edges_text.setPlainText(_format_edges(graph, node))
-        layout.addWidget(edges_text)
-
-        events_label = QtWidgets.QLabel("Recent events")
-        events_label.setStyleSheet("color: #444;")
-        layout.addWidget(events_label)
-        events_text = QtWidgets.QPlainTextEdit()
-        events_text.setReadOnly(True)
-        events_text.setPlainText(_format_events(events))
-        layout.addWidget(events_text)
-
-        if crash_record:
-            crash_label = QtWidgets.QLabel("Crash")
-            crash_label.setStyleSheet("color: #444;")
-            layout.addWidget(crash_label)
-            crash_text = QtWidgets.QPlainTextEdit()
-            crash_text.setReadOnly(True)
-            crash_text.setPlainText(_format_crash_record(crash_record))
-            layout.addWidget(crash_text)
-
-        checks_label = QtWidgets.QLabel("Expected vs Actual")
-        checks_label.setStyleSheet("color: #444;")
-        layout.addWidget(checks_label)
-        checks_text = QtWidgets.QPlainTextEdit()
-        checks_text.setReadOnly(True)
-        checks_text.setPlainText(_format_checks(node.checks))
-        layout.addWidget(checks_text)
-
-        close_row = QtWidgets.QHBoxLayout()
-        close_row.addStretch()
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        close_row.addWidget(close_btn)
-        layout.addLayout(close_row)
-
-
-class CodeSeeRemovedDialog(QtWidgets.QDialog):
-    def __init__(self, diff_result: DiffResult, parent: Optional[QtWidgets.QWidget] = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Removed Items")
-        self.setMinimumWidth(420)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        nodes_label = QtWidgets.QLabel("Removed Nodes")
-        nodes_label.setStyleSheet("color: #444;")
-        layout.addWidget(nodes_label)
-        nodes_text = QtWidgets.QPlainTextEdit()
-        nodes_text.setReadOnly(True)
-        nodes_text.setPlainText(_format_removed_nodes(diff_result))
-        layout.addWidget(nodes_text)
-
-        edges_label = QtWidgets.QLabel("Removed Edges")
-        edges_label.setStyleSheet("color: #444;")
-        layout.addWidget(edges_label)
-        edges_text = QtWidgets.QPlainTextEdit()
-        edges_text.setReadOnly(True)
-        edges_text.setPlainText(_format_removed_edges(diff_result))
-        layout.addWidget(edges_text)
-
-        close_row = QtWidgets.QHBoxLayout()
-        close_row.addStretch()
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        close_row.addWidget(close_btn)
-        layout.addLayout(close_row)
-
-
-def _format_badges(badges: list[Badge]) -> str:
-    if not badges:
-        return "No badges."
-    lines = []
-    for badge in sort_by_priority(badges):
-        lines.append(_format_badge_line(badge))
-        if badge.detail:
-            lines.append(f"  detail: {badge.detail}")
-        if badge.timestamp:
-            lines.append(f"  timestamp: {badge.timestamp}")
-    return "\n".join(lines)
-
-
-def _format_badge_line(badge: Badge) -> str:
-    line = f"{badge.key} ({badge.rail}) - {badge.title}: {badge.summary}"
-    return line.strip()
-
-
-def _format_edges(graph: ArchitectureGraph, node: Node) -> str:
-    node_map = graph.node_map()
-    outgoing = []
-    incoming = []
-    for edge in graph.edges:
-        if edge.src_node_id == node.node_id:
-            dst = node_map.get(edge.dst_node_id)
-            dst_label = dst.title if dst else edge.dst_node_id
-            outgoing.append(f"{edge.kind} -> {dst_label} ({edge.dst_node_id})")
-        if edge.dst_node_id == node.node_id:
-            src = node_map.get(edge.src_node_id)
-            src_label = src.title if src else edge.src_node_id
-            incoming.append(f"{edge.kind} <- {src_label} ({edge.src_node_id})")
-    if not outgoing and not incoming:
-        return "No edges."
-    lines = []
-    if outgoing:
-        lines.append("Outgoing:")
-        lines.extend(f"- {line}" for line in outgoing)
-    if incoming:
-        lines.append("Incoming:")
-        lines.extend(f"- {line}" for line in incoming)
-    return "\n".join(lines)
-
-
-def _format_diff_change(change: NodeChange) -> str:
-    lines = ["Before:", f"  title: {change.before.title}", f"  type: {change.before.node_type}"]
-    lines.append(f"  severity: {change.severity_before}")
-    lines.append("  badges:")
-    lines.extend(f"    - {_format_badge_line(badge)}" for badge in change.badges_before)
-    lines.append("After:")
-    lines.append(f"  title: {change.after.title}")
-    lines.append(f"  type: {change.after.node_type}")
-    lines.append(f"  severity: {change.severity_after}")
-    lines.append("  badges:")
-    lines.extend(f"    - {_format_badge_line(badge)}" for badge in change.badges_after)
-    lines.append(f"Changed fields: {', '.join(change.fields_changed)}")
-    return "\n".join(lines)
-
-
-def _format_removed_nodes(diff_result: DiffResult) -> str:
-    if not diff_result.nodes_removed:
-        return "No removed nodes."
-    return "\n".join(sorted(diff_result.nodes_removed))
-
-
-def _format_removed_edges(diff_result: DiffResult) -> str:
-    if not diff_result.edges_removed:
-        return "No removed edges."
-    lines = []
-    for src, dst, kind in sorted(diff_result.edges_removed):
-        lines.append(f"{kind}: {src} -> {dst}")
-    return "\n".join(lines)
-
-
-def _format_events(events: list[CodeSeeEvent]) -> str:
-    if not events:
-        return "No recent events."
-    lines = []
-    for event in events:
-        line = f"{event.ts} | {event.kind} | {event.severity}: {event.message}"
-        if event.detail:
-            line = f"{line}\n  {event.detail}"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def _format_metadata(metadata: dict) -> str:
-    if not metadata:
-        return "No metadata."
-    lines = []
-    for key in sorted(metadata.keys()):
-        value = metadata.get(key)
-        if isinstance(value, dict):
-            lines.append(f"{key}:")
-            for sub_key in sorted(value.keys()):
-                lines.append(f"  {sub_key}: {value.get(sub_key)}")
-            continue
-        if isinstance(value, list):
-            lines.append(f"{key}:")
-            for item in value:
-                lines.append(f"  - {item}")
-            continue
-        lines.append(f"{key}: {value}")
-    return "\n".join(lines)
-
-
-def _format_spans(spans: list[SpanRecord], stuck_threshold_s: int, limit: int = 6) -> str:
-    if not spans:
-        return "No activity spans."
-    now = time.time()
-    sorted_spans = sorted(
-        spans,
-        key=lambda s: s.updated_ts or s.started_ts or 0.0,
-        reverse=True,
-    )[:limit]
-    lines = []
-    for span in sorted_spans:
-        status = span.status or "active"
-        if _span_is_stuck(span, now, stuck_threshold_s):
-            status = "stuck"
-        ts = span.updated_ts or span.started_ts
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "n/a"
-        progress = ""
-        if span.progress is not None:
-            if 0.0 <= span.progress <= 1.0:
-                progress = f" ({int(span.progress * 100)}%)"
-            else:
-                progress = f" ({span.progress})"
-        message = f" - {span.message}" if span.message else ""
-        lines.append(f"{stamp} | {status.upper()} | {span.label}{progress}{message}")
-    return "\n".join(lines)
-
-
-def _format_build_info(build: Optional[dict], crash_build: Optional[dict]) -> str:
-    build = build if isinstance(build, dict) else {}
-    crash_build = crash_build if isinstance(crash_build, dict) else {}
-    app_version = build.get("app_version") or "unknown"
-    build_id = build.get("build_id") or "unknown"
-    lines = [f"Current: {app_version} ({build_id})"]
-    if crash_build:
-        crash_version = crash_build.get("app_version") or "unknown"
-        crash_id = crash_build.get("build_id") or "unknown"
-        if crash_version != app_version or crash_id != build_id:
-            lines.append(f"Crash: {crash_version} ({crash_id})")
-    return "\n".join(lines)
-
-
-def _format_checks(checks: list[EVACheck], limit: int = 5) -> str:
-    if not checks:
-        return "No expectation checks."
-    recent = sorted(checks, key=lambda c: c.ts or 0.0, reverse=True)[:limit]
-    lines = []
-    for check in recent:
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(check.ts)) if check.ts else "n/a"
-        status = "PASS" if check.passed else "FAIL"
-        lines.append(f"{stamp} | {status} | {check.message}")
-        lines.append(f"  expected: {check.expected}")
-        lines.append(f"  actual: {check.actual}")
-        lines.append(f"  mode: {check.mode}")
-        if check.tolerance is not None:
-            lines.append(f"  tolerance: {check.tolerance}")
-        if check.context:
-            lines.append(f"  context: {check.context}")
-    return "\n".join(lines)
-
-
-def _badge_for_check(check: EVACheck) -> Badge:
-    return Badge(
-        key="expect.mismatch",
-        rail="bottom",
-        title="Mismatch",
-        summary=check.message or "Expected vs actual mismatch.",
-        detail=str(check.context) if check.context else None,
-        severity="failure",
-        timestamp=str(check.ts),
-    )
-
-
-def _crash_badge_from_record(record: dict) -> Badge:
-    message = str(record.get("message") or "Crash detected.")
-    exc_type = str(record.get("exception_type") or "Crash")
-    summary = f"{exc_type}: {message}"
-    timestamp = str(record.get("ts") or "")
-    return Badge(
-        key="state.crash",
-        rail="top",
-        title="Crash",
-        summary=summary,
-        detail=str(record.get("where") or "startup"),
-        severity="crash",
-        timestamp=timestamp,
-    )
-
-
-def _format_crash_record(record: dict, limit_lines: int = 12) -> str:
-    ts = record.get("ts")
-    stamp = "n/a"
-    if isinstance(ts, (int, float)):
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-    exc_type = record.get("exception_type") or "Crash"
-    message = record.get("message") or ""
-    where = record.get("where") or "startup"
-    traceback_text = record.get("traceback") or ""
-    lines = traceback_text.splitlines()
-    if limit_lines and len(lines) > limit_lines:
-        lines = lines[-limit_lines:]
-    excerpt = "\n".join(lines).strip() or "(traceback unavailable)"
-    return (
-        f"Time: {stamp}\n"
-        f"Where: {where}\n"
-        f"Type: {exc_type}\n"
-        f"Message: {message}\n"
-        f"Traceback:\n{excerpt}"
-    )
-
-
-def _format_crash_timestamp(record: Optional[dict]) -> str:
-    if not isinstance(record, dict):
-        return "n/a"
-    ts = record.get("ts")
-    if isinstance(ts, (int, float)):
-        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-    return "n/a"
-
-
+# === [NAV-99] Smoke test entrypoints =========================================
 def run_pulse_smoke_test() -> None:
     app = QtWidgets.QApplication.instance()
     if app is None:

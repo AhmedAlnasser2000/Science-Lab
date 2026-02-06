@@ -1,3 +1,11 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Public API
+# [NAV-99] end
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 import json
@@ -5,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+# === [NAV-10] Public API ======================================================
 def load_index(workspace_id: str) -> Dict[str, Any]:
     path = _index_path(workspace_id)
     if not path.exists():
@@ -112,3 +121,6 @@ def _workspace_id_from_path(path: Path) -> Optional[str]:
         return str(workspace_id)
     except Exception:
         return None
+
+
+# === [NAV-99] end =============================================================

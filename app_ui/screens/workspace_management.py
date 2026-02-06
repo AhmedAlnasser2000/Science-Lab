@@ -1,5 +1,17 @@
 ﻿from __future__ import annotations
 
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Workspace model / IO helpers
+# [NAV-20] WorkspaceManagementScreen: ctor + UI
+# [NAV-30] Create/switch flows
+# [NAV-40] Templates (seed/copy)
+# [NAV-90] Helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 import json
 import time
 import zipfile
@@ -73,6 +85,7 @@ BUS_INVENTORY_REQUEST = (
 )
 
 
+# === [NAV-10] Workspace model / IO helpers ===================================
 def _workspace_prefs_root_from_paths(paths: Dict[str, Any]) -> Path:
     prefs = paths.get("prefs")
     if prefs:
@@ -148,6 +161,7 @@ def _request_inventory_snapshot(bus) -> tuple[Optional[Dict[str, Any]], Optional
     return response.get("inventory") or {}, None
 
 
+# === [NAV-20] WorkspaceManagementScreen: ctor + UI ===========================
 class WorkspaceManagementScreen(QtWidgets.QWidget):
     TEMPLATE_PREF_FILES = (
         "workspace_config.json",
@@ -562,6 +576,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         )
 
     def _create_workspace(self) -> None:
+        # --- [NAV-30] Create/switch flows
         if not self.bus:
             self.status.setText("Runtime bus unavailable.")
             return
@@ -614,6 +629,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self.refresh()
 
     def _set_active(self) -> None:
+        # --- [NAV-30] Create/switch flows
         ws = self._selected_workspace()
         if not (self.bus and ws):
             return
@@ -772,6 +788,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         self._show_text_dialog("Template Preview", f"{header}\n\n{summary}")
 
     def _diff_template(self) -> None:
+        # --- [NAV-40] Templates (seed/copy)
         template_id = self.template_combo.currentData()
         if not template_id:
             self.template_status.setText("Select a template to diff.")
@@ -818,6 +835,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         return merged
 
     def _apply_template(self) -> None:
+        # --- [NAV-40] Templates (seed/copy)
         template_id = self.template_combo.currentData()
         if not template_id:
             self.template_status.setText("Select a template to apply.")
@@ -1342,6 +1360,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         dialog.exec()
 
     def _show_text_dialog(self, title: str, text: str) -> None:
+        # --- [NAV-90] Helpers
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle(title)
         dialog.resize(640, 420)
@@ -1356,6 +1375,7 @@ class WorkspaceManagementScreen(QtWidgets.QWidget):
         dialog.exec()
 
 
+# === [NAV-99] End =============================================================
 __all__ = [
     "WorkspaceManagementScreen",
     "_request_inventory_snapshot",
