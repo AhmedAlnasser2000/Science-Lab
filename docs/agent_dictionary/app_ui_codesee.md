@@ -49,12 +49,30 @@ Focused navigation map for CodeSee work. This is a fast path for agents; not a f
 
 - **Path:** `app_ui/codesee/dialogs/`
   - **Role:** Dialog UIs used by `CodeSeeScreen`.
-  - **Key symbols:** `CodeSeeInspectorDialog`, `CodeSeeRemovedDialog`, `open_pulse_settings`.
+  - **Key symbols:** `CodeSeeInspectorDialog`, `CodeSeeRemovedDialog`, `open_pulse_settings`, `CodeSeeDiagnosticsDialog`.
   - **Edit-when:** Inspector/removed/pulse-settings UX and formatting.
 
+- **Path:** `app_ui/codesee/storage/`
+  - **Role:** Snapshot + layout persistence and indexing.
+  - **Key symbols:** `layout_store.py`, `snapshot_io.py`, `snapshot_index.py`.
+  - **Edit-when:** Save/restore graph layouts, write/read snapshot files, snapshot listing and retention.
+  - **NAV anchors:** each module has `[NAV-00]`, `[NAV-10]`, `[NAV-99]`.
+
+- **Path:** `app_ui/codesee/util/`
+  - **Role:** Lightweight utility helpers used across CodeSee.
+  - **Key symbols:** `log_buffer.py` ring-buffer helpers.
+  - **Edit-when:** Logging retention/copy behavior for diagnostics.
+  - **NAV anchors:** `log_buffer.py [NAV-00..NAV-99]`.
+
+- **Path:** `app_ui/codesee/demos/`
+  - **Role:** Demo graph generation utilities.
+  - **Key symbols:** `demo_graphs.py` builders for root/subgraph demos.
+  - **Edit-when:** Demo dataset structure, seed graph behavior, sample expectations.
+  - **NAV anchors:** `demo_graphs.py [NAV-00..NAV-99]`.
+
 - **Path:** `app_ui/codesee/` (root core-ish modules)
-  - **Role:** Shared models, config I/O, diagnostics, snapshot/layout utilities, lens catalog.
-  - **Key symbols:** `graph_model.py`, `lenses.py`, `view_config.py`, `layout_store.py`, `snapshot_io.py`, `snapshot_index.py`, `diagnostics.py`, `diagnostics_dialog.py`, `demo_graphs.py`, `log_buffer.py`, `crash_io.py`, `expectations.py`, `badges.py`, `diff.py`, `icon_pack.py`, `harness.py`.
+  - **Role:** Shared models and core logic not tied to a subpackage.
+  - **Key symbols:** `graph_model.py`, `lenses.py`, `view_config.py`, `diagnostics.py`, `crash_io.py`, `expectations.py`, `badges.py`, `diff.py`, `icon_pack.py`, `harness.py`.
   - **Edit-when:** Focused logic updates not tied to canvas/runtime package internals.
   - **Do-not-touch / risks:** `crash_io.py` and `expectations.py` are used outside CodeSee.
 
@@ -69,7 +87,7 @@ Focused navigation map for CodeSee work. This is a fast path for agents; not a f
   - `app_ui/codesee/runtime/events.py`, `app_ui/codesee/runtime/hub.py`, `app_ui/codesee/screen.py` (`[NAV-60]`, `[NAV-70]`).
 
 - **Snapshot/diff/crash handling:**
-  - Snapshot I/O/index: `snapshot_io.py`, `snapshot_index.py`.
+  - Snapshot I/O/index/layout: `app_ui/codesee/storage/snapshot_io.py`, `app_ui/codesee/storage/snapshot_index.py`, `app_ui/codesee/storage/layout_store.py`.
   - Diff logic: `diff.py`.
   - Crash load/clear badges: `crash_io.py`, `screen.py` (`[NAV-80]`, `[NAV-90E]`).
 

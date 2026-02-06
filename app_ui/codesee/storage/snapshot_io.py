@@ -1,19 +1,28 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Public API
+# [NAV-99] end
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .badges import badge_from_dict, badge_from_key, badge_to_dict
-from .expectations import check_from_dict, check_to_dict
-from .runtime.events import span_from_dict, span_to_dict
+from ..badges import badge_from_dict, badge_from_key, badge_to_dict
+from ..expectations import check_from_dict, check_to_dict
+from ..runtime.events import span_from_dict, span_to_dict
 from . import snapshot_index
-from .graph_model import ArchitectureGraph, Edge, Node
+from ..graph_model import ArchitectureGraph, Edge, Node
 from app_ui import versioning
 
 FORMAT_VERSION = 3
 
 
+# === [NAV-10] Public API ======================================================
 def write_snapshot(graph: ArchitectureGraph, path: Path, metadata: Dict[str, Any]) -> None:
     build_info = versioning.get_build_info()
     meta = dict(metadata or {})
@@ -194,3 +203,6 @@ def _sanitize_json_value(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
+# === [NAV-99] end =============================================================

@@ -33,13 +33,8 @@ from app_ui.widgets.workspace_selector import WorkspaceSelector
 from . import (
     crash_io,
     diagnostics,
-    diagnostics_dialog,
     harness,
     icon_pack,
-    layout_store,
-    log_buffer,
-    snapshot_index,
-    snapshot_io,
     view_config,
 )
 from .badges import Badge, badge_from_key, sort_by_priority
@@ -48,7 +43,8 @@ from .canvas.scene import GraphScene
 from .canvas.view import GraphView
 from .collectors.atlas_builder import build_atlas_graph
 from .collectors.base import CollectorContext
-from .demo_graphs import build_demo_root_graph, build_demo_subgraphs
+from .demos.demo_graphs import build_demo_root_graph, build_demo_subgraphs
+from .dialogs import diagnostics_dialog
 from .diff import DiffResult, NodeChange, diff_snapshots
 from .expectations import EVACheck, check_from_dict
 from .graph_model import ArchitectureGraph, Node
@@ -70,6 +66,7 @@ from .runtime.events import (
 )
 # --- [NAV-05] Stable re-exports for tests (lens palette + helpers)
 from .runtime.hub import CodeSeeRuntimeHub
+from .storage import layout_store, snapshot_index, snapshot_io
 from .dialogs.inspector import CodeSeeInspectorDialog, _span_is_stuck
 from .dialogs.pulse_settings import open_pulse_settings
 from .dialogs.removed import CodeSeeRemovedDialog
@@ -79,6 +76,7 @@ from .ui.lens_palette import (
     _lens_palette_lens_ids,
     lens_palette_dock_orientation,
 )
+from .util import log_buffer
 from app_ui import ui_scale
 from app_ui import versioning
 

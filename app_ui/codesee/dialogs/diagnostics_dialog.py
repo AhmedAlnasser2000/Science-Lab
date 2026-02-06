@@ -1,12 +1,21 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Public API
+# [NAV-99] end
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from . import diagnostics
+from .. import diagnostics
 
 
+# === [NAV-10] Public API ======================================================
 class CodeSeeDiagnosticsDialog(QtWidgets.QDialog):
     def __init__(
         self,
@@ -61,3 +70,6 @@ class CodeSeeDiagnosticsDialog(QtWidgets.QDialog):
         logs = self._log_provider()
         content = diagnostics.format_codesee_diagnostics(snapshot, logs)
         QtWidgets.QApplication.clipboard().setText(content)
+
+
+# === [NAV-99] end =============================================================
