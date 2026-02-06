@@ -1,3 +1,20 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Bus helpers / request-reply wrappers
+# [NAV-20] SystemHealthScreen: ctor + wiring
+# [NAV-30] Segments/panels: Overview
+# [NAV-31] Segments/panels: Runs
+# [NAV-32] Segments/panels: Maintenance
+# [NAV-33] Segments/panels: Modules
+# [NAV-34] Segments/panels: Jobs
+# [NAV-35] Segments/panels: Pillars
+# [NAV-36] Segments/panels: Crashes
+# [NAV-90] Small UI helpers / formatters
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 import sys
 import time
 from datetime import datetime
@@ -122,6 +139,7 @@ BUS_WORKSPACE_GET_ACTIVE_REQUEST = (
 CORE_JOB_REPORT = "core.report.generate"
 
 
+# === [NAV-10] Bus helpers / request-reply wrappers ===========================
 class _BusDispatchBridge(QtCore.QObject):
     envelope_dispatched = QtCore.pyqtSignal(object, object)
 
@@ -221,6 +239,7 @@ class CrashViewerPanel(QtWidgets.QWidget):
             url = QtCore.QUrl.fromLocalFile(str(path.resolve()))
             QtGui.QDesktopServices.openUrl(url)
 
+ # === [NAV-20] SystemHealthScreen: ctor + wiring =============================
 class SystemHealthScreen(QtWidgets.QWidget):
     # --- [NAV-32A] ctor / dependencies
     cleanup_event = QtCore.pyqtSignal(dict)
@@ -663,6 +682,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._refresh_pillars_view()
 
     def _set_segment(self, index: int) -> None:
+        # --- [NAV-30..36] Segment switch and panel visibility
         if index < 0 or index >= self._stack.count():
             return
         self._stack.setCurrentIndex(index)
@@ -987,6 +1007,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         QtWidgets.QApplication.clipboard().setText(text)
 
     def _run_pillars_checks(self) -> None:
+        # --- [NAV-35] Pillars execution
         if self._pillars_thread is not None:
             return
 
@@ -1075,6 +1096,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._pillars_thread = None
         self._pillars_worker = None
     def _refresh_runs_list(self) -> None:
+        # --- [NAV-31] Runs list and selection wiring
         if not self.bus:
             self.runs_status.setText("Runtime bus unavailable.")
             return
@@ -1751,6 +1773,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._set_status(f"Report job update - {stage}")
 
     def _on_job_completed_event(self, envelope: Any) -> None:
+        # --- [NAV-34] Jobs and report completion events
         payload = getattr(envelope, "payload", None) or {}
         job_id = payload.get("job_id")
         job_type = payload.get("job_type")
@@ -1769,10 +1792,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._set_control_enabled(True)
 
     def _on_cleanup_completed_event(self, envelope: Any) -> None:
+        # --- [NAV-32] Maintenance cleanup completion events
         payload = getattr(envelope, "payload", None) or {}
         self.cleanup_event.emit(payload)
 
     def _on_module_progress_event(self, envelope: Any) -> None:
+        # --- [NAV-33] Module install/uninstall progress events
         payload = getattr(envelope, "payload", None) or {}
         self.module_progress_event.emit(payload)
 
@@ -2226,6 +2251,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         tree.expandToDepth(1)
 
     def _copy_content_diagnostics(self) -> None:
+        # --- [NAV-90] Small UI helpers / formatters
         report = self._content_diag_report or {}
         lines: list[str] = []
         lines.append("Content validation report")
@@ -2255,3 +2281,6 @@ class SystemHealthScreen(QtWidgets.QWidget):
                     f"[{item.get('schema_id') or 'no schema'}]"
                 )
         QtWidgets.QApplication.clipboard().setText("\n".join(lines))
+
+
+# === [NAV-99] End =============================================================

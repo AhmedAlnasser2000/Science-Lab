@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Safe-mode gates / env flags
+# [NAV-20] SafeViewer entrypoints
+# [NAV-30] Error handling / diagnostics
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 import json
 import time
 from pathlib import Path
@@ -13,6 +23,7 @@ from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.widgets.workspace_selector import WorkspaceSelector
 
 
+# === [NAV-10] Safe-mode gates / env flags ====================================
 def _workspaces_root() -> Path:
     return Path("data") / "workspaces"
 
@@ -60,6 +71,7 @@ def discover_workspaces() -> List[Dict[str, Any]]:
     return workspaces
 
 
+# === [NAV-20] SafeViewer entrypoints =========================================
 class CodeSeeViewerWindow(QtWidgets.QMainWindow):
     def __init__(
         self,
@@ -241,6 +253,7 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
         self._codesee_window = None
 
     def _refresh_crash_state(self) -> None:
+        # === [NAV-30] Error handling / diagnostics ============================
         record = crash_io.read_latest_crash(self._active_workspace_id)
         if record:
             exc_type = record.get("exception_type") or "Crash"
@@ -264,3 +277,6 @@ def _format_crash_timestamp(ts: object) -> str:
     if isinstance(ts, (int, float)):
         return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
     return "unknown"
+
+
+# === [NAV-99] End =============================================================

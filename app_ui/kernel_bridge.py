@@ -1,7 +1,18 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] DLL candidates + load strategy
+# [NAV-20] ABI symbol binding
+# [NAV-30] Public bridge API
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 import ctypes
 from pathlib import Path
 from typing import List, Tuple
 
+# === [NAV-10] DLL candidates + load strategy =================================
 DLL_CANDIDATES = [
     Path("kernel/target/release/physicslab_kernel.dll"),
     Path("app_ui/native/physicslab_kernel.dll"),
@@ -22,6 +33,7 @@ def _load_library() -> ctypes.CDLL:
 
 
 def _resolve_symbols():
+    # === [NAV-20] ABI symbol binding =========================================
     lib = _load_library()
     lib.pl_world_create.argtypes = [ctypes.c_double, ctypes.c_double]
     lib.pl_world_create.restype = ctypes.c_uint64
@@ -52,6 +64,7 @@ def _resolve_symbols():
 _LIB = None
 
 
+# === [NAV-30] Public bridge API ===============================================
 def ensure_kernel_available() -> None:
     _get_lib()
 
@@ -144,3 +157,6 @@ def run_gravity_demo(
     finally:
         session.close()
     return results
+
+
+# === [NAV-99] End =============================================================
