@@ -56,3 +56,4 @@ Definition of Done:
 | V5.5/V5.5c/docs/2026-01-26__V5.5c12__docs__docs_and_milestones_organization.md | TBD | Docs taxonomy + milestones organization plan |
 | V5.5/V5.5c/chore/2026-02-03__V5.5c13__codesee__screen_py_declutter_split.md | TBD | Split CodeSee screen.py into focused modules (lens palette + dialogs) without behavior changes |
 | V5.5/V5.5c/chore/2026-02-04__V5.5c13__codesee__nav_annotations_v2.md | TBD | Add NAV annotations to CodeSee modules (screen, palette, dialogs) |
+| V5.5/V5.5c/chore/2026-02-06__V5.5c13.1__codesee__agent_dictionary_and_declutter.md | TBD | Add agent dictionary docs and declutter plan for codesee subpackages |
