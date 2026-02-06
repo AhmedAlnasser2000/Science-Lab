@@ -1,3 +1,12 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Density/scaling rules
+# [NAV-20] Apply-to-Qt helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 import json
@@ -13,6 +22,7 @@ _DEFAULT_DENSITY = "comfortable"
 _BASE_FONT_SIZE: Optional[float] = None
 
 
+# === [NAV-10] Density/scaling rules ==========================================
 @dataclass(frozen=True)
 class UiScaleConfig:
     scale_percent: int = _DEFAULT_SCALE
@@ -27,6 +37,7 @@ _NOTIFIER = UiScaleNotifier()
 _CURRENT = UiScaleConfig()
 
 
+# === [NAV-20] Apply-to-Qt helpers ============================================
 def load_config() -> UiScaleConfig:
     if not _CONFIG_PATH.exists():
         return UiScaleConfig()
@@ -81,3 +92,6 @@ def density_spacing(base: int) -> int:
 
 def register_listener(callback: Callable[[UiScaleConfig], None]) -> None:
     _NOTIFIER.changed.connect(callback)
+
+
+# === [NAV-99] End =============================================================

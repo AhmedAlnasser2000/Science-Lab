@@ -8,6 +8,12 @@ Fast navigation index for coding agents working in this repo.
 - [app_ui/widgets](app_ui_widgets.md)
 - [app_ui/labs](app_ui_labs.md)
 - [app_ui/codesee](app_ui_codesee.md)
+- [repo stacks](repo_stacks.md)
+- [runtime_bus](runtime_bus.md)
+- [core_center](core_center.md)
+- [content_system](content_system.md)
+- [ui_system](ui_system.md)
+- [kernel](kernel.md)
 
 ## Usage
 - Start with the relevant page for your target area.

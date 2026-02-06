@@ -1,5 +1,17 @@
 ﻿from __future__ import annotations
 
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports/constants
+# [NAV-10] Models/data sources
+# [NAV-20] Screen ctor + UI build
+# [NAV-30] Filtering/search/sort
+# [NAV-40] Open/launch flows
+# [NAV-90] Helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports/constants ===============================================
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -22,6 +34,7 @@ except Exception:  # pragma: no cover
     component_registry = None
 
 
+# === [NAV-10] Models/data sources =============================================
 @dataclass
 class _BlockEntry:
     component_id: str
@@ -128,6 +141,7 @@ class _BlockTile(QtWidgets.QFrame):
 
 
 class BlockCatalogScreen(QtWidgets.QWidget):
+    # === [NAV-20] Screen ctor + UI build =====================================
     def __init__(
         self,
         *,
@@ -250,6 +264,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
             self._selected_pack_id = pack_id if isinstance(pack_id, str) else None
         self._build_block_list()
 
+    # === [NAV-30] Filtering/search/sort =======================================
     def refresh_catalog(self) -> None:
         self._entries, self._pack_infos = self._collect_entries()
         self._build_pack_list()
@@ -508,6 +523,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         self.open_btn.setEnabled(False)
         self.docs_btn.setEnabled(False)
 
+    # === [NAV-40] Open/launch flows ===========================================
     def _open_from_tile(self, component_id: str) -> None:
         self._handle_open_action(component_id)
 
@@ -541,6 +557,7 @@ class BlockCatalogScreen(QtWidgets.QWidget):
         )
 
 
+# === [NAV-90] Helpers =========================================================
 def _resolve_docs_path(pack_root: Optional[Path], assets: Dict[str, Any]) -> Optional[Path]:
     if not isinstance(assets, dict):
         return None
@@ -582,3 +599,6 @@ def _pack_status_label(info: _PackInfo) -> str:
     if info.enabled:
         return "Enabled ✅"
     return "Disabled ⛔"
+
+
+# === [NAV-99] End =============================================================

@@ -1,3 +1,15 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports/constants
+# [NAV-10] Inventory/bus helpers
+# [NAV-20] Screen ctor + UI
+# [NAV-30] Install/uninstall flows
+# [NAV-40] Progress/polling
+# [NAV-90] Helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports/constants ===============================================
 import json
 import time
 from pathlib import Path
@@ -40,6 +52,7 @@ BUS_COMPONENT_PACK_UNINSTALL_REQUEST = (
 )
 
 
+# === [NAV-10] Inventory/bus helpers ==========================================
 class _BusDispatchBridge(QtCore.QObject):
     envelope_dispatched = QtCore.pyqtSignal(object, object)
 
@@ -172,6 +185,7 @@ def _run_pack_job(action: str, pack_id: str) -> Dict[str, Any]:
 
 
 class ComponentManagementScreen(QtWidgets.QWidget):
+    # === [NAV-20] Screen ctor + UI ===========================================
     def __init__(
         self,
         on_back,
@@ -262,6 +276,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         self._init_bus_subscriptions()
         self.refresh()
 
+    # === [NAV-30] Install/uninstall flows ====================================
     def refresh(self) -> None:
         self.repo_list.clear()
         self.store_list.clear()
@@ -388,6 +403,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         except Exception:
             pass
 
+    # === [NAV-40] Progress/polling ===========================================
     def _show_progress(self, title: str, details: str, running: bool, ok: Optional[bool] = None) -> None:
         color = "#7a7a7a"
         if ok is True:
@@ -579,6 +595,7 @@ class ComponentManagementScreen(QtWidgets.QWidget):
             except Exception:
                 pass
 
+    # === [NAV-90] Helpers =====================================================
     def _set_banner(self, text: str) -> None:
         if not text:
             self.banner.setVisible(False)
@@ -586,3 +603,6 @@ class ComponentManagementScreen(QtWidgets.QWidget):
         else:
             self.banner.setText(text)
             self.banner.setVisible(True)
+
+
+# === [NAV-99] End =============================================================

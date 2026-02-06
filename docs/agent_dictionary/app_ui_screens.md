@@ -31,7 +31,7 @@ Focused map for high-traffic screens.
 - **Role:** Component inventory and management operations.
 - **Key symbols:** screen-level component management classes and actions.
 - **Edit-when:** component list/actions or status presentation.
-- **NAV anchors:** file-local.
+- **NAV anchors:** placeholder -> add `[NAV-00]..[NAV-99]` in Checkpoint 2.
 - **Risks/Notes:** Works with registry/storage operations; avoid accidental destructive defaults.
 
 ## block_catalog.py
@@ -39,7 +39,7 @@ Focused map for high-traffic screens.
 - **Role:** Block catalog browsing and filtering.
 - **Key symbols:** catalog view and filter helpers.
 - **Edit-when:** catalog display, filtering logic, block metadata UX.
-- **NAV anchors:** file-local.
+- **NAV anchors:** placeholder -> add `[NAV-00]..[NAV-99]` in Checkpoint 2.
 - **Risks/Notes:** Keep taxonomy/terms alignment with `ui_helpers/terms.py`.
 
 ## block_host.py
@@ -47,5 +47,5 @@ Focused map for high-traffic screens.
 - **Role:** Block host workflow and block runtime handoff UI.
 - **Key symbols:** host screen class and launch/action handlers.
 - **Edit-when:** host workflow, attach/detach flow, host-state rendering.
-- **NAV anchors:** file-local.
+- **NAV anchors:** placeholder -> add `[NAV-00]..[NAV-99]` in Checkpoint 2.
 - **Risks/Notes:** Entry surface for downstream runtime behavior; preserve launch contract.

@@ -1,3 +1,12 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-10] Save/restore window state
+# [NAV-20] Serialization helpers
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 import json
@@ -9,6 +18,7 @@ from PyQt6 import QtCore, QtWidgets
 _STATE_PATH = Path("data/roaming/window_state.json")
 
 
+# === [NAV-10] Save/restore window state ======================================
 class WindowStateStore:
     def __init__(self) -> None:
         self._data = self._load_state()
@@ -52,9 +62,13 @@ class WindowStateStore:
 _STORE = WindowStateStore()
 
 
+# === [NAV-20] Serialization helpers ==========================================
 def save_geometry(window: QtWidgets.QWidget, key: str) -> None:
     _STORE.save_geometry(window, key)
 
 
 def restore_geometry(window: QtWidgets.QWidget, key: str) -> None:
     _STORE.restore_geometry(window, key)
+
+
+# === [NAV-99] End =============================================================

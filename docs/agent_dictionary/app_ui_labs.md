@@ -7,7 +7,7 @@ Lab host and plugin map for quick navigation.
 - **Role:** LabHost orchestration, plugin selection, and host panel state.
 - **Key symbols:** host window/screen classes and plugin routing helpers.
 - **Edit-when:** lab shell behavior, host-level controls, plugin handoff.
-- **NAV anchors:** file-local.
+- **NAV anchors:** placeholder -> add `[NAV-00]..[NAV-99]` in Checkpoint 2.
 - **Risks/Notes:** Central integration point for all lab plugins.
 
 ## gravity_lab.py
@@ -38,3 +38,37 @@ Lab host and plugin map for quick navigation.
 ## Shared notes
 - Keep plugin surface compatible with host expectations in `host.py`.
 - Prefer plugin-local changes over host-wide behavior changes.
+
+## Lab plumbing files
+
+## base.py
+- **Path:** `app_ui/labs/base.py`
+- **Role:** Common base abstractions for lab plugins.
+- **Key symbols:** base lab class contracts and shared interfaces.
+- **Edit-when:** Shared plugin contract changes across labs.
+- **NAV anchors:** placeholder.
+- **Risks/Notes:** Changes can affect all lab plugins.
+
+## context.py
+- **Path:** `app_ui/labs/context.py`
+- **Role:** Host/plugin context object and capability wiring.
+- **Key symbols:** context carrier types and helpers.
+- **Edit-when:** Lab context payload changes and host-plugin integration.
+- **NAV anchors:** placeholder.
+- **Risks/Notes:** Keep backward compatibility with existing plugins.
+
+## registry.py
+- **Path:** `app_ui/labs/registry.py`
+- **Role:** Plugin registration and lookup map.
+- **Key symbols:** registry declarations and plugin discovery utilities.
+- **Edit-when:** Adding/removing labs or changing plugin metadata contract.
+- **NAV anchors:** placeholder.
+- **Risks/Notes:** Incorrect registration can hide labs from the host.
+
+## prefs_store.py
+- **Path:** `app_ui/labs/prefs_store.py`
+- **Role:** Per-lab preference persistence helpers.
+- **Key symbols:** save/load preference utilities.
+- **Edit-when:** Preference schema/path behavior changes.
+- **NAV anchors:** placeholder.
+- **Risks/Notes:** Avoid breaking existing saved preference files.

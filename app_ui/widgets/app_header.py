@@ -1,3 +1,12 @@
+# =============================================================================
+# NAV INDEX (search these tags)
+# [NAV-00] Imports / constants
+# [NAV-20] AppHeader widget
+# [NAV-30] Signals/actions
+# [NAV-99] End
+# =============================================================================
+
+# === [NAV-00] Imports / constants ============================================
 from __future__ import annotations
 
 from typing import Optional
@@ -9,6 +18,7 @@ from app_ui import ui_scale
 from .workspace_selector import WorkspaceSelector
 
 
+# === [NAV-20] AppHeader widget ===============================================
 class AppHeader(QtWidgets.QWidget):
     """Shared header with Back + title + workspace selector."""
 
@@ -48,6 +58,7 @@ class AppHeader(QtWidgets.QWidget):
 
         ui_scale.register_listener(self._on_ui_scale_changed)
 
+    # === [NAV-30] Signals/actions ============================================
     def _on_ui_scale_changed(self, cfg: ui_scale.UiScaleConfig) -> None:
         if self._layout:
             self._layout.setSpacing(ui_scale.density_spacing(8))
@@ -64,3 +75,4 @@ class AppHeader(QtWidgets.QWidget):
         self._actions_layout.insertWidget(insert_pos, widget)
 
 
+# === [NAV-99] End =============================================================

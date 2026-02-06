@@ -49,7 +49,18 @@ This page is a short entry map. For CodeSee details, use [app_ui/codesee](app_ui
 
 ## NAV Quick Jumps
 
-- `app_ui/screens/system_health.py [NAV-35]` Pillars segment
-- `app_ui/screens/workspace_management.py [NAV-40]` Template flows
-- `app_ui/kernel_bridge.py [NAV-20]` ABI symbol binding
-- `app_ui/safe_viewer.py [NAV-20]` SafeViewer entrypoints
+- `app_ui/main.py [placeholder -> NAV tag]`
+- `app_ui/screens/system_health.py [placeholder -> NAV tag]`
+- `app_ui/screens/content_browser.py [placeholder -> NAV tag]`
+- `app_ui/kernel_bridge.py [placeholder -> NAV tag]`
+- `app_ui/safe_viewer.py [placeholder -> NAV tag]`
+- `app_ui/config.py [placeholder -> NAV tag]`
+- `app_ui/ui_scale.py [placeholder -> NAV tag]`
+- `app_ui/versioning.py [placeholder -> NAV tag]`
+- `app_ui/window_state.py [placeholder -> NAV tag]`
+- `app_ui/screens/block_catalog.py [placeholder -> NAV tag]`
+- `app_ui/screens/block_host.py [placeholder -> NAV tag]`
+- `app_ui/screens/component_management.py [placeholder -> NAV tag]`
+- `app_ui/widgets/app_header.py [placeholder -> NAV tag]`
+- `app_ui/widgets/workspace_selector.py [placeholder -> NAV tag]`
+- `app_ui/labs/host.py [placeholder -> NAV tag]`
