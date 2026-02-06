@@ -49,18 +49,18 @@ This page is a short entry map. For CodeSee details, use [app_ui/codesee](app_ui
 
 ## NAV Quick Jumps
 
-- `app_ui/main.py [placeholder -> NAV tag]`
-- `app_ui/screens/system_health.py [placeholder -> NAV tag]`
-- `app_ui/screens/content_browser.py [placeholder -> NAV tag]`
-- `app_ui/kernel_bridge.py [placeholder -> NAV tag]`
-- `app_ui/safe_viewer.py [placeholder -> NAV tag]`
-- `app_ui/config.py [placeholder -> NAV tag]`
-- `app_ui/ui_scale.py [placeholder -> NAV tag]`
-- `app_ui/versioning.py [placeholder -> NAV tag]`
-- `app_ui/window_state.py [placeholder -> NAV tag]`
-- `app_ui/screens/block_catalog.py [placeholder -> NAV tag]`
-- `app_ui/screens/block_host.py [placeholder -> NAV tag]`
-- `app_ui/screens/component_management.py [placeholder -> NAV tag]`
-- `app_ui/widgets/app_header.py [placeholder -> NAV tag]`
-- `app_ui/widgets/workspace_selector.py [placeholder -> NAV tag]`
-- `app_ui/labs/host.py [placeholder -> NAV tag]`
+- `app_ui/main.py [NAV-90] MainWindow`
+- `app_ui/screens/system_health.py [NAV-35] Segments/panels: Pillars`
+- `app_ui/screens/content_browser.py [NAV-31A] ctor / dependencies`
+- `app_ui/kernel_bridge.py [NAV-30] Public bridge API`
+- `app_ui/safe_viewer.py [NAV-20] SafeViewer entrypoints`
+- `app_ui/config.py [NAV-10] Config loading (defaults/roaming/policy)`
+- `app_ui/ui_scale.py [NAV-20] Apply-to-Qt helpers`
+- `app_ui/versioning.py [NAV-10] Build info / version API`
+- `app_ui/window_state.py [NAV-10] Save/restore window state`
+- `app_ui/screens/block_catalog.py [NAV-30] Filtering/search/sort`
+- `app_ui/screens/block_host.py [NAV-30] Component mount/host lifecycle`
+- `app_ui/screens/component_management.py [NAV-40] Progress/polling`
+- `app_ui/widgets/app_header.py [NAV-30] Signals/actions`
+- `app_ui/widgets/workspace_selector.py [NAV-30] Events + update flow`
+- `app_ui/labs/host.py [NAV-30] Guide panel + tier gating`

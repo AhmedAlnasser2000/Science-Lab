@@ -7,7 +7,7 @@ Core reusable widget surfaces used across screens.
 - **Role:** App header/title actions and consistent top-row UX.
 - **Key symbols:** `AppHeader`.
 - **Edit-when:** shared header behavior, top action affordances, branding/header spacing.
-- **NAV anchors:** placeholder -> add `[NAV-00]`, `[NAV-20]`, `[NAV-30]`, `[NAV-99]` in Checkpoint 2.
+- **NAV anchors:** `[NAV-00]` imports/constants, `[NAV-20]` AppHeader widget, `[NAV-30]` signals/actions.
 - **Risks/Notes:** Used broadly; changes ripple across many screens.
 
 ## workspace_selector.py
@@ -15,7 +15,7 @@ Core reusable widget surfaces used across screens.
 - **Role:** Workspace chooser/activation UI component.
 - **Key symbols:** `WorkspaceSelector`.
 - **Edit-when:** workspace switch UX and selector event behavior.
-- **NAV anchors:** placeholder -> add `[NAV-00]`, `[NAV-20]`, `[NAV-30]`, `[NAV-99]` in Checkpoint 2.
+- **NAV anchors:** `[NAV-00]` imports/constants, `[NAV-20]` selector widget, `[NAV-30]` event/update flow.
 - **Risks/Notes:** Used by multiple screens; keep signal API stable.
 
 ## other shared widgets

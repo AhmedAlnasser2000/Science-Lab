@@ -31,7 +31,7 @@ Focused map for high-traffic screens.
 - **Role:** Component inventory and management operations.
 - **Key symbols:** screen-level component management classes and actions.
 - **Edit-when:** component list/actions or status presentation.
-- **NAV anchors:** placeholder -> add `[NAV-00]..[NAV-99]` in Checkpoint 2.
+- **NAV anchors:** `[NAV-10]` inventory/bus helpers, `[NAV-20]` ctor/UI, `[NAV-30]` install/uninstall, `[NAV-40]` progress/polling, `[NAV-90]` helpers.
 - **Risks/Notes:** Works with registry/storage operations; avoid accidental destructive defaults.
 
 ## block_catalog.py
@@ -39,7 +39,7 @@ Focused map for high-traffic screens.
 - **Role:** Block catalog browsing and filtering.
 - **Key symbols:** catalog view and filter helpers.
 - **Edit-when:** catalog display, filtering logic, block metadata UX.
-- **NAV anchors:** placeholder -> add `[NAV-00]..[NAV-99]` in Checkpoint 2.
+- **NAV anchors:** `[NAV-10]` models/data sources, `[NAV-20]` ctor/UI build, `[NAV-30]` filtering/sort, `[NAV-40]` open/launch, `[NAV-90]` helpers.
 - **Risks/Notes:** Keep taxonomy/terms alignment with `ui_helpers/terms.py`.
 
 ## block_host.py
@@ -47,5 +47,5 @@ Focused map for high-traffic screens.
 - **Role:** Block host workflow and block runtime handoff UI.
 - **Key symbols:** host screen class and launch/action handlers.
 - **Edit-when:** host workflow, attach/detach flow, host-state rendering.
-- **NAV anchors:** placeholder -> add `[NAV-00]..[NAV-99]` in Checkpoint 2.
+- **NAV anchors:** `[NAV-20]` ctor/wiring, `[NAV-30]` mount lifecycle, `[NAV-40]` close/escape flows, `[NAV-90]` helpers.
 - **Risks/Notes:** Entry surface for downstream runtime behavior; preserve launch contract.
