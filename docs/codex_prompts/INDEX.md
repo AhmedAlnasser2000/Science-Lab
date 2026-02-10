@@ -28,52 +28,52 @@ Definition of Done:
 
 | Prompt file | Commit | Notes |
 | --- | --- | --- |
-| V5.5/V5.5a/feat/2026-01-07__V5.5a__codesee__edge_following_pulses.md | TBD | CodeSee pulses follow edge paths for rendering and animation |
 | V5.5/V5.5a/feat/2026-01-07__V5.5a1__codesee__distance_based_pulse_speed.md | TBD | Distance-based pulse speed along edge paths |
+| V5.5/V5.5a/feat/2026-01-07__V5.5a__codesee__edge_following_pulses.md | TBD | CodeSee pulses follow edge paths for rendering and animation |
 | V5.5/V5.5b/feat/2026-01-11__V5.5b1__codesee__context_sticky_highlight_and_badge_overflow.md | TBD | Context-sticky highlight and compressed status badges with overflow menu |
-| V5.5/V5.5b/feat/2026-01-17__V5.5b1.3__codesee__totals_semantics_active_vs_occurrences.md | 1238492 | Clarify totals: active now vs session occurrences |
+| V5.5/V5.5b/fix/2026-01-12__V5.5b1.1__codesee__overflow_pill_label_bugfix.md | 85fac3 | Fix overflow pill label and error badge correctness |
 | V5.5/V5.5b/fix/2026-01-12__V5.5b1__codesee__badge_overflow_pill_fix.md | 20b4673 | Fix badge overflow pill + clipping + aggregated dropdown counts |
 | V5.5/V5.5b/fix/2026-01-12__V5.5b1__codesee__badges_dedup_ellipsis_overflow_priority.md | TBD | Dedup badges, overflow priority, ellipsis hint |
-| V5.5/V5.5b/fix/2026-01-12__V5.5b1.1__codesee__overflow_pill_label_bugfix.md | 85fac3 | Fix overflow pill label and error badge correctness |
 | V5.5/V5.5b/patch/2026-01-12__V5.5b1.1__codesee__dropdown_breakdown_before_legend__patch.md | 2202c17 | Ensure dropdown breakdown appears before legend |
-| V5.5b1.2 (uncommitted in github because i forgot and went to 5.5b.3 directly) | TBD | Uncommitted work: dropdown totals shown per type (active vs session) |
+| V5.5/V5.5b/feat/2026-01-17__V5.5b1.3__codesee__totals_semantics_active_vs_occurrences.md | 1238492 | Clarify totals: active now vs session occurrences |
 | V5.5/V5.5b/feat/2026-01-17__V5.5b1.3__codesee__totals_semantics_active_vs_occurrences.md | 1238492 | Clarify totals: active now vs session occurrences |
 | V5.5/V5.5c/chore/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |
+| V5.5/V5.5c/chore/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |
+| V5.5/V5.5c/docs/2026-01-19__V5.5c__lens_palette_box_design_reference.md | TBD | Lens palette box design reference |
 | V5.5/V5.5c/docs/2026-01-19__V5.5c__lens_palette_box_design_reference.md | TBD | Lens palette box design reference |
 | V5.5/V5.5c/feat/2026-01-19__V5.5c1__codesee__lens_palette_launcher.md | TBD | Floating lens palette launcher with pin + persistence |
-| V5.5/V5.5c/fix/2026-01-19__V5.5c1__codesee__lens_palette_selection_fix.md | TBD | Fix lens palette selection wiring and add diagnostics |
+| V5.5/V5.5c/feat/2026-01-19__V5.5c1__codesee__lens_palette_launcher.md | TBD | Floating lens palette launcher with pin + persistence |
 | V5.5/V5.5c/feat/2026-01-19__V5.5c2__codesee__lens_palette_box_ui.md | TBD | Box-style lens palette UI with search + tile grid using reference design |
-| V5.5/V5.5c/fix/2026-01-20__V5.5c3__codesee__lens_palette_pinned_layout_and_more.md | TBD | Fix pinned palette layout so tiles render; wire More/Less expansion |
-| V5.5/V5.5c/fix/2026-01-20__V5.5c4__codesee__lens_palette_tiles_render_and_search.md | TBD | Ensure lens palette tiles render and search shows results or empty state |
-| V5.5/V5.5c/fix/2026-01-20__V5.5c5__codesee__lens_palette_build_from_combo_and_status_line.md | TBD | Lens palette builds from combo inventory; status line + search filtering; never-blank grid |
-| V5.5/V5.5c/patch/2026-01-20__V5.5c6__codesee__lens_palette_rebuild_from_scratch.md | TBD | Rebuild lens palette from scratch with combo-driven tiles and always-visible status |
-| V5.5/V5.5c/patch/2026-01-20__V5.5c7__codesee__icon_pack_style_recursion_and_palette_growth.md | TBD | Fix icon style normalization to stop Path recursion; prevent palette refresh loop/growth |
-| V5.5/V5.5c/patch/2026-01-20__V5.5c8__codesee__stability_recursion_and_palette_resize.md | TBD | CodeSee stability hotfix: safe mode + hook reentrancy guard + palette resize safeguards |
+| V5.5/V5.5c/feat/2026-01-19__V5.5c2__codesee__lens_palette_box_ui.md | TBD | Box-style lens palette UI with search + tile grid using reference design |
+| V5.5/V5.5c/fix/2026-01-19__V5.5c1__codesee__lens_palette_selection_fix.md | TBD | Fix lens palette selection wiring and add diagnostics |
+| V5.5/V5.5c/fix/2026-01-19__V5.5c1__codesee__lens_palette_selection_fix.md | TBD | Fix lens palette selection wiring and add diagnostics |
+| V5.5/V5.5c/chore/2026-01-20__V5.5c9__codesee__cleanup_palette_debug_and_keep_safety_guards.md | TBD | Reduce CodeSee debug spam while keeping safety guards |
 | V5.5/V5.5c/chore/2026-01-20__V5.5c9__codesee__cleanup_palette_debug_and_keep_safety_guards.md | TBD | Reduce CodeSee debug spam while keeping safety guards |
 | V5.5/V5.5c/feat/2026-01-20__V5.5c10__codesee__floating_resizable_lens_palette_dockwidget.md | TBD | Make Lens Palette floatable/resizable via QDockWidget with persisted dock state |
-| V5.5/V5.5c/fix/2026-01-21__V5.5c10.1__codesee__dockwidget_drag_float_and_multi_dock_areas.md | TBD | Restore drag-to-float and dock-anywhere behavior for Lens Palette |
+| V5.5/V5.5c/feat/2026-01-20__V5.5c10__codesee__floating_resizable_lens_palette_dockwidget.md | TBD | Make Lens Palette floatable/resizable via QDockWidget with persisted dock state |
+| V5.5/V5.5c/fix/2026-01-20__V5.5c3__codesee__lens_palette_pinned_layout_and_more.md | TBD | Fix pinned palette layout so tiles render; wire More/Less expansion |
+| V5.5/V5.5c/fix/2026-01-20__V5.5c3__codesee__lens_palette_pinned_layout_and_more.md | TBD | Fix pinned palette layout so tiles render; wire More/Less expansion |
+| V5.5/V5.5c/fix/2026-01-20__V5.5c4__codesee__lens_palette_tiles_render_and_search.md | TBD | Ensure lens palette tiles render and search shows results or empty state |
+| V5.5/V5.5c/fix/2026-01-20__V5.5c4__codesee__lens_palette_tiles_render_and_search.md | TBD | Ensure lens palette tiles render and search shows results or empty state |
+| V5.5/V5.5c/fix/2026-01-20__V5.5c5__codesee__lens_palette_build_from_combo_and_status_line.md | TBD | Lens palette builds from combo inventory; status line + search filtering; never-blank grid |
+| V5.5/V5.5c/fix/2026-01-20__V5.5c5__codesee__lens_palette_build_from_combo_and_status_line.md | TBD | Lens palette builds from combo inventory; status line + search filtering; never-blank grid |
+| V5.5/V5.5c/patch/2026-01-20__V5.5c6__codesee__lens_palette_rebuild_from_scratch.md | TBD | Rebuild lens palette from scratch with combo-driven tiles and always-visible status |
+| V5.5/V5.5c/patch/2026-01-20__V5.5c6__codesee__lens_palette_rebuild_from_scratch.md | TBD | Rebuild lens palette from scratch with combo-driven tiles and always-visible status |
+| V5.5/V5.5c/patch/2026-01-20__V5.5c7__codesee__icon_pack_style_recursion_and_palette_growth.md | TBD | Fix icon style normalization to stop Path recursion; prevent palette refresh loop/growth |
+| V5.5/V5.5c/patch/2026-01-20__V5.5c7__codesee__icon_pack_style_recursion_and_palette_growth.md | TBD | Fix icon style normalization to stop Path recursion; prevent palette refresh loop/growth |
+| V5.5/V5.5c/patch/2026-01-20__V5.5c8__codesee__stability_recursion_and_palette_resize.md | TBD | CodeSee stability hotfix: safe mode + hook reentrancy guard + palette resize safeguards |
+| V5.5/V5.5c/patch/2026-01-20__V5.5c8__codesee__stability_recursion_and_palette_resize.md | TBD | CodeSee stability hotfix: safe mode + hook reentrancy guard + palette resize safeguards |
 | V5.5/V5.5c/feat/2026-01-21__V5.5c11__codesee__more_menu_codesee_diagnostics.md | TBD | Add CodeSee-scoped diagnostics dialog from lens palette More menu |
+| V5.5/V5.5c/feat/2026-01-21__V5.5c11__codesee__more_menu_codesee_diagnostics.md | TBD | Add CodeSee-scoped diagnostics dialog from lens palette More menu |
+| V5.5/V5.5c/fix/2026-01-21__V5.5c10.1__codesee__dockwidget_drag_float_and_multi_dock_areas.md | TBD | Restore drag-to-float and dock-anywhere behavior for Lens Palette |
+| V5.5/V5.5c/fix/2026-01-21__V5.5c10.1__codesee__dockwidget_drag_float_and_multi_dock_areas.md | TBD | Restore drag-to-float and dock-anywhere behavior for Lens Palette |
 | V5.5/V5.5c/fix/2026-01-21__V5.5c11.1__codesee__dockwidget_height_resize_wm_destroy.md | TBD | Fix docked height resize stability and avoid WM_DESTROY spam during palette resizing |
+| V5.5/V5.5c/fix/2026-01-21__V5.5c11.1__codesee__dockwidget_height_resize_wm_destroy.md | TBD | Fix docked height resize stability and avoid WM_DESTROY spam during palette resizing |
+| V5.5/V5.5c/docs/2026-01-26__V5.5c12__docs__docs_and_milestones_organization.md | TBD | Docs taxonomy + milestones organization plan |
 | V5.5/V5.5c/docs/2026-01-26__V5.5c12__docs__docs_and_milestones_organization.md | TBD | Docs taxonomy + milestones organization plan |
 | V5.5/V5.5c/chore/2026-02-03__V5.5c13__codesee__screen_py_declutter_split.md | TBD | Split CodeSee screen.py into focused modules (lens palette + dialogs) without behavior changes |
 | V5.5/V5.5c/chore/2026-02-04__V5.5c13__codesee__nav_annotations_v2.md | TBD | Add NAV annotations to CodeSee modules (screen, palette, dialogs) |
 | V5.5/V5.5c/chore/2026-02-06__V5.5c13.1__codesee__agent_dictionary_and_declutter.md | TBD | Add agent dictionary docs and declutter plan for codesee subpackages |
 | V5.5/V5.5c/chore/2026-02-06__V5.5c13.2__app_ui__agent_dictionary_and_nav_v1.md | TBD | Add app_ui agent dictionary pages and NAV anchors for high-traffic app_ui files |
 | V5.5/V5.5d/docs/2026-02-10_V5.5d1_human_dictionary_and_dictionary_folders.md | TBD | Add human dictionary + organize dictionary folders and links |
-| V5.5/V5.5c/chore/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |
-| V5.5/V5.5c/chore/2026-01-20__V5.5c9__codesee__cleanup_palette_debug_and_keep_safety_guards.md | TBD | Reduce CodeSee debug spam while keeping safety guards |
-| V5.5/V5.5c/docs/2026-01-19__V5.5c__lens_palette_box_design_reference.md | TBD | Lens palette box design reference |
-| V5.5/V5.5c/docs/2026-01-26__V5.5c12__docs__docs_and_milestones_organization.md | TBD | Docs taxonomy + milestones organization plan |
-| V5.5/V5.5c/feat/2026-01-19__V5.5c1__codesee__lens_palette_launcher.md | TBD | Floating lens palette launcher with pin + persistence |
-| V5.5/V5.5c/feat/2026-01-19__V5.5c2__codesee__lens_palette_box_ui.md | TBD | Box-style lens palette UI with search + tile grid using reference design |
-| V5.5/V5.5c/feat/2026-01-20__V5.5c10__codesee__floating_resizable_lens_palette_dockwidget.md | TBD | Make Lens Palette floatable/resizable via QDockWidget with persisted dock state |
-| V5.5/V5.5c/feat/2026-01-21__V5.5c11__codesee__more_menu_codesee_diagnostics.md | TBD | Add CodeSee-scoped diagnostics dialog from lens palette More menu |
-| V5.5/V5.5c/fix/2026-01-19__V5.5c1__codesee__lens_palette_selection_fix.md | TBD | Fix lens palette selection wiring and add diagnostics |
-| V5.5/V5.5c/fix/2026-01-20__V5.5c3__codesee__lens_palette_pinned_layout_and_more.md | TBD | Fix pinned palette layout so tiles render; wire More/Less expansion |
-| V5.5/V5.5c/fix/2026-01-20__V5.5c4__codesee__lens_palette_tiles_render_and_search.md | TBD | Ensure lens palette tiles render and search shows results or empty state |
-| V5.5/V5.5c/fix/2026-01-20__V5.5c5__codesee__lens_palette_build_from_combo_and_status_line.md | TBD | Lens palette builds from combo inventory; status line + search filtering; never-blank grid |
-| V5.5/V5.5c/fix/2026-01-21__V5.5c10.1__codesee__dockwidget_drag_float_and_multi_dock_areas.md | TBD | Restore drag-to-float and dock-anywhere behavior for Lens Palette |
-| V5.5/V5.5c/fix/2026-01-21__V5.5c11.1__codesee__dockwidget_height_resize_wm_destroy.md | TBD | Fix docked height resize stability and avoid WM_DESTROY spam during palette resizing |
-| V5.5/V5.5c/patch/2026-01-20__V5.5c6__codesee__lens_palette_rebuild_from_scratch.md | TBD | Rebuild lens palette from scratch with combo-driven tiles and always-visible status |
-| V5.5/V5.5c/patch/2026-01-20__V5.5c7__codesee__icon_pack_style_recursion_and_palette_growth.md | TBD | Fix icon style normalization to stop Path recursion; prevent palette refresh loop/growth |
-| V5.5/V5.5c/patch/2026-01-20__V5.5c8__codesee__stability_recursion_and_palette_resize.md | TBD | CodeSee stability hotfix: safe mode + hook reentrancy guard + palette resize safeguards |
+| V5.5b1.2 (uncommitted in github because i forgot and went to 5.5b.3 directly) | TBD | Uncommitted work: dropdown totals shown per type (active vs session) |
