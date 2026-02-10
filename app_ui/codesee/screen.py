@@ -38,7 +38,7 @@ from . import (
     view_config,
 )
 from .badges import Badge, badge_from_key, sort_by_priority
-from .canvas.items import clear_icon_cache
+from .canvas.items import NodeItem, clear_icon_cache
 from .canvas.scene import GraphScene
 from .canvas.view import GraphView
 from .collectors.atlas_builder import build_atlas_graph
@@ -49,6 +49,7 @@ from .diff import DiffResult, NodeChange, diff_snapshots
 from .expectations import EVACheck, check_from_dict
 from .graph_model import ArchitectureGraph, Node
 from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, LensSpec, get_lens, get_lenses
+from .item_ref import ItemRef, itemref_display_name, itemref_from_node
 from .runtime.events import (
     CodeSeeEvent,
     EVENT_APP_ACTIVITY,
@@ -67,7 +68,7 @@ from .runtime.events import (
 # --- [NAV-05] Stable re-exports for tests (lens palette + helpers)
 from .runtime.hub import CodeSeeRuntimeHub
 from .storage import layout_store, snapshot_index, snapshot_io
-from .dialogs.inspector import CodeSeeInspectorDialog, _span_is_stuck
+from .dialogs.inspector import _span_is_stuck
 from .dialogs.pulse_settings import open_pulse_settings
 from .dialogs.removed import CodeSeeRemovedDialog
 from .ui.lens_palette import (
@@ -76,6 +77,7 @@ from .ui.lens_palette import (
     _lens_palette_lens_ids,
     lens_palette_dock_orientation,
 )
+from .ui.inspector_panel import CodeSeeInspectorPanel
 from .util import log_buffer
 from app_ui import ui_scale
 from app_ui import versioning
@@ -140,6 +142,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diagnostics_dialog: Optional[diagnostics_dialog.CodeSeeDiagnosticsDialog] = None
         self._lens_palette_visible = bool(palette_state.get("palette_visible", False))
         self._lens_palette_event_filter_installed = False
+        self.selected_item: Optional[ItemRef] = None
+        self.inspected_item: Optional[ItemRef] = None
+        self.inspector_locked = False
+        self.inspected_history: list[ItemRef] = []
+        self.inspected_history_index = -1
+        self._inspector_panel: Optional[CodeSeeInspectorPanel] = None
+        self._inspector_dock: Optional[QtWidgets.QDockWidget] = None
         if self._runtime_hub:
             self._runtime_hub.set_workspace_id(self._workspace_id())
 
@@ -383,6 +392,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             node_theme=self._node_theme,
         )
         self.scene.set_reduced_motion(self._reduced_motion)
+        self.scene.selectionChanged.connect(self._on_scene_selection_changed)
         self.view = GraphView(self.scene)
         self.view.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -405,6 +415,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._apply_density(ui_scale.get_config())
         self._refresh_snapshot_history()
         self._sync_view_controls()
+        self._ensure_inspector_panel()
         self._update_action_state()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
         if self._runtime_hub and not self._runtime_connected:
@@ -619,6 +630,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_span_tints(filtered)
         self._update_debug_status()
         self._ensure_status_timer()
+        self._refresh_inspector_panel()
 
     def _refresh_breadcrumb(self) -> None:
         while self.breadcrumb_layout.count():
@@ -2248,45 +2260,149 @@ class CodeSeeScreen(QtWidgets.QWidget):
         else:
             self.status_label.setText(f"Harness pack {'enabled' if state else 'disabled'} (switch to Atlas).")
 
+    def _ensure_inspector_panel(self) -> None:
+        if self._inspector_panel is not None and self._inspector_dock is not None:
+            return
+        panel = CodeSeeInspectorPanel(
+            on_back=self._on_inspector_back,
+            on_forward=self._on_inspector_forward,
+            on_lock_toggled=self._on_inspector_lock_toggled,
+            parent=self,
+        )
+        panel.set_navigation_state(can_back=False, can_forward=False)
+        panel.set_empty("Select a node to inspect.")
+        dock = QtWidgets.QDockWidget("Inspector", self._dock_host)
+        dock.setObjectName("codeseeInspectorDock")
+        dock.setFeatures(
+            QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        dock.setAllowedAreas(
+            QtCore.Qt.DockWidgetArea.LeftDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.RightDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.BottomDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.TopDockWidgetArea
+        )
+        dock.setWidget(panel)
+        self._dock_host.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        dock.setMinimumWidth(int(ui_scale.scale_px(320)))
+        self._inspector_panel = panel
+        self._inspector_dock = dock
+
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
+        item_ref = itemref_from_node(node)
+        self.selected_item = item_ref
+        if not self.inspector_locked:
+            self._set_inspected_item(item_ref, push_history=True)
+        else:
+            self.status_label.setText("Inspector pinned; selection updated only.")
+            self._refresh_inspector_panel()
+        if badge:
+            self.status_label.setText(f"Inspected {node.title} via badge: {badge.title}")
+        if self._inspector_dock:
+            self._inspector_dock.show()
+            self._inspector_dock.raise_()
+
+    def _on_scene_selection_changed(self) -> None:
+        selected_items = self.scene.selectedItems()
+        node_item = next((item for item in selected_items if isinstance(item, NodeItem)), None)
+        if not node_item:
+            return
+        item_ref = itemref_from_node(node_item.node)
+        self.selected_item = item_ref
+        if not self.inspector_locked:
+            self._set_inspected_item(item_ref, push_history=True)
+        else:
+            self._refresh_inspector_panel()
+
+    def _set_inspected_item(self, item_ref: ItemRef, *, push_history: bool) -> None:
+        self.inspected_item = item_ref
+        if push_history:
+            self._push_inspected_history(item_ref)
+        self._refresh_inspector_panel()
+
+    def _push_inspected_history(self, item_ref: ItemRef) -> None:
+        if self.inspected_history_index >= 0:
+            current = self.inspected_history[self.inspected_history_index]
+            if current == item_ref:
+                return
+        if self.inspected_history_index < len(self.inspected_history) - 1:
+            self.inspected_history = self.inspected_history[: self.inspected_history_index + 1]
+        self.inspected_history.append(item_ref)
+        self.inspected_history_index = len(self.inspected_history) - 1
+
+    def _on_inspector_back(self) -> None:
+        if self.inspected_history_index <= 0:
+            return
+        self.inspected_history_index -= 1
+        self.inspected_item = self.inspected_history[self.inspected_history_index]
+        self._refresh_inspector_panel()
+
+    def _on_inspector_forward(self) -> None:
+        if self.inspected_history_index >= len(self.inspected_history) - 1:
+            return
+        self.inspected_history_index += 1
+        self.inspected_item = self.inspected_history[self.inspected_history_index]
+        self._refresh_inspector_panel()
+
+    def _on_inspector_lock_toggled(self, locked: bool) -> None:
+        self.inspector_locked = bool(locked)
+        self._refresh_inspector_panel()
+
+    def _resolve_node_for_item(self, item_ref: ItemRef) -> Optional[Node]:
+        if item_ref.kind != "node":
+            return None
         graph = self._current_graph
         if self._diff_mode and self._diff_compare_graph:
             graph = self._diff_compare_graph
         if not graph:
+            return None
+        return graph.get_node(item_ref.id)
+
+    def _inspector_properties(self, node: Node) -> Dict[str, str]:
+        props: Dict[str, str] = {
+            "node_type": str(node.node_type),
+            "subgraph_id": str(node.subgraph_id or ""),
+            "severity": str(node.effective_severity()),
+            "badges": str(len(node.badges)),
+            "checks": str(len(node.checks)),
+            "spans": str(len(node.spans)),
+        }
+        metadata = node.metadata if isinstance(node.metadata, dict) else {}
+        for key in sorted(metadata.keys()):
+            value = metadata.get(key)
+            if isinstance(value, (dict, list, tuple, set)):
+                props[f"meta.{key}"] = repr(value)
+            else:
+                props[f"meta.{key}"] = "" if value is None else str(value)
+        return props
+
+    def _refresh_inspector_panel(self) -> None:
+        self._ensure_inspector_panel()
+        if not self._inspector_panel:
             return
-        diff_state = None
-        diff_change = None
-        if self._diff_mode and self._diff_result:
-            if node.node_id in self._diff_result.nodes_added:
-                diff_state = "added"
-            elif node.node_id in self._diff_result.nodes_changed:
-                diff_state = "changed"
-                diff_change = self._diff_result.node_change_details.get(node.node_id)
-        events = []
-        if self._runtime_hub:
-            events = self._runtime_hub.query(node.node_id, limit=20)
-        elif node.node_id in self._events_by_node:
-            events = list(self._events_by_node[node.node_id])
-        crash_record = None
-        crash_build = None
-        if self._crash_view and self._crash_record and node.node_id == self._crash_node_id:
-            crash_record = self._crash_record
-            if isinstance(crash_record, dict):
-                crash_build = crash_record.get("build")
-        dialog = CodeSeeInspectorDialog(
-            node,
-            graph,
-            badge,
-            diff_state,
-            diff_change,
-            events,
-            crash_record,
-            self._build_info,
-            crash_build,
-            self._view_config.span_stuck_seconds,
-            parent=self,
+        can_back = self.inspected_history_index > 0
+        can_forward = 0 <= self.inspected_history_index < len(self.inspected_history) - 1
+        self._inspector_panel.set_navigation_state(can_back=can_back, can_forward=can_forward)
+        self._inspector_panel.set_locked(self.inspector_locked)
+        item_ref = self.inspected_item
+        if item_ref is None:
+            self._inspector_panel.set_empty("Select a node to inspect.")
+            return
+        node = self._resolve_node_for_item(item_ref)
+        if node is None:
+            self._inspector_panel.set_stale(item_ref)
+            return
+        name = node.title or itemref_display_name(item_ref)
+        summary = "Overview details are available. Relations and Activity tabs are placeholders in V5.5d2."
+        self._inspector_panel.set_content(
+            item_ref=item_ref,
+            name=name,
+            kind=item_ref.kind,
+            summary=summary,
+            properties=self._inspector_properties(node),
         )
-        dialog.exec()
 
     def _build_atlas(self) -> None:
         ctx = CollectorContext(
