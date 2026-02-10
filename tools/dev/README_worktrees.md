@@ -25,6 +25,19 @@ This folder contains local-only helper scripts for starting and cleaning slice w
 - No remote branch deletion.
 - Default is local-only (no push).
 
+## Line endings guardrail (CRLF/LF)
+
+- Follow repo `.gitattributes` to avoid noisy diffs and GitHub churn.
+- Policy:
+  - `LF` for source/docs (`*.py`, `*.md`, `*.json`, etc.)
+  - `CRLF` for PowerShell scripts (`*.ps1`)
+- Recommended local Git config (Windows):
+
+```powershell
+git config --global core.autocrlf false
+git config --global core.safecrlf warn
+```
+
 ## Typical usage
 
 Start a slice locally:
