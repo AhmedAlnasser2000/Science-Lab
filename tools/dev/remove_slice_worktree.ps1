@@ -10,6 +10,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$global:PSNativeCommandUseErrorActionPreference = $false
 $repoHint = Resolve-Path (Join-Path $PSScriptRoot '..\..') -ErrorAction SilentlyContinue
 if ($repoHint) { Set-Location $repoHint }
 
