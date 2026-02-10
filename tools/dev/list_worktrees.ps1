@@ -23,6 +23,20 @@ function Invoke-Git {
     [PSCustomObject]@{ ExitCode = $code; Output = ($output -join "`n").Trim() }
 }
 
+function Test-WorktreeDirty {
+    param([string]$WorktreePath)
+    $st = Invoke-Git -GitArgs @('status', '--porcelain') -WorkingDirectory $WorktreePath
+    if ([string]::IsNullOrWhiteSpace($st.Output)) {
+        return $false
+    }
+    $lines = $st.Output -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    $filtered = $lines | Where-Object {
+        ($_ -ne '?? .physicslab_worktree.json') -and
+        ($_ -ne '?? .physicslab_worktree.json`r')
+    }
+    return $filtered.Count -gt 0
+}
+
 $res = Invoke-Git -GitArgs @('worktree', 'list', '--porcelain')
 if ($res.ExitCode -ne 0) {
     Write-Error "Failed to list worktrees.`n$($res.Output)"
@@ -60,8 +74,7 @@ foreach ($r in $records) {
     if (-not (Test-Path $r.path)) {
         $dirty = 'missing'
     } else {
-        $st = Invoke-Git -GitArgs @('status', '--porcelain') -WorkingDirectory $r.path
-        $dirty = if ([string]::IsNullOrWhiteSpace($st.Output)) { 'clean' } else { 'dirty' }
+        $dirty = if (Test-WorktreeDirty -WorktreePath $r.path) { 'dirty' } else { 'clean' }
     }
     $rows += [PSCustomObject]@{
         Branch = $r.branch

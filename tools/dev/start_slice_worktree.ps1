@@ -164,6 +164,15 @@ if ($PSCmdlet.ShouldProcess($targetPath, "Create worktree branch '$Branch' from 
     try {
         $metaPath = Join-Path $targetPath '.physicslab_worktree.json'
         $meta | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $metaPath
+
+        # Keep worktree metadata local without polluting git status.
+        $excludePath = Join-Path $targetPath '.git\info\exclude'
+        if (Test-Path $excludePath) {
+            $excludeText = Get-Content -Raw $excludePath
+            if ($excludeText -notmatch '(^|\r?\n)\.physicslab_worktree\.json(\r?\n|$)') {
+                Add-Content -Encoding utf8 $excludePath "`n.physicslab_worktree.json`n"
+            }
+        }
     }
     catch {
         Fail-Exit -Code 4 -Message "Worktree created but metadata write failed: $($_.Exception.Message)"

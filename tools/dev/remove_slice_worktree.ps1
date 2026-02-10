@@ -102,6 +102,21 @@ function Resolve-Target {
     [PSCustomObject]@{ path = [System.IO.Path]::GetFullPath($m2.path); branch = $m2.branch; registered = $true }
 }
 
+function Test-WorktreeDirty {
+    param([string]$WorktreePath)
+    $status = Invoke-Git -GitArgs @('status', '--porcelain') -WorkingDirectory $WorktreePath
+    if ([string]::IsNullOrWhiteSpace($status.Output)) {
+        return $false
+    }
+
+    $lines = $status.Output -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    $filtered = $lines | Where-Object {
+        ($_ -ne '?? .physicslab_worktree.json') -and
+        ($_ -ne '?? .physicslab_worktree.json`r')
+    }
+    return $filtered.Count -gt 0
+}
+
 $repoRoot = Get-RepoRoot
 Set-Location $repoRoot
 
@@ -124,15 +139,18 @@ if ($Branch -and $Path -and $meta -and $meta.branch -and ($meta.branch -ne $Bran
     Fail-Exit -Code 2 -Message "Provided -Branch ('$Branch') does not match metadata branch ('$($meta.branch)')."
 }
 
-$status = Invoke-Git -GitArgs @('status', '--porcelain') -WorkingDirectory $target.path
-if (-not [string]::IsNullOrWhiteSpace($status.Output)) {
+if (Test-WorktreeDirty -WorktreePath $target.path) {
     Fail-Exit -Code 2 -Message "Worktree has uncommitted changes: $($target.path). Clean it before removal."
 }
 
-if ($PSCmdlet.ShouldProcess($target.path, 'Remove git worktree')) {
-    Invoke-Git -GitArgs @('worktree', 'remove', $target.path) | Out-Null
-    Write-Host "[ok] Removed worktree: $($target.path)"
+# Remove managed metadata so git worktree remove does not reject untracked files.
+$metaCleanupPath = Join-Path $target.path '.physicslab_worktree.json'
+if (Test-Path $metaCleanupPath) {
+    Remove-Item $metaCleanupPath -Force -ErrorAction SilentlyContinue
 }
+
+Invoke-Git -GitArgs @('worktree', 'remove', $target.path) | Out-Null
+Write-Host "[ok] Removed worktree: $($target.path)"
 
 if ($DeleteBranch) {
     $resolvedBranch = if ($Branch) { $Branch } elseif ($target.branch) { $target.branch } elseif ($meta -and $meta.branch) { [string]$meta.branch } else { $null }
