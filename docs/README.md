@@ -21,6 +21,7 @@ This folder holds checkpoint summaries, plans, prompts, and overview notes for P
 - `docs/prompts/`: diagram and tooling prompts.
 - `docs/snapshots/`: captured repo trees or other snapshots.
 - `docs/milestones/README.md`: milestone artifacts (migrated from repo-root Milestones).
+- `docs/human_dictionary/INDEX.md`: plain-English dictionary for non-engineering readers.
 
 ## Adding a new checkpoint
 1) Update `docs/app_summary_latest.md`.

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PhysicsLab Human Dictionary</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111c34;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --header: #f59e0b;
+      --border: #26334d;
+    }
+    body {
+      margin: 0;
+      font-family: Segoe UI, Arial, sans-serif;
+      background: radial-gradient(circle at top, #1a2747 0%, var(--bg) 45%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(17, 28, 52, 0.96), rgba(12, 23, 45, 0.96));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      color: var(--accent);
+      font-size: 32px;
+    }
+    h2 {
+      margin: 16px 0 10px;
+      color: var(--header);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    h3 {
+      color: var(--accent);
+      margin-top: 18px;
+    }
+    p, li {
+      color: var(--text);
+    }
+    .muted {
+      color: var(--muted);
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    ul {
+      margin-top: 6px;
+    }
+    code {
+      background: #0b1224;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>PhysicsLab Human Dictionary</h1>
+      <div class="muted">V5.5d1 note: human dictionary source + visual export.</div>
+    </div>
+    <div class="panel">
+      <h2>Contents</h2>
+      <ul>
+        <li><a href="#sec-1">Glossary</a></li><li><a href="#sec-2">Workspaces, Runs, Templates</a></li><li><a href="#sec-3">Packs, Repo, Store</a></li><li><a href="#sec-4">CodeSee: Peek, Inspector, Lens</a></li><li><a href="#sec-5">Runtime Bus: Trace, Trail, Messages</a></li>
+      </ul>
+    </div>
+    <section id="sec-1"><h2>Glossary</h2><h1>PhysicsLab Glossary</h1>
+<h2>CodeSee Concepts</h2>
+<h3>Atlas</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Graph view of components and relationships.</li>
+<li><strong>Real-life analogy:</strong> City map showing places and roads between them.</li>
+<li><strong>In PhysicsLab:</strong> Core visual map used by CodeSee.</li>
+<li><strong>Example:</strong> Open CodeSee to inspect how packs and systems connect.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not only a static picture; it reflects runtime-linked context.</li>
+</ul>
+<h3>Badge</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Compact status indicator.</li>
+<li><strong>Real-life analogy:</strong> Tiny notification dot on a mobile app icon.</li>
+<li><strong>In PhysicsLab:</strong> Small symbol/count shown on a node in CodeSee.</li>
+<li><strong>Example:</strong> A node shows a badge when pulses, spans, or checks are active.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not the full detail panel; use inspector/diagnostics for full context.</li>
+</ul>
+<h3>Diff Mode</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Compare two states.</li>
+<li><strong>Real-life analogy:</strong> "Track changes" view between two document versions.</li>
+<li><strong>In PhysicsLab:</strong> Snapshot comparison mode for node/edge changes.</li>
+<li><strong>Example:</strong> Compare current graph with a saved snapshot to see added/removed nodes.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not a live replay timeline.</li>
+</ul>
+<h3>Lens</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Predefined filtering/view mode.</li>
+<li><strong>Real-life analogy:</strong> Camera mode presets (portrait, night, panorama).</li>
+<li><strong>In PhysicsLab:</strong> Atlas, Platform, Content, Bus, Extensibility lenses.</li>
+<li><strong>Example:</strong> Switch to Bus lens to focus on message flow entities.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not a single-node detail popup.</li>
+</ul>
+<h3>Pulse</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Animated activity signal.</li>
+<li><strong>Real-life analogy:</strong> A heartbeat monitor spike indicating fresh activity.</li>
+<li><strong>In PhysicsLab:</strong> Edge-following event pulse in the CodeSee graph.</li>
+<li><strong>Example:</strong> A pulse animates across an edge after an event is emitted.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not persistent state; pulses are transient activity hints.</li>
+</ul>
+<h3>Snapshot</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Saved point-in-time view.</li>
+<li><strong>Real-life analogy:</strong> A photo taken at a specific moment.</li>
+<li><strong>In PhysicsLab:</strong> Stored graph state used for review and diff.</li>
+<li><strong>Example:</strong> Save snapshot before a change, then compare in Diff Mode.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not an ongoing recording stream.</li>
+</ul>
+<h3>Trail Mode</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Lightweight path hint mode.</li>
+<li><strong>Real-life analogy:</strong> Faint footprints showing where someone passed.</li>
+<li><strong>In PhysicsLab:</strong> Shows touched areas without full sequence detail.</li>
+<li><strong>Example:</strong> After quick interaction, trail hints remain without full trace details.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not full causality reconstruction.</li>
+</ul>
+<h2>Runtime and Messaging</h2>
+<h3>Bus</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Message transport channel.</li>
+<li><strong>Real-life analogy:</strong> A postal network that routes letters to the right addresses.</li>
+<li><strong>In PhysicsLab:</strong> <code>runtime_bus</code> routes events and commands.</li>
+<li><strong>Example:</strong> UI sends a request and receives a status reply through bus topics.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not a direct function call stack.</li>
+</ul>
+<h3>Span</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Traced operation interval.</li>
+<li><strong>Real-life analogy:</strong> Stopwatch timing for one specific task.</li>
+<li><strong>In PhysicsLab:</strong> Used for runtime activity overlays and diagnostics.</li>
+<li><strong>Example:</strong> A span starts when an action begins and ends when processing completes.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not the same as a single log line.</li>
+</ul>
+<h3>Topic</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Named stream of messages.</li>
+<li><strong>Real-life analogy:</strong> A radio frequency that listeners tune into.</li>
+<li><strong>In PhysicsLab:</strong> Event channels consumed by UI and systems.</li>
+<li><strong>Example:</strong> Inventory updates are published on a specific topic watched by screens.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not global shared state by itself.</li>
+</ul>
+<h2>Storage and Layout</h2>
+<h3>Repo vs Store</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Source vs installed/runtime copy.</li>
+<li><strong>Real-life analogy:</strong> Warehouse master inventory vs shelf-ready items in a store.</li>
+<li><strong>In PhysicsLab:</strong> <code>*_repo</code> is source content, <code>*_store</code> is active copied state.</li>
+<li><strong>Example:</strong> Packs are authored in repo then materialized into store for runtime use.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not two separate product types; it is lifecycle stage.</li>
+</ul>
+<h3>Layout State</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Persisted panel positions/sizes.</li>
+<li><strong>Real-life analogy:</strong> Saving your desk setup so it reopens the same way tomorrow.</li>
+<li><strong>In PhysicsLab:</strong> Restores CodeSee dock/floating panel layout.</li>
+<li><strong>Example:</strong> Lens palette reopens docked where you left it.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not content data; only UI placement/settings.</li>
+</ul>
+<h3>Registry</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Indexed metadata for discoverability.</li>
+<li><strong>Real-life analogy:</strong> A library catalog that points to books and their categories.</li>
+<li><strong>In PhysicsLab:</strong> Tracks packs/plugins/components for quick lookup.</li>
+<li><strong>Example:</strong> Discovery screens read registry entries to populate install/manage lists.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not the full payload storage for every item.</li>
+</ul>
+<h2>Workspaces and Runs</h2>
+<h3>Workspace</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Isolated project environment.</li>
+<li><strong>Real-life analogy:</strong> A dedicated project room with its own materials and notes.</li>
+<li><strong>In PhysicsLab:</strong> Holds selected packs, content, and run history.</li>
+<li><strong>Example:</strong> Switching workspace changes active content and configuration scope.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not only a UI profile; it includes runtime context.</li>
+</ul>
+<h3>Run</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> A concrete execution/iteration.</li>
+<li><strong>Real-life analogy:</strong> One lab experiment attempt with recorded observations.</li>
+<li><strong>In PhysicsLab:</strong> Timestamped activity session with logs/status.</li>
+<li><strong>Example:</strong> A run records what happened during one simulation/test cycle.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not equivalent to a workspace.</li>
+</ul>
+<h3>Template</h3>
+<ul>
+<li><strong>Meaning (plain English):</strong> Starting blueprint.</li>
+<li><strong>Real-life analogy:</strong> A pre-filled form you copy before starting a new case.</li>
+<li><strong>In PhysicsLab:</strong> Base setup used to create new workspaces quickly.</li>
+<li><strong>Example:</strong> Create a workspace from a template to pre-load packs and defaults.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not immutable; workspaces created from it can diverge.</li>
+</ul></section><section id="sec-2"><h2>Workspaces, Runs, Templates</h2><h1>Workspaces, Runs, and Templates</h1>
+<h2>Workspace lifecycle</h2>
+<ol>
+<li>Create workspace from a template.</li>
+<li>Select packs/content for the workspace.</li>
+<li>Execute runs.</li>
+<li>Inspect outcomes in System Health and CodeSee.</li>
+</ol>
+<h2>Run semantics</h2>
+<ul>
+<li>A run is an execution slice with timestamps and status.</li>
+<li>Runs can generate bus events, spans, and diagnostics.</li>
+<li>Failed runs should be traceable through crash and diagnostics flows.</li>
+</ul>
+<h2>Template semantics</h2>
+<ul>
+<li>Templates provide a default pack/content baseline.</li>
+<li>Templates should minimize setup friction for repeated experiments.</li>
+<li>Templates are expected to be deterministic and reproducible.</li>
+</ul>
+<h2>Operator guidance</h2>
+<ul>
+<li>Prefer creating new workspaces for isolated experiments.</li>
+<li>Keep run notes short and tied to objective outcomes.</li>
+<li>Use snapshots/diff in CodeSee to compare behavioral changes over time.</li>
+</ul></section><section id="sec-3"><h2>Packs, Repo, Store</h2><h1>Packs, Repo, and Store</h1>
+<h2>Core distinction</h2>
+<ul>
+<li><code>*_repo</code>: source-of-truth assets under version control.</li>
+<li><code>*_store</code>: installed/active copies used by runtime systems.</li>
+</ul>
+<h2>Why both exist</h2>
+<ul>
+<li>Repos keep canonical authoring history.</li>
+<li>Stores provide runtime stability and isolation.</li>
+<li>Update/migration flows can refresh store state from repo state safely.</li>
+</ul>
+<h2>Practical implications</h2>
+<ul>
+<li>Editing repo files does not always immediately affect runtime behavior.</li>
+<li>Refresh/reload operations may be required to propagate changes.</li>
+<li>Troubleshooting should verify both source and active store state.</li>
+</ul>
+<h2>Common pitfalls</h2>
+<ul>
+<li>Assuming store content updates automatically after repo edits.</li>
+<li>Mixing manual store edits with managed update flows.</li>
+<li>Comparing outputs from different stores without noting version/template context.</li>
+</ul></section><section id="sec-4"><h2>CodeSee: Peek, Inspector, Lens</h2><h1>CodeSee: Peek, Inspector, and Lens</h1>
+<h2>Peek mode</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> Quick focus into one part of the graph.</li>
+<li><strong>Real-life analogy:</strong> Opening a folder to see only what is inside.</li>
+<li><strong>In PhysicsLab:</strong> Narrows the visible graph to a selected subgraph.</li>
+<li><strong>Example:</strong> Peek into a pack node to view internal dependencies only.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not a permanent graph rewrite.</li>
+</ul>
+<h2>Inspector</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> Detailed panel for one selected item.</li>
+<li><strong>Real-life analogy:</strong> Product details page after clicking a catalog item.</li>
+<li><strong>In PhysicsLab:</strong> Shows node/edge metadata, status, and related signals.</li>
+<li><strong>Example:</strong> Open inspector for a node to see active badges and links.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not the same as changing lens/filter.</li>
+</ul>
+<h2>Lens</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> A predefined way to view/filter information.</li>
+<li><strong>Real-life analogy:</strong> Camera mode presets (portrait, night, panorama).</li>
+<li><strong>In PhysicsLab:</strong> Atlas/Platform/Content/Bus/Extensibility viewpoints.</li>
+<li><strong>Example:</strong> Switch to Bus lens to focus on message flow entities.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not a single-node detail popup.</li>
+</ul></section><section id="sec-5"><h2>Runtime Bus: Trace, Trail, Messages</h2><h1>Runtime Bus: Trace, Trail, and Messages</h1>
+<h2>Event</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> Something that happened.</li>
+<li><strong>Real-life analogy:</strong> A timestamped log line in a delivery center.</li>
+<li><strong>In PhysicsLab:</strong> Runtime notification emitted on a bus topic.</li>
+<li><strong>Example:</strong> "inventory.refresh.completed" event after refresh finishes.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not always a command request.</li>
+</ul>
+<h2>Trail mode</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> Lightweight activity hints.</li>
+<li><strong>Real-life analogy:</strong> Footprints in sand showing that movement occurred.</li>
+<li><strong>In PhysicsLab:</strong> Shows touched zones without full timeline details.</li>
+<li><strong>Example:</strong> A node gets a trail badge after quick interaction.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not full causality reconstruction.</li>
+</ul>
+<h2>Trace mode</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> Detailed operation timeline.</li>
+<li><strong>Real-life analogy:</strong> Parcel tracking with each handoff step.</li>
+<li><strong>In PhysicsLab:</strong> Correlated sequence of spans/events with context.</li>
+<li><strong>Example:</strong> Follow a request from UI trigger to runtime completion.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not only error logs.</li>
+</ul>
+<h2>Request/Reply</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> Ask for data and wait for response.</li>
+<li><strong>Real-life analogy:</strong> Ticket desk query and official answer.</li>
+<li><strong>In PhysicsLab:</strong> Common pattern for inventory/status API calls.</li>
+<li><strong>Example:</strong> UI asks runtime for current pack registry summary.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not pub/sub broadcast mode.</li>
+</ul>
+<h2>Pub/Sub</h2>
+<ul>
+<li><strong>Meaning (plain English):</strong> Broadcast updates to any subscribers.</li>
+<li><strong>Real-life analogy:</strong> Radio station and listeners.</li>
+<li><strong>In PhysicsLab:</strong> Bus topics distribute events to multiple consumers.</li>
+<li><strong>Example:</strong> Status updates pushed to both UI and diagnostics collectors.</li>
+<li><strong>Common confusion (what it's NOT):</strong> Not one-to-one RPC.</li>
+</ul></section>
+  </div>
+</body>
+</html>
