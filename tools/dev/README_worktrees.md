@@ -7,6 +7,7 @@ This folder contains local-only helper scripts for starting and cleaning slice w
 - `start_slice_worktree.ps1`
   - Creates a new branch in a new worktree outside repo root.
   - Refuses to run on dirty working tree.
+  - Fetches remote refs, verifies local `main` is not ahead/diverged, and performs `git pull --ff-only origin main` in the worktree that owns `main`.
   - Refuses existing branch/path unless `-Force` is explicitly provided for branch checks.
   - Push is opt-in via `-Push`.
 
@@ -33,6 +34,15 @@ Start a slice locally:
 powershell ./tools/dev/start_slice_worktree.ps1 -Branch work/v5.5d2
 ```
 
+Explicit pre-sync flow (recommended if you were not on `main`):
+
+```powershell
+git fetch origin --prune
+git checkout main
+git pull --ff-only origin main
+powershell ./tools/dev/start_slice_worktree.ps1 -Branch work/v5.5d2
+```
+
 List worktrees:
 
 ```powershell
@@ -52,6 +62,7 @@ Start script fails if:
 - base ref cannot be resolved,
 - branch exists locally/remotely (unless `-Force` for existence checks),
 - destination path already exists,
+- local `main` is ahead/diverged from `origin/main`,
 - `main` cannot fast-forward cleanly.
 
 Remove script fails if:
