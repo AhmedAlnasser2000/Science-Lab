@@ -59,6 +59,7 @@ Definition of Done:
 | V5.5/V5.5c/chore/2026-02-04__V5.5c13__codesee__nav_annotations_v2.md | TBD | Add NAV annotations to CodeSee modules (screen, palette, dialogs) |
 | V5.5/V5.5c/chore/2026-02-06__V5.5c13.1__codesee__agent_dictionary_and_declutter.md | TBD | Add agent dictionary docs and declutter plan for codesee subpackages |
 | V5.5/V5.5c/chore/2026-02-06__V5.5c13.2__app_ui__agent_dictionary_and_nav_v1.md | TBD | Add app_ui agent dictionary pages and NAV anchors for high-traffic app_ui files |
+| V5.5/V5.5d/docs/2026-02-10_V5.5d1_human_dictionary_and_dictionary_folders.md | TBD | Add human dictionary + organize dictionary folders and links |
 | V5.5/V5.5c/chore/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |
 | V5.5/V5.5c/chore/2026-01-20__V5.5c9__codesee__cleanup_palette_debug_and_keep_safety_guards.md | TBD | Reduce CodeSee debug spam while keeping safety guards |
 | V5.5/V5.5c/docs/2026-01-19__V5.5c__lens_palette_box_design_reference.md | TBD | Lens palette box design reference |
