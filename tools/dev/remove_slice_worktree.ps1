@@ -27,10 +27,16 @@ function Invoke-Git {
         [switch]$AllowFailure,
         [string]$WorkingDirectory
     )
-    if ($WorkingDirectory) {
-        $output = & git -C $WorkingDirectory @GitArgs 2>&1
-    } else {
-        $output = & git @GitArgs 2>&1
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($WorkingDirectory) {
+            $output = & git -C $WorkingDirectory @GitArgs 2>&1
+        } else {
+            $output = & git @GitArgs 2>&1
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
     }
     $code = $LASTEXITCODE
 
