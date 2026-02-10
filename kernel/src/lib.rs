@@ -188,5 +188,5 @@ pub extern "C" fn pl_world_get_state(handle: u64, out_t: *mut f64, out_y: *mut f
         *out_vy = world.vy;
     }
     clear_error();
-    OK
+    OK 
 }
