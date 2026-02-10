@@ -10,6 +10,10 @@ Rules:
 - If user asks to start a slice (example: `V5.5d2`), use worktree workflow first.
 - Enforce `origin/main` sync before slice start (`fetch` + `pull --ff-only`); if local `main` is ahead/diverged, stop and repair first.
 - Before finalizing a slice, provide a suggested PR title and concise PR summary/body.
+- Before finalizing a slice, provide a suggested PR title and a concise PR summary/body in plain text.
+- Respect `.gitattributes` line endings to avoid CRLF/LF churn.
+  - Repo defaults: source/docs stay `LF`; PowerShell scripts (`*.ps1`) stay `CRLF`.
+  - On Windows, prefer `git config --global core.autocrlf false` and `git config --global core.safecrlf warn`.
 
 Quick start:
 - `powershell ./tools/dev/start_slice_worktree.ps1 -Branch work/v5.5d2`

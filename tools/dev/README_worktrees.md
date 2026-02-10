@@ -25,6 +25,22 @@ This folder contains local-only helper scripts for starting and cleaning slice w
 - No destructive cleanup commands (`reset --hard`, `clean -fd`).
 - No remote branch deletion.
 - Default is local-only (no push).
+- End-of-slice handoff includes:
+  - suggested PR title
+  - concise PR summary/body text
+
+## Line endings guardrail (CRLF/LF)
+
+- Follow repo `.gitattributes` to avoid noisy diffs and GitHub churn.
+- Policy:
+  - `LF` for source/docs (`*.py`, `*.md`, `*.json`, etc.)
+  - `CRLF` for PowerShell scripts (`*.ps1`)
+- Recommended local Git config (Windows):
+
+```powershell
+git config --global core.autocrlf false
+git config --global core.safecrlf warn
+```
 
 ## Typical usage
 
@@ -69,3 +85,10 @@ Remove script fails if:
 - it cannot resolve a target path,
 - worktree is dirty,
 - branch has unique commits vs base and `-ForceDeleteBranch` is not provided.
+
+## Final handoff checklist
+
+Before you end a slice:
+- share the local commit hash(es),
+- provide one suggested PR title,
+- provide a concise PR summary/body block for GitHub.

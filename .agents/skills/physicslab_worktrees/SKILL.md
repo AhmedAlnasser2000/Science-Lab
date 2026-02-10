@@ -16,6 +16,9 @@ Use this skill when the user asks to start a new slice/milestone branch or creat
    - Do all work inside the created worktree folder.
    - Push is disabled unless explicitly requested (`-Push`).
    - The start script enforces `fetch + ff-only pull` for local `main` vs `origin/main`; if main is ahead/diverged, repair main first.
+4. Before wrapping up a slice, always provide:
+   - one suggested PR title
+   - a concise PR summary/body ready to paste into GitHub.
 
 ## One-liners
 
