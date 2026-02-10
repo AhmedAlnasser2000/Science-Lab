@@ -67,10 +67,54 @@ function Ensure-CleanWorkingTree {
     }
 }
 
+function Ensure-CleanWorkingTreeAtPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $res = Invoke-Git -GitArgs @('status', '--porcelain') -WorkingDirectory $Path
+    if (-not [string]::IsNullOrWhiteSpace($res.Output)) {
+        Fail-Exit -Code 2 -Message "Working tree is dirty at '$Path'. Commit or stash changes first."
+    }
+}
+
 function Test-RefExists {
     param([string]$Ref)
     $res = Invoke-Git -GitArgs @('rev-parse', '--verify', $Ref) -AllowFailure
     return $res.ExitCode -eq 0
+}
+
+function Get-AheadBehindCount {
+    param([string]$LeftRef, [string]$RightRef)
+    $res = Invoke-Git -GitArgs @('rev-list', '--left-right', '--count', "$LeftRef...$RightRef") -AllowFailure
+    if ($res.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($res.Output)) {
+        Fail-Exit -Code 2 -Message "Unable to compare refs '$LeftRef' and '$RightRef'."
+    }
+    $parts = $res.Output -split '\s+'
+    if ($parts.Count -lt 2) {
+        Fail-Exit -Code 2 -Message "Unexpected rev-list output while comparing '$LeftRef' and '$RightRef': $($res.Output)"
+    }
+    return [PSCustomObject]@{
+        Ahead = [int]$parts[0]
+        Behind = [int]$parts[1]
+    }
+}
+
+function Get-WorktreePathForBranch {
+    param([string]$BranchName)
+    $res = Invoke-Git -GitArgs @('worktree', 'list', '--porcelain')
+    if ([string]::IsNullOrWhiteSpace($res.Output)) {
+        return $null
+    }
+    $lines = $res.Output -split "`r?`n"
+    $currentPath = $null
+    foreach ($line in $lines) {
+        if ($line -like 'worktree *') {
+            $currentPath = $line.Substring(9).Trim()
+            continue
+        }
+        if ($line -eq "branch refs/heads/$BranchName") {
+            return $currentPath
+        }
+    }
+    return $null
 }
 
 function Test-LocalBranchExists {
@@ -112,16 +156,36 @@ Invoke-Git -GitArgs @('fetch', $Remote, '--prune') | Out-Null
 if (-not (Test-RefExists -Ref 'refs/heads/main')) {
     Fail-Exit -Code 2 -Message 'Local branch "main" does not exist. Create it first before starting a slice.'
 }
+if (-not (Test-RefExists -Ref "refs/remotes/$Remote/main")) {
+    Fail-Exit -Code 2 -Message "Remote tracking ref '$Remote/main' not found after fetch."
+}
 
-Write-Host '[do] Switching to local main...'
-Invoke-Git -GitArgs @('checkout', 'main') | Out-Null
-Ensure-CleanWorkingTree
+$mainDivergence = Get-AheadBehindCount -LeftRef 'main' -RightRef "$Remote/main"
+if ($mainDivergence.Ahead -gt 0) {
+    Fail-Exit -Code 2 -Message (("Local main is ahead of {0}/main by {1} commit(s). " +
+        "Do not start a new slice until main is repaired/synced. " +
+        "Tip: inspect with 'git log --oneline {0}/main..main'.") -f $Remote, $mainDivergence.Ahead)
+}
 
-Write-Host '[do] Fast-forward pulling main...'
-$pull = Invoke-Git -GitArgs @('pull', '--ff-only', $Remote, 'main') -AllowFailure
+Write-Host '[do] Resolving the worktree that owns local main...'
+$mainWorktreePath = Get-WorktreePathForBranch -BranchName 'main'
+if ([string]::IsNullOrWhiteSpace($mainWorktreePath)) {
+    Fail-Exit -Code 2 -Message "Could not locate a worktree path for local branch 'main'."
+}
+Write-Host "[do] Main branch worktree: $mainWorktreePath"
+Ensure-CleanWorkingTreeAtPath -Path $mainWorktreePath
+
+Write-Host '[do] Fast-forward pulling main in its owning worktree...'
+$pull = Invoke-Git -GitArgs @('pull', '--ff-only', $Remote, 'main') -WorkingDirectory $mainWorktreePath -AllowFailure
 if ($pull.ExitCode -ne 0) {
     Fail-Exit -Code 2 -Message "main cannot fast-forward cleanly. Resolve main first.`n$($pull.Output)"
 }
+$mainPostPull = Get-AheadBehindCount -LeftRef 'main' -RightRef "$Remote/main"
+if ($mainPostPull.Ahead -ne 0 -or $mainPostPull.Behind -ne 0) {
+    Fail-Exit -Code 2 -Message (("main is not aligned to {0}/main after FF pull (ahead={1}, behind={2}). " +
+        "Resolve this before creating a worktree.") -f $Remote, $mainPostPull.Ahead, $mainPostPull.Behind)
+}
+Write-Host "[ok] local main synced to $Remote/main"
 
 if (-not (Test-RefExists -Ref $Base)) {
     Fail-Exit -Code 2 -Message "Base ref '$Base' not found."
