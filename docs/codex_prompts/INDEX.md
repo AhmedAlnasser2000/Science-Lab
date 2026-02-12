@@ -78,6 +78,7 @@ Definition of Done:
 | V5.5/V5.5d/docs/2026-02-10_V5.5d1_human_dictionary_and_dictionary_folders.md | TBD | Add human dictionary + organize dictionary folders and links |
 | V5.5/V5.5d/feat/2026-02-10_V5.5d2_codesee_inspector_foundation.md | TBD | Add CodeSee inspector foundation (ItemRef + pin/lock + history + panel shell) |
 | V5.5/V5.5d/feat/2026-02-10_V5.5d3_codesee_peek_mode (1).md | TBD | Add CodeSee Peek mode with isolated containment expansion and strict budgets |
+| V5.5/V5.5d/feat/2026-02-10_V5.5d4_codesee_inspector_relations_paging.md | TBD | Add Inspector Relations tab with paging/filter and stale-safe behavior |
 | V5.5b1.2 (uncommitted in github because i forgot and went to 5.5b.3 directly) | TBD | Uncommitted work: dropdown totals shown per type (active vs session) |
 | V5.5/V5.5c/chore/2026-01-19__V5.5c__versioning__auto_git_version.md | TBD | Derive app_version from latest git milestone and enforce in Pillar P1 |
 | V5.5/V5.5c/chore/2026-01-20__V5.5c9__codesee__cleanup_palette_debug_and_keep_safety_guards.md | TBD | Reduce CodeSee debug spam while keeping safety guards |
