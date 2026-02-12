@@ -18,6 +18,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
         on_open_subgraph: Optional[Callable[[str], None]] = None,
         on_layout_changed: Optional[Callable[[], None]] = None,
         on_inspect: Optional[Callable] = None,
+        on_peek: Optional[Callable] = None,
+        on_toggle_peek: Optional[Callable] = None,
+        peek_menu_state: Optional[Callable] = None,
         on_status_badges: Optional[Callable] = None,
         icon_style: str = "color",
         node_theme: str = "neutral",
@@ -26,6 +29,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self.on_open_subgraph = on_open_subgraph
         self.on_layout_changed = on_layout_changed
         self.on_inspect = on_inspect
+        self.on_peek = on_peek
+        self.on_toggle_peek = on_toggle_peek
+        self.peek_menu_state = peek_menu_state
         self._on_status_badges = on_status_badges
         self._icon_style = icon_style
         self._node_theme = node_theme or "neutral"
@@ -86,6 +92,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 on_open_subgraph=self.on_open_subgraph,
                 on_layout_changed=self.on_layout_changed,
                 on_inspect=self.on_inspect,
+                on_peek=self.on_peek,
+                on_toggle_peek=self.on_toggle_peek,
+                peek_menu_state=self.peek_menu_state,
                 on_status_badges=self._on_status_badges,
                 icon_style=self._icon_style,
                 node_theme=self._node_theme,

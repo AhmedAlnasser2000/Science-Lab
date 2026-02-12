@@ -66,6 +66,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
         on_open_subgraph: Optional[Callable[[str], None]] = None,
         on_layout_changed: Optional[Callable[[], None]] = None,
         on_inspect: Optional[Callable[[Node, Optional[Badge]], None]] = None,
+        on_peek: Optional[Callable[[Node], None]] = None,
+        on_toggle_peek: Optional[Callable[[Node], bool]] = None,
+        peek_menu_state: Optional[Callable[[Node], tuple[bool, str]]] = None,
         on_status_badges: Optional[Callable[[Node, list, QtCore.QPoint], None]] = None,
         icon_style: str = "color",
         node_theme: str = "neutral",
@@ -77,6 +80,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.on_open_subgraph = on_open_subgraph
         self.on_layout_changed = on_layout_changed
         self.on_inspect = on_inspect
+        self.on_peek = on_peek
+        self.on_toggle_peek = on_toggle_peek
+        self._peek_menu_state = peek_menu_state
         self._on_status_badges = on_status_badges
         self._icon_style = icon_style
         self._node_theme = node_theme or "neutral"
@@ -317,6 +323,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
         super().hoverLeaveEvent(event)
 
     def mouseDoubleClickEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
+        if self.on_toggle_peek and self.on_toggle_peek(self.node):
+            event.accept()
+            return
         if self.node.subgraph_id and self.on_open_subgraph:
             self.on_open_subgraph(self.node.subgraph_id)
             event.accept()
@@ -325,11 +334,24 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def contextMenuEvent(self, event: QtWidgets.QGraphicsSceneContextMenuEvent) -> None:
         menu = QtWidgets.QMenu()
+        peek_action = menu.addAction("Peek")
+        can_peek = True
+        peek_reason = ""
+        if self._peek_menu_state:
+            can_peek, peek_reason = self._peek_menu_state(self.node)
+        if not can_peek:
+            reason_text = (peek_reason or "Peek available only for container nodes (has containment children).").strip()
+            peek_action.setText(f"Peek ({reason_text})")
+            peek_action.setEnabled(False)
         inspect_action = menu.addAction("Inspect")
         open_action = None
         if self.node.subgraph_id and self.on_open_subgraph:
             open_action = menu.addAction("Open Subgraph")
         selected = menu.exec(_screen_point(event))
+        if selected == peek_action and can_peek and self.on_peek:
+            self.on_peek(self.node)
+            event.accept()
+            return
         if selected == inspect_action and self.on_inspect:
             self.on_inspect(self.node, None)
             event.accept()

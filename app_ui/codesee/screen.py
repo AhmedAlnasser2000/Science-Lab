@@ -47,9 +47,20 @@ from .demos.demo_graphs import build_demo_root_graph, build_demo_subgraphs
 from .dialogs import diagnostics_dialog
 from .diff import DiffResult, NodeChange, diff_snapshots
 from .expectations import EVACheck, check_from_dict
-from .graph_model import ArchitectureGraph, Node
+from .graph_model import ArchitectureGraph, Edge, Node
 from .lenses import LENS_ATLAS, LENS_BUS, LENS_CONTENT, LENS_PLATFORM, LensSpec, get_lens, get_lenses
 from .item_ref import ItemRef, itemref_display_name, itemref_from_node
+from .peek import (
+    MAX_PEEK_ADD_PER_EXPAND,
+    MAX_PEEK_VISIBLE_TOTAL,
+    PeekContext,
+    apply_expand_budget,
+    breadcrumb_chain_ids,
+    build_containment_index,
+    collapse_subtree_ids,
+    has_unloaded_subgraph,
+    item_ref_for_node_id,
+)
 from .runtime.events import (
     CodeSeeEvent,
     EVENT_APP_ACTIVITY,
@@ -147,6 +158,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.inspector_locked = False
         self.inspected_history: list[ItemRef] = []
         self.inspected_history_index = -1
+        self._peek = PeekContext()
+        self._peek_warning: str = ""
+        self._peek_node_map: Dict[str, Node] = {}
+        self._peek_children_by_id: Dict[str, list[str]] = {}
         self._inspector_panel: Optional[CodeSeeInspectorPanel] = None
         self._inspector_dock: Optional[QtWidgets.QDockWidget] = None
         if self._runtime_hub:
@@ -229,6 +244,34 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.lens_label.setStyleSheet("color: #555;")
         breadcrumb_row.addWidget(self.lens_label)
         layout.addLayout(breadcrumb_row)
+
+        self.peek_row = QtWidgets.QWidget()
+        self.peek_row_layout = QtWidgets.QHBoxLayout(self.peek_row)
+        self.peek_row_layout.setContentsMargins(0, 0, 0, 0)
+        self.peek_row_layout.setSpacing(8)
+        self.peek_breadcrumb_label = QtWidgets.QLabel("Peek: (inactive)")
+        self.peek_breadcrumb_label.setStyleSheet("color: #355070; font-weight: 600;")
+        self.peek_row_layout.addWidget(self.peek_breadcrumb_label, stretch=1)
+        self.peek_exit_btn = QtWidgets.QToolButton()
+        self.peek_exit_btn.setText("Exit Peek")
+        self.peek_exit_btn.clicked.connect(self._exit_peek)
+        self.peek_row_layout.addWidget(self.peek_exit_btn)
+        self.peek_collapse_all_btn = QtWidgets.QToolButton()
+        self.peek_collapse_all_btn.setText("Collapse all")
+        self.peek_collapse_all_btn.clicked.connect(self._collapse_all_peek)
+        self.peek_row_layout.addWidget(self.peek_collapse_all_btn)
+        self.peek_reset_btn = QtWidgets.QToolButton()
+        self.peek_reset_btn.setText("Reset view")
+        self.peek_reset_btn.clicked.connect(self._reset_peek_view)
+        self.peek_row_layout.addWidget(self.peek_reset_btn)
+        self.peek_external_toggle = QtWidgets.QToolButton()
+        self.peek_external_toggle.setText("Include 1-hop external context")
+        self.peek_external_toggle.setCheckable(True)
+        self.peek_external_toggle.setEnabled(False)
+        self.peek_external_toggle.setToolTip("Coming later in V5.5d5.")
+        self.peek_row_layout.addWidget(self.peek_external_toggle)
+        self.peek_row.setVisible(False)
+        layout.addWidget(self.peek_row)
 
         source_row = QtWidgets.QHBoxLayout()
         self._source_row = source_row
@@ -387,6 +430,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
             on_open_subgraph=self._enter_subgraph,
             on_layout_changed=self._save_layout,
             on_inspect=self._inspect_node,
+            on_peek=self._on_node_peek_requested,
+            on_toggle_peek=self._on_node_double_click_in_peek,
+            peek_menu_state=self._peek_menu_state,
             on_status_badges=self._show_status_menu,
             icon_style=self._resolved_icon_style(),
             node_theme=self._node_theme,
@@ -415,6 +461,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._apply_density(ui_scale.get_config())
         self._refresh_snapshot_history()
         self._sync_view_controls()
+        self._update_peek_controls()
         self._ensure_inspector_panel()
         self._update_action_state()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
@@ -581,6 +628,240 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._refresh_breadcrumb()
         self._render_current_graph()
 
+    def _peek_menu_state(self, node: Node) -> tuple[bool, str]:
+        self._rebuild_peek_index()
+        item_ref = itemref_from_node(node)
+        children = self._peek_children_by_id.get(item_ref.id, [])
+        if children:
+            return True, ""
+        loaded_only_reason = "Peek available only for container nodes (has containment children)."
+        if has_unloaded_subgraph(self._peek_node_map.get(item_ref.id), self._active_subgraphs):
+            return False, "Deeper hierarchy available; open subgraph to load first."
+        return False, loaded_only_reason
+
+    def _on_node_peek_requested(self, node: Node) -> None:
+        self._enter_peek(node)
+
+    def _on_node_double_click_in_peek(self, node: Node) -> bool:
+        if not self._peek.peek_active:
+            return False
+        return self._toggle_peek_expand(node)
+
+    def _toggle_peek_expand(self, node: Node) -> bool:
+        item_ref = itemref_from_node(node)
+        if item_ref not in self._peek.peek_visible:
+            return False
+        if item_ref in self._peek.peek_expanded:
+            self._peek_collapse(item_ref)
+        else:
+            self._peek_expand(item_ref)
+        return True
+
+    def _enter_peek(self, node: Node) -> None:
+        can_peek, reason = self._peek_menu_state(node)
+        if not can_peek:
+            self.status_label.setText(reason or "Peek available only for container nodes (has containment children).")
+            return
+        self._rebuild_peek_index()
+        root = itemref_from_node(node)
+        new_peek = PeekContext(peek_active=True, peek_root=root, include_external_context=False)
+        new_peek.peek_visible.add(root)
+        new_peek.parent_by_id[root.id] = None
+        children = self._peek_children_by_id.get(root.id, [])
+        budget = apply_expand_budget(
+            children,
+            current_visible_total=1,
+            max_add_per_expand=MAX_PEEK_ADD_PER_EXPAND,
+            max_visible_total=MAX_PEEK_VISIBLE_TOTAL,
+        )
+        for child_id in budget.allowed_child_ids:
+            child_ref = item_ref_for_node_id(child_id)
+            new_peek.peek_visible.add(child_ref)
+            new_peek.parent_by_id.setdefault(child_id, root.id)
+        if budget.allowed_child_ids:
+            new_peek.peek_expanded.add(root)
+        new_peek.peek_breadcrumb = [root]
+        self._peek = new_peek
+        self._peek_warning = ""
+        if budget.blocked_total:
+            self.status_label.setText("Too many items in Peek. Collapse nodes or narrow scope.")
+        elif budget.clamped:
+            self.status_label.setText(
+                f"Peek budget applied: showing {len(budget.allowed_child_ids)} children, "
+                f"+{budget.omitted_count} more filtered."
+            )
+        else:
+            self.status_label.setText("Peek mode active.")
+        self._update_peek_controls()
+        self._render_current_graph()
+
+    def _exit_peek(self) -> None:
+        if not self._peek.peek_active:
+            return
+        self._peek = PeekContext()
+        self._peek_warning = ""
+        self._update_peek_controls()
+        self._render_current_graph()
+        self.status_label.setText("Exited Peek mode.")
+
+    def _reset_peek_view(self) -> None:
+        if not self._peek.peek_active or not self._peek.peek_root:
+            return
+        node = self._peek_node_map.get(self._peek.peek_root.id)
+        if not node:
+            self._peek_warning = "Peek root not found (stale). Exit Peek to return to normal view."
+            self._update_peek_controls()
+            self._render_current_graph()
+            self.status_label.setText(self._peek_warning)
+            return
+        self._enter_peek(node)
+        self.status_label.setText("Peek view reset.")
+
+    def _collapse_all_peek(self) -> None:
+        if not self._peek.peek_active or not self._peek.peek_root:
+            return
+        root = self._peek.peek_root
+        self._peek.peek_visible = {root}
+        self._peek.peek_expanded = set()
+        self._peek.peek_breadcrumb = [root]
+        self._peek.parent_by_id = {root.id: None}
+        self._peek_warning = ""
+        self._update_peek_controls()
+        self._render_current_graph()
+        self.status_label.setText("Peek collapsed to root.")
+
+    def _peek_expand(self, item_ref: ItemRef) -> None:
+        self._rebuild_peek_index()
+        children = self._peek_children_by_id.get(item_ref.id, [])
+        if not children:
+            node = self._peek_node_map.get(item_ref.id)
+            if has_unloaded_subgraph(node, self._active_subgraphs):
+                self.status_label.setText("Deeper hierarchy available; open subgraph to load.")
+            else:
+                self.status_label.setText("No containment children available.")
+            return
+        budget = apply_expand_budget(
+            children,
+            current_visible_total=len(self._peek.peek_visible),
+            max_add_per_expand=MAX_PEEK_ADD_PER_EXPAND,
+            max_visible_total=MAX_PEEK_VISIBLE_TOTAL,
+        )
+        if budget.blocked_total:
+            self.status_label.setText("Too many items in Peek. Collapse nodes or narrow scope.")
+            return
+        added = 0
+        for child_id in budget.allowed_child_ids:
+            child_ref = item_ref_for_node_id(child_id)
+            if child_ref in self._peek.peek_visible:
+                continue
+            if child_id in self._peek.parent_by_id:
+                continue
+            self._peek.peek_visible.add(child_ref)
+            self._peek.parent_by_id[child_id] = item_ref.id
+            added += 1
+        self._peek.peek_expanded.add(item_ref)
+        self._set_peek_breadcrumb(item_ref)
+        self._update_peek_controls()
+        self._render_current_graph()
+        if budget.clamped:
+            self.status_label.setText(
+                f"Peek budget applied: added {added} child nodes, +{budget.omitted_count} more filtered."
+            )
+        elif added:
+            self.status_label.setText(f"Peek expanded: +{added} nodes.")
+
+    def _peek_collapse(self, item_ref: ItemRef) -> None:
+        descendants = collapse_subtree_ids(item_ref.id, self._peek.parent_by_id)
+        for node_id in descendants:
+            self._peek.peek_visible.discard(item_ref_for_node_id(node_id))
+            self._peek.peek_expanded.discard(item_ref_for_node_id(node_id))
+            self._peek.parent_by_id.pop(node_id, None)
+        self._peek.peek_expanded.discard(item_ref)
+        self._set_peek_breadcrumb(item_ref)
+        self._update_peek_controls()
+        self._render_current_graph()
+        self.status_label.setText("Peek collapsed.")
+
+    def _set_peek_breadcrumb(self, item_ref: Optional[ItemRef]) -> None:
+        if not self._peek.peek_active or not self._peek.peek_root:
+            self._peek.peek_breadcrumb = []
+            return
+        target = item_ref if item_ref and item_ref.kind == "node" else self._peek.peek_root
+        chain_ids = breadcrumb_chain_ids(target.id, self._peek.parent_by_id)
+        if not chain_ids or chain_ids[0] != self._peek.peek_root.id:
+            chain_ids = [self._peek.peek_root.id]
+        self._peek.peek_breadcrumb = [item_ref_for_node_id(node_id) for node_id in chain_ids]
+
+    def _update_peek_controls(self) -> None:
+        active = bool(self._peek.peek_active and self._peek.peek_root)
+        self.peek_row.setVisible(active)
+        if not active:
+            self.peek_breadcrumb_label.setText("Peek: (inactive)")
+            return
+        labels: list[str] = []
+        for item_ref in self._peek.peek_breadcrumb:
+            node = self._peek_node_map.get(item_ref.id)
+            labels.append(node.title if node else itemref_display_name(item_ref))
+        if not labels and self._peek.peek_root:
+            node = self._peek_node_map.get(self._peek.peek_root.id)
+            labels = [node.title if node else itemref_display_name(self._peek.peek_root)]
+        self.peek_breadcrumb_label.setText("Peek: " + " > ".join(labels))
+        self.peek_exit_btn.setEnabled(True)
+        self.peek_collapse_all_btn.setEnabled(True)
+        self.peek_reset_btn.setEnabled(True)
+        blocker = QtCore.QSignalBlocker(self.peek_external_toggle)
+        self.peek_external_toggle.setChecked(bool(self._peek.include_external_context))
+        del blocker
+
+    def _rebuild_peek_index(self) -> None:
+        node_map, children_by_id = build_containment_index(self._active_root, self._active_subgraphs)
+        self._peek_node_map = node_map
+        self._peek_children_by_id = children_by_id
+
+    def _peek_graph_for_render(self) -> Optional[ArchitectureGraph]:
+        if not self._peek.peek_active or not self._peek.peek_root:
+            return None
+        self._rebuild_peek_index()
+        root = self._peek.peek_root
+        root_node = self._peek_node_map.get(root.id)
+        graph_id_prefix = self._current_graph_id or "unknown"
+        if root_node is None:
+            self._peek_warning = "Peek root not found (stale). Exit Peek to return to normal view."
+            return ArchitectureGraph(
+                graph_id=f"peek:{graph_id_prefix}:{root.id}:stale",
+                title="Peek (stale)",
+                nodes=[],
+                edges=[],
+            )
+        self._peek_warning = ""
+        if root not in self._peek.peek_visible:
+            self._peek.peek_visible.add(root)
+            self._peek.parent_by_id.setdefault(root.id, None)
+        visible_ids = sorted(
+            [ref.id for ref in self._peek.peek_visible if ref.kind == "node" and ref.id in self._peek_node_map]
+        )
+        nodes = [self._peek_node_map[node_id] for node_id in visible_ids]
+        visible_set = set(visible_ids)
+        edges: list[Edge] = []
+        for src_id in visible_ids:
+            for dst_id in self._peek_children_by_id.get(src_id, []):
+                if dst_id not in visible_set:
+                    continue
+                edges.append(
+                    Edge(
+                        edge_id=f"peek:{src_id}:{dst_id}:contains",
+                        src_node_id=src_id,
+                        dst_node_id=dst_id,
+                        kind="contains",
+                    )
+                )
+        return ArchitectureGraph(
+            graph_id=f"peek:{graph_id_prefix}:{root.id}",
+            title=f"Peek: {root_node.title}",
+            nodes=nodes,
+            edges=edges,
+        )
+
     # --- [NAV-30B] layout save/restore
     def _save_layout(self) -> None:
         if not self._render_graph_id:
@@ -600,6 +881,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._diff_mode and self._diff_compare_graph and self._diff_result:
             graph_to_render = self._diff_compare_graph
             diff_result = self._diff_result
+        peek_graph = self._peek_graph_for_render()
+        in_peek = peek_graph is not None
+        if in_peek:
+            graph_to_render = peek_graph
+            diff_result = None
         self._render_graph_id = graph_to_render.graph_id
         positions = layout_store.load_positions(self._workspace_id(), self._lens, self._render_graph_id)
         overlay_graph = self._apply_runtime_overlay(graph_to_render)
@@ -608,10 +894,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         overlay_graph = self._apply_crash_badge(overlay_graph)
         overlay_graph = self._apply_diff_removed_nodes(overlay_graph)
         total_nodes = len(overlay_graph.nodes)
-        filtered = self._filtered_graph(overlay_graph)
+        if in_peek:
+            filtered = overlay_graph
+        else:
+            filtered = self._filtered_graph(overlay_graph)
         shown_nodes = len(filtered.nodes)
         empty_message = None
-        if self._lens == LENS_BUS and not _bus_nodes_present(graph_to_render):
+        if not in_peek and self._lens == LENS_BUS and not _bus_nodes_present(graph_to_render):
             empty_message = "No bus nodes found for this graph."
             filtered = ArchitectureGraph(
                 graph_id=filtered.graph_id,
@@ -619,7 +908,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 nodes=[],
                 edges=[],
             )
-        if empty_message is None and shown_nodes == 0 and self._filters_active():
+        if in_peek and self._peek_warning:
+            empty_message = self._peek_warning
+        elif empty_message is None and shown_nodes == 0 and self._filters_active():
             empty_message = "No nodes match the current filters."
         self._update_filter_status(total_nodes, shown_nodes)
         self._update_mode_status(total_nodes, shown_nodes)
@@ -630,6 +921,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_span_tints(filtered)
         self._update_debug_status()
         self._ensure_status_timer()
+        self._update_peek_controls()
         self._refresh_inspector_panel()
 
     def _refresh_breadcrumb(self) -> None:
@@ -2293,6 +2585,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
         item_ref = itemref_from_node(node)
         self.selected_item = item_ref
+        if self._peek.peek_active:
+            self._set_peek_breadcrumb(item_ref)
         if not self.inspector_locked:
             self._set_inspected_item(item_ref, push_history=True)
         else:
@@ -2311,6 +2605,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         item_ref = itemref_from_node(node_item.node)
         self.selected_item = item_ref
+        if self._peek.peek_active:
+            self._set_peek_breadcrumb(item_ref)
         if not self.inspector_locked:
             self._set_inspected_item(item_ref, push_history=True)
         else:
