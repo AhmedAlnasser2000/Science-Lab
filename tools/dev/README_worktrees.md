@@ -8,6 +8,7 @@ This folder contains local-only helper scripts for starting and cleaning slice w
   - Creates a new branch in a new worktree outside repo root.
   - Refuses to run on dirty working tree.
   - Fetches remote refs, verifies local `main` is not ahead/diverged, and performs `git pull --ff-only origin main` in the worktree that owns `main`.
+  - Ensures `_worktrees/PhysicsLab/main_origin` exists and is synced to `origin/main` (detached HEAD) before creating a new slice.
   - Refuses existing branch/path unless `-Force` is explicitly provided for branch checks.
   - Push is opt-in via `-Push`.
 

@@ -82,8 +82,12 @@ function Test-RefExists {
 }
 
 function Get-AheadBehindCount {
-    param([string]$LeftRef, [string]$RightRef)
-    $res = Invoke-Git -GitArgs @('rev-list', '--left-right', '--count', "$LeftRef...$RightRef") -AllowFailure
+    param(
+        [string]$LeftRef,
+        [string]$RightRef,
+        [string]$WorkingDirectory
+    )
+    $res = Invoke-Git -GitArgs @('rev-list', '--left-right', '--count', "$LeftRef...$RightRef") -AllowFailure -WorkingDirectory $WorkingDirectory
     if ($res.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($res.Output)) {
         Fail-Exit -Code 2 -Message "Unable to compare refs '$LeftRef' and '$RightRef'."
     }
@@ -115,6 +119,26 @@ function Get-WorktreePathForBranch {
         }
     }
     return $null
+}
+
+function Test-WorktreePathRegistered {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $res = Invoke-Git -GitArgs @('worktree', 'list', '--porcelain')
+    if ([string]::IsNullOrWhiteSpace($res.Output)) {
+        return $false
+    }
+    $needle = [System.IO.Path]::GetFullPath($Path).TrimEnd('\').ToLowerInvariant()
+    $lines = $res.Output -split "`r?`n"
+    foreach ($line in $lines) {
+        if ($line -like 'worktree *') {
+            $candidate = $line.Substring(9).Trim()
+            $candidateNorm = [System.IO.Path]::GetFullPath($candidate).TrimEnd('\').ToLowerInvariant()
+            if ($candidateNorm -eq $needle) {
+                return $true
+            }
+        }
+    }
+    return $false
 }
 
 function Test-LocalBranchExists {
@@ -187,6 +211,35 @@ if ($mainPostPull.Ahead -ne 0 -or $mainPostPull.Behind -ne 0) {
 }
 Write-Host "[ok] local main synced to $Remote/main"
 
+$rootFull = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $WorktreesRoot))
+$mainOriginPath = Join-Path $rootFull 'main_origin'
+
+if (Test-Path $mainOriginPath) {
+    if (-not (Test-WorktreePathRegistered -Path $mainOriginPath)) {
+        Fail-Exit -Code 2 -Message "Path exists but is not a registered git worktree: $mainOriginPath"
+    }
+    Ensure-CleanWorkingTreeAtPath -Path $mainOriginPath
+    Write-Host "[do] Syncing main_origin worktree to $Remote/main..."
+    $syncMainOrigin = Invoke-Git -GitArgs @('checkout', '--detach', "$Remote/main") -WorkingDirectory $mainOriginPath -AllowFailure
+    if ($syncMainOrigin.ExitCode -ne 0) {
+        Fail-Exit -Code 2 -Message "Failed to sync main_origin worktree.`n$($syncMainOrigin.Output)"
+    }
+} else {
+    New-Item -ItemType Directory -Force -Path $rootFull | Out-Null
+    Write-Host "[do] Creating main_origin worktree at: $mainOriginPath"
+    $addMainOrigin = Invoke-Git -GitArgs @('worktree', 'add', '--detach', $mainOriginPath, "$Remote/main") -AllowFailure
+    if ($addMainOrigin.ExitCode -ne 0) {
+        Fail-Exit -Code 3 -Message "Failed to create main_origin worktree.`n$($addMainOrigin.Output)"
+    }
+}
+
+$mainOriginDivergence = Get-AheadBehindCount -LeftRef 'HEAD' -RightRef "refs/remotes/$Remote/main" -WorkingDirectory $mainOriginPath
+if ($mainOriginDivergence.Ahead -ne 0 -or $mainOriginDivergence.Behind -ne 0) {
+    Fail-Exit -Code 2 -Message (("main_origin is not aligned to {0}/main (ahead={1}, behind={2}). " +
+        "Resolve this before creating a worktree.") -f $Remote, $mainOriginDivergence.Ahead, $mainOriginDivergence.Behind)
+}
+Write-Host "[ok] main_origin synced to $Remote/main"
+
 if (-not (Test-RefExists -Ref $Base)) {
     Fail-Exit -Code 2 -Message "Base ref '$Base' not found."
 }
@@ -200,7 +253,6 @@ if ($localExists -or $remoteExists) {
     Write-Warning "Branch '$Branch' already exists (local=$localExists, remote=$remoteExists). Continuing due to -Force."
 }
 
-$rootFull = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $WorktreesRoot))
 $folder = Get-SanitizedFolderName -Name $Branch
 $targetPath = Join-Path $rootFull $folder
 
