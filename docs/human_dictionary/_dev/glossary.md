@@ -30,6 +30,20 @@
 - **Example:** Switch to Bus lens to focus on message flow entities.
 - **Common confusion (what it's NOT):** Not a single-node detail popup.
 
+### Dependents
+- **Meaning (plain English):** Items that rely on the current item.
+- **Real-life analogy:** Apps that stop working if one shared library is removed.
+- **In PhysicsLab:** Incoming dependency relations shown in CodeSee Inspector.
+- **Example:** In Relations, "Used by / Dependents" lists nodes that point to this node.
+- **Common confusion (what it's NOT):** Not containment children; it is dependency direction.
+
+### Paged list
+- **Meaning (plain English):** List loaded in chunks rather than all at once.
+- **Real-life analogy:** Reading search results page by page instead of opening all results.
+- **In PhysicsLab:** Inspector Relations sections load 50 rows at a time with "Load more".
+- **Example:** Large module relations show first page, then append more on demand.
+- **Common confusion (what it's NOT):** Not a collapsed tree; it is progressive loading.
+
 ### Pulse
 - **Meaning (plain English):** Animated activity signal.
 - **Real-life analogy:** A heartbeat monitor spike indicating fresh activity.

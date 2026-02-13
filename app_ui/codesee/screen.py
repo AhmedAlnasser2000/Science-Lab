@@ -61,6 +61,7 @@ from .peek import (
     has_unloaded_subgraph,
     item_ref_for_node_id,
 )
+from .relations import RelationIndex, build_relation_index, query_relation_page
 from .runtime.events import (
     CodeSeeEvent,
     EVENT_APP_ACTIVITY,
@@ -162,6 +163,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._peek_warning: str = ""
         self._peek_node_map: Dict[str, Node] = {}
         self._peek_children_by_id: Dict[str, list[str]] = {}
+        self._relation_index_normal: Optional[RelationIndex] = None
+        self._relation_index_normal_key: Optional[tuple] = None
+        self._relation_index_compare: Optional[RelationIndex] = None
+        self._relation_index_compare_key: Optional[tuple] = None
+        self._inspector_relations_state_key: Optional[tuple] = None
         self._inspector_panel: Optional[CodeSeeInspectorPanel] = None
         self._inspector_dock: Optional[QtWidgets.QDockWidget] = None
         if self._runtime_hub:
@@ -971,6 +977,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         root: ArchitectureGraph,
         subgraphs: Dict[str, ArchitectureGraph],
     ) -> None:
+        self._relation_index_normal = None
+        self._relation_index_normal_key = None
+        self._relation_index_compare = None
+        self._relation_index_compare_key = None
+        self._inspector_relations_state_key = None
         self._active_root = root
         self._active_subgraphs = subgraphs
         self._graph_stack = [root.graph_id]
@@ -2559,6 +2570,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             on_back=self._on_inspector_back,
             on_forward=self._on_inspector_forward,
             on_lock_toggled=self._on_inspector_lock_toggled,
+            on_relation_selected=self._on_inspector_relation_selected,
+            on_relation_inspect=self._on_inspector_relation_inspect,
             parent=self,
         )
         panel.set_navigation_state(can_back=False, can_forward=False)
@@ -2646,6 +2659,22 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.inspector_locked = bool(locked)
         self._refresh_inspector_panel()
 
+    def _on_inspector_relation_selected(self, item_ref: ItemRef) -> None:
+        self.selected_item = item_ref
+        if self._peek.peek_active:
+            self._set_peek_breadcrumb(item_ref)
+        if not self.inspector_locked:
+            self._set_inspected_item(item_ref, push_history=True)
+            return
+        self.status_label.setText("Inspector pinned; selection updated only.")
+        self._refresh_inspector_panel()
+
+    def _on_inspector_relation_inspect(self, item_ref: ItemRef) -> None:
+        self.selected_item = item_ref
+        if self._peek.peek_active:
+            self._set_peek_breadcrumb(item_ref)
+        self._set_inspected_item(item_ref, push_history=True)
+
     def _resolve_node_for_item(self, item_ref: ItemRef) -> Optional[Node]:
         if item_ref.kind != "node":
             return None
@@ -2674,6 +2703,43 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 props[f"meta.{key}"] = "" if value is None else str(value)
         return props
 
+    def _graph_revision_key(
+        self,
+        root: Optional[ArchitectureGraph],
+        subgraphs: Dict[str, ArchitectureGraph],
+    ) -> tuple:
+        root_key: Optional[tuple] = None
+        if root is not None:
+            root_key = (str(root.graph_id), len(root.nodes), len(root.edges), id(root))
+        subgraph_keys = []
+        for graph_id in sorted(subgraphs.keys()):
+            graph = subgraphs.get(graph_id)
+            if graph is None:
+                continue
+            subgraph_keys.append((str(graph.graph_id), len(graph.nodes), len(graph.edges), id(graph)))
+        return (root_key, tuple(subgraph_keys))
+
+    def _relation_index_for_inspector(self) -> RelationIndex:
+        if self._diff_mode and self._diff_compare_graph is not None:
+            graph = self._diff_compare_graph
+            key = (str(graph.graph_id), len(graph.nodes), len(graph.edges), id(graph))
+            if self._relation_index_compare is None or self._relation_index_compare_key != key:
+                self._relation_index_compare = build_relation_index(graph, {})
+                self._relation_index_compare_key = key
+            return self._relation_index_compare
+
+        key = self._graph_revision_key(self._active_root, self._active_subgraphs)
+        if self._relation_index_normal is None or self._relation_index_normal_key != key:
+            self._relation_index_normal = build_relation_index(self._active_root, self._active_subgraphs)
+            self._relation_index_normal_key = key
+        return self._relation_index_normal
+
+    def _relation_revision_key_for_inspector(self) -> tuple:
+        if self._diff_mode and self._diff_compare_graph is not None:
+            graph = self._diff_compare_graph
+            return ("diff", str(graph.graph_id), len(graph.nodes), len(graph.edges), id(graph))
+        return ("active", self._graph_revision_key(self._active_root, self._active_subgraphs))
+
     def _refresh_inspector_panel(self) -> None:
         self._ensure_inspector_panel()
         if not self._inspector_panel:
@@ -2684,10 +2750,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._inspector_panel.set_locked(self.inspector_locked)
         item_ref = self.inspected_item
         if item_ref is None:
+            self._inspector_relations_state_key = None
             self._inspector_panel.set_empty("Select a node to inspect.")
             return
         node = self._resolve_node_for_item(item_ref)
         if node is None:
+            self._inspector_relations_state_key = None
             self._inspector_panel.set_stale(item_ref)
             return
         name = node.title or itemref_display_name(item_ref)
@@ -2699,6 +2767,24 @@ class CodeSeeScreen(QtWidgets.QWidget):
             summary=summary,
             properties=self._inspector_properties(node),
         )
+        relation_revision = self._relation_revision_key_for_inspector()
+        state_key = (item_ref.kind, item_ref.id, relation_revision)
+        if self._inspector_relations_state_key == state_key:
+            return
+        relation_index = self._relation_index_for_inspector()
+
+        def provider(category: str, offset: int, limit: int, filter_text: str):
+            return query_relation_page(
+                relation_index,
+                item_ref,
+                category,
+                offset,
+                limit,
+                filter_text,
+            )
+
+        self._inspector_panel.set_relations_provider(item_ref, provider)
+        self._inspector_relations_state_key = state_key
 
     def _build_atlas(self) -> None:
         ctx = CollectorContext(
