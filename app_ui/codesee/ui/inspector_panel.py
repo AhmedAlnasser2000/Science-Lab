@@ -101,6 +101,16 @@ class PagedRelationSection(QtWidgets.QGroupBox):
         self._filter_text = ""
         self._reload(reset_table=True)
 
+    def set_filter_text(self, text: str) -> None:
+        clean = (text or "").strip()
+        blocker = QtCore.QSignalBlocker(self._filter)
+        self._filter.setText(clean)
+        del blocker
+        if self._provider is None:
+            return
+        self._filter_text = clean
+        self._reload(reset_table=True)
+
     def clear_rows(self, message: str) -> None:
         self._provider = None
         self._table.clear()
@@ -312,12 +322,51 @@ class CodeSeeInspectorPanel(QtWidgets.QWidget):
         relations_root.addWidget(self._relations_scroll)
         tabs.addTab(self._relations_tab, "Relations")
 
-        self._activity = QtWidgets.QPlainTextEdit()
-        self._activity.setReadOnly(True)
-        self._activity.setPlainText("Activity view is coming in V5.5d5.")
-        tabs.addTab(self._activity, "Activity")
+        self._activity_tab = QtWidgets.QWidget()
+        activity_root = QtWidgets.QVBoxLayout(self._activity_tab)
+        activity_root.setContentsMargins(4, 4, 4, 4)
+        activity_root.setSpacing(6)
+
+        self._activity_header = QtWidgets.QLabel("Activity")
+        self._activity_header.setStyleSheet("font-weight: 600; color: #ddd;")
+        activity_root.addWidget(self._activity_header)
+
+        self._activity_filter = QtWidgets.QLineEdit()
+        self._activity_filter.setPlaceholderText("Filter activity")
+        activity_root.addWidget(self._activity_filter)
+
+        self._activity_table = QtWidgets.QTreeWidget()
+        self._activity_table.setRootIsDecorated(False)
+        self._activity_table.setUniformRowHeights(True)
+        self._activity_table.setAlternatingRowColors(False)
+        self._activity_table.setHeaderLabels(["When", "Type", "Source", "Detail"])
+        self._activity_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self._activity_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self._activity_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        activity_header = self._activity_table.header()
+        activity_header.setStretchLastSection(True)
+        activity_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        activity_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        activity_header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        activity_header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        activity_root.addWidget(self._activity_table)
+
+        self._activity_empty = QtWidgets.QLabel("No activity yet.")
+        self._activity_empty.setStyleSheet("color: #777;")
+        self._activity_empty.setWordWrap(True)
+        activity_root.addWidget(self._activity_empty)
+
+        self._activity_items: list[dict[str, str]] = []
+        self._activity_filter_timer = QtCore.QTimer(self)
+        self._activity_filter_timer.setSingleShot(True)
+        self._activity_filter_timer.setInterval(200)
+        self._activity_filter_timer.timeout.connect(self._apply_activity_filter)
+        self._activity_filter.textChanged.connect(lambda _text: self._activity_filter_timer.start())
+
+        tabs.addTab(self._activity_tab, "Activity")
         root.addWidget(tabs, stretch=1)
         self.set_relations_empty("Select a node to inspect.")
+        self.show_activity(mode="empty", title="Activity", items=[], activate=False)
 
     def set_navigation_state(self, *, can_back: bool, can_forward: bool) -> None:
         self._can_back = bool(can_back)
@@ -339,6 +388,7 @@ class CodeSeeInspectorPanel(QtWidgets.QWidget):
         self._properties.setRowCount(0)
         self._copy_btn.setEnabled(False)
         self.set_relations_empty(message)
+        self.show_activity(mode="empty", title="Activity", items=[{"detail": message}], activate=False)
 
     def set_stale(self, item_ref: ItemRef) -> None:
         self._current_item_id = str(item_ref.id)
@@ -352,6 +402,12 @@ class CodeSeeInspectorPanel(QtWidgets.QWidget):
         self._properties.setRowCount(0)
         self._copy_btn.setEnabled(True)
         self.set_relations_stale(item_ref, can_go_back=self._can_back)
+        self.show_activity(
+            mode="stale",
+            title="Activity",
+            items=[{"detail": "Item not found (stale). Go back or select another item."}],
+            activate=False,
+        )
 
     def set_content(
         self,
@@ -401,6 +457,7 @@ class CodeSeeInspectorPanel(QtWidgets.QWidget):
         self._relations_back_btn.setVisible(False)
         self._set_sections_visible(True)
         for section in self._relation_sections.values():
+            section.setVisible(True)
             section.set_provider(provider, page_size=50)
 
     def set_relations_empty(self, message: str) -> None:
@@ -430,3 +487,98 @@ class CodeSeeInspectorPanel(QtWidgets.QWidget):
     def _set_relations_notice(self, message: str, *, show: bool) -> None:
         self._relations_notice.setText(message.strip())
         self._relations_notice.setVisible(bool(show and message.strip()))
+
+    def select_tab(self, name: str) -> None:
+        target = (name or "").strip().lower()
+        if target == "relations":
+            self._tabs.setCurrentWidget(self._relations_tab)
+            return
+        if target == "activity":
+            self._tabs.setCurrentWidget(self._activity_tab)
+            return
+        self._tabs.setCurrentWidget(self._overview)
+
+    def show_relations(self, mode: str, title: str, filter_text: str = "", *, activate: bool = True) -> None:
+        if activate:
+            self.select_tab("relations")
+        category_map = {
+            "deps": CATEGORY_DEPENDS_ON,
+            "packs": CATEGORY_CONTAINS,
+            "entry_points": CATEGORY_EXPORTS,
+        }
+        category = category_map.get((mode or "").strip().lower())
+        if category:
+            for key, section in self._relation_sections.items():
+                section.setVisible(key == category)
+                if key == category:
+                    section.set_filter_text(filter_text)
+            if title:
+                self._set_relations_notice(title, show=True)
+            else:
+                self._set_relations_notice("", show=False)
+            return
+        for section in self._relation_sections.values():
+            section.setVisible(True)
+            if filter_text:
+                section.set_filter_text(filter_text)
+        self._set_relations_notice(title or "", show=bool(title))
+
+    def show_activity(
+        self,
+        mode: str,
+        title: str,
+        items: list[dict],
+        filter_text: str = "",
+        *,
+        activate: bool = True,
+    ) -> None:
+        self._activity_header.setText(f"{title or 'Activity'} ({(mode or 'default').strip()})")
+        normalized: list[dict[str, str]] = []
+        for raw in items or []:
+            normalized.append(
+                {
+                    "when": str(raw.get("when", "") or ""),
+                    "type": str(raw.get("type", "") or ""),
+                    "source": str(raw.get("source", "") or ""),
+                    "detail": str(raw.get("detail", "") or ""),
+                }
+            )
+        self._activity_items = normalized[-120:]
+        blocker = QtCore.QSignalBlocker(self._activity_filter)
+        self._activity_filter.setText((filter_text or "").strip())
+        del blocker
+        self._apply_activity_filter()
+        if activate:
+            self.select_tab("activity")
+
+    def _apply_activity_filter(self) -> None:
+        needle = self._activity_filter.text().strip().lower()
+        rows = self._activity_items
+        if needle:
+            filtered: list[dict[str, str]] = []
+            for row in self._activity_items:
+                hay = " ".join(
+                    [
+                        str(row.get("when", "")),
+                        str(row.get("type", "")),
+                        str(row.get("source", "")),
+                        str(row.get("detail", "")),
+                    ]
+                ).lower()
+                if needle in hay:
+                    filtered.append(row)
+            rows = filtered
+        self._activity_table.clear()
+        for row in rows:
+            item = QtWidgets.QTreeWidgetItem(
+                [
+                    row.get("when", ""),
+                    row.get("type", ""),
+                    row.get("source", ""),
+                    row.get("detail", ""),
+                ]
+            )
+            self._activity_table.addTopLevelItem(item)
+        self._activity_empty.setVisible(len(rows) == 0)
+        if len(rows) == 0:
+            self._activity_empty.setText("No activity found.")

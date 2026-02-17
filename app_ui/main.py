@@ -3500,9 +3500,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.current_profile != "Explorer":
             return
         if self.codesee:
-            self.codesee.open_root()
             self.stacked.setCurrentWidget(self.codesee)
-            self._publish_codesee_event("Code See", node_ids=["system:app_ui"])
+            open_root = getattr(self.codesee, "open_root", None)
+            if callable(open_root):
+                open_root()
+                self._publish_codesee_event("Code See", node_ids=["system:app_ui"])
+            else:
+                try:
+                    sys.stderr.write("[codesee] disabled; open_root unavailable\n")
+                except Exception:
+                    pass
 
     def _open_code_see_window(self) -> None:
         if self.current_profile != "Explorer":

@@ -38,7 +38,7 @@ def build_demo_root_graph() -> ArchitectureGraph:
         ),
         Node(
             node_id="module.runtime_bus",
-            title="Runtime Bus",
+            title="Communication Core",
             node_type="module",
             badges=badges_from_keys(bottom=["probe.pass"]),
             subgraph_id="module.runtime_bus",
@@ -49,6 +49,12 @@ def build_demo_root_graph() -> ArchitectureGraph:
             node_type="module",
             badges=badges_from_keys(bottom=["expect.value"]),
             subgraph_id="module.core_center",
+        ),
+        Node(
+            node_id="module.core_central",
+            title="Core Central",
+            node_type="module",
+            badges=badges_from_keys(top=["activity.muted"]),
         ),
         Node(
             node_id="module.component_runtime",
@@ -91,6 +97,8 @@ def build_demo_root_graph() -> ArchitectureGraph:
         ),
     ]
     edges = [
+        Edge("edge.core_central.management", "module.core_central", "module.core_center", "contains"),
+        Edge("edge.core_central.communication", "module.core_central", "module.runtime_bus", "contains"),
         Edge("edge.ui.bus", "module.ui", "module.runtime_bus", "request"),
         Edge("edge.ui.content", "module.ui", "module.content_system", "dependency"),
         Edge("edge.ui.components", "module.ui", "module.component_runtime", "dependency"),

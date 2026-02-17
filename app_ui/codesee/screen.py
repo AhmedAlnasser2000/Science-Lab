@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass
 import functools
 import os
 import re
@@ -81,6 +82,7 @@ from .runtime.events import (
 from .runtime.hub import CodeSeeRuntimeHub
 from .storage import layout_store, snapshot_index, snapshot_io
 from .dialogs.inspector import _span_is_stuck
+from .dialogs.facet_settings import open_facet_settings
 from .dialogs.pulse_settings import open_pulse_settings
 from .dialogs.removed import CodeSeeRemovedDialog
 from .ui.lens_palette import (
@@ -96,7 +98,7 @@ from app_ui import versioning
 
 DEFAULT_LENS = LENS_ATLAS
 LENS_EXT = "extensibility"
-SOURCE_DEMO = "Demo"
+SOURCE_DEMO = "System Map"
 SOURCE_ATLAS = "Atlas"
 SOURCE_SNAPSHOT = "Snapshot (Latest)"
 ICON_STYLE_LABELS = {
@@ -104,7 +106,37 @@ ICON_STYLE_LABELS = {
     icon_pack.ICON_STYLE_COLOR: "Color",
     icon_pack.ICON_STYLE_MONO: "Mono",
 }
+
+FACET_NODE_TYPE = "Facet"
+FACET_EDGE_KIND = "facet"
+FACET_META_KEY = "codesee_facet"
+FACET_KEYS_ACTIVITY = {"logs", "activity", "spans", "runs", "errors", "signals"}
+FACET_KEYS_RELATIONS = {"deps", "packs", "entry_points"}
+FACET_TO_RELATION_CATEGORY = {
+    "deps": "depends_on",
+    "packs": "contains",
+    "entry_points": "exports",
+}
+FACET_LABELS = {
+    "deps": "Dependencies",
+    "packs": "Packs",
+    "entry_points": "Entry points",
+    "logs": "Logs",
+    "activity": "Activity",
+    "spans": "Spans",
+    "runs": "Runs",
+    "errors": "Errors",
+    "signals": "Signals",
+}
 # endregion NAV-00 Imports / constants
+
+
+@dataclass(frozen=True)
+class FacetSelection:
+    facet_id: str
+    base_node_id: str
+    facet_key: str
+    facet_label: str
 
 # === [NAV-20] CodeSeeScreen ===================================================
 # region NAV-20 CodeSeeScreen
@@ -146,6 +178,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._icon_style = self._view_config.icon_style
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
+        self._facet_settings = self._view_config.facet_settings
         self._build_info = versioning.get_build_info()
         palette_state = view_config.load_lens_palette_state(self._workspace_id())
         self._lens_palette_pinned = bool(palette_state.get("pinned", False))
@@ -163,6 +196,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._peek_warning: str = ""
         self._peek_node_map: Dict[str, Node] = {}
         self._peek_children_by_id: Dict[str, list[str]] = {}
+        self._render_node_map: Dict[str, Node] = {}
+        self._facet_selection_by_id: Dict[str, FacetSelection] = {}
+        self._active_facet_selection: Optional[FacetSelection] = None
         self._relation_index_normal: Optional[RelationIndex] = None
         self._relation_index_normal_key: Optional[tuple] = None
         self._relation_index_compare: Optional[RelationIndex] = None
@@ -181,7 +217,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
         self._active_root: Optional[ArchitectureGraph] = self._demo_root
         self._active_subgraphs: Dict[str, ArchitectureGraph] = self._demo_subgraphs
-        self._source = SOURCE_SNAPSHOT if self._safe_mode else SOURCE_DEMO
+        self._source = self._normalize_source_value(SOURCE_SNAPSHOT if self._safe_mode else SOURCE_DEMO)
         self._graph_stack: list[str] = [self._demo_root.graph_id]
         self._current_graph_id: Optional[str] = None
         self._current_graph: Optional[ArchitectureGraph] = None
@@ -306,7 +342,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.source_combo.addItems([SOURCE_DEMO, SOURCE_ATLAS, SOURCE_SNAPSHOT])
         self.source_combo.currentTextChanged.connect(self._on_source_changed)
         self.source_combo.blockSignals(True)
-        self.source_combo.setCurrentText(self._source)
+        self.source_combo.setCurrentText(self._normalize_source_value(self._source))
         self.source_combo.blockSignals(False)
         source_row.addWidget(self.source_combo)
         self.snapshot_button = QtWidgets.QToolButton()
@@ -445,7 +481,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         self.scene.set_reduced_motion(self._reduced_motion)
         self.scene.selectionChanged.connect(self._on_scene_selection_changed)
-        self.view = GraphView(self.scene)
+        self.view = GraphView(
+            self.scene,
+            on_set_facet_density=self._on_set_facet_density,
+            on_open_facet_settings=self._on_open_facet_settings,
+        )
         self.view.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -508,6 +548,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._icon_style = self._view_config.icon_style
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
+        self._facet_settings = self._view_config.facet_settings
         self._diff_mode = False
         self._diff_result = None
         self._diff_baseline_graph = None
@@ -517,6 +558,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._events_by_node.clear()
         self._overlay_badges.clear()
         self._overlay_checks.clear()
+        self._facet_selection_by_id.clear()
+        self._active_facet_selection = None
         if self._crash_view:
             self._load_crash_record()
         self._sync_view_controls()
@@ -904,7 +947,6 @@ class CodeSeeScreen(QtWidgets.QWidget):
             filtered = overlay_graph
         else:
             filtered = self._filtered_graph(overlay_graph)
-        shown_nodes = len(filtered.nodes)
         empty_message = None
         if not in_peek and self._lens == LENS_BUS and not _bus_nodes_present(graph_to_render):
             empty_message = "No bus nodes found for this graph."
@@ -916,11 +958,19 @@ class CodeSeeScreen(QtWidgets.QWidget):
             )
         if in_peek and self._peek_warning:
             empty_message = self._peek_warning
-        elif empty_message is None and shown_nodes == 0 and self._filters_active():
+        filtered = self._inject_system_map_facets(filtered, in_peek=in_peek)
+        shown_nodes = len(filtered.nodes)
+        if self._active_facet_selection and self._active_facet_selection.facet_id not in {
+            node.node_id for node in filtered.nodes
+        }:
+            self._active_facet_selection = None
+        if empty_message is None and shown_nodes == 0 and self._filters_active():
             empty_message = "No nodes match the current filters."
         self._update_filter_status(total_nodes, shown_nodes)
         self._update_mode_status(total_nodes, shown_nodes)
         self.scene.set_empty_message(empty_message)
+        self._render_node_map = {node.node_id: node for node in filtered.nodes}
+        self._facet_selection_by_id = self._facet_selection_index(filtered)
         self.scene.build_graph(filtered, positions, diff_result=diff_result)
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
@@ -929,6 +979,101 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._ensure_status_timer()
         self._update_peek_controls()
         self._refresh_inspector_panel()
+
+    def _enabled_facet_keys(self) -> list[str]:
+        defaults = _facet_enabled_defaults_for_density(self._facet_settings.density)
+        raw_enabled = dict(getattr(self._facet_settings, "enabled", {}))
+        for key, value in raw_enabled.items():
+            if key in defaults and isinstance(value, bool):
+                defaults[key] = value
+        return [key for key in view_config.FACET_KEYS if defaults.get(key, False)]
+
+    def _should_show_facets(self, *, in_peek: bool) -> bool:
+        if self._source != SOURCE_DEMO:
+            return False
+        density = str(self._facet_settings.density or "").strip().lower()
+        if density == "off":
+            return False
+        if in_peek:
+            return bool(self._facet_settings.show_in_peek_view)
+        return bool(self._facet_settings.show_in_normal_view)
+
+    def _inject_system_map_facets(self, graph: ArchitectureGraph, *, in_peek: bool) -> ArchitectureGraph:
+        if not self._should_show_facets(in_peek=in_peek):
+            return graph
+        enabled_keys = self._enabled_facet_keys()
+        if not enabled_keys:
+            return graph
+        existing_node_ids = {node.node_id for node in graph.nodes}
+        nodes = list(graph.nodes)
+        edges = list(graph.edges)
+        for base in graph.nodes:
+            if base.node_id.startswith("facet:"):
+                continue
+            if str(base.node_type or "").strip().lower() != "module":
+                continue
+            for key in enabled_keys:
+                facet_id = f"facet:{base.node_id}:{key}"
+                if facet_id in existing_node_ids:
+                    continue
+                facet_label = FACET_LABELS.get(key, key.replace("_", " ").title())
+                nodes.append(
+                    Node(
+                        node_id=facet_id,
+                        title=facet_label,
+                        node_type=FACET_NODE_TYPE,
+                        metadata={
+                            FACET_META_KEY: {
+                                "base_node_id": base.node_id,
+                                "facet_key": key,
+                                "facet_label": facet_label,
+                            }
+                        },
+                    )
+                )
+                edges.append(
+                    Edge(
+                        edge_id=f"facet-edge:{base.node_id}:{key}",
+                        src_node_id=base.node_id,
+                        dst_node_id=facet_id,
+                        kind=FACET_EDGE_KIND,
+                    )
+                )
+                existing_node_ids.add(facet_id)
+        return ArchitectureGraph(
+            graph_id=graph.graph_id,
+            title=graph.title,
+            nodes=nodes,
+            edges=edges,
+        )
+
+    def _facet_selection_from_node(self, node: Optional[Node]) -> Optional[FacetSelection]:
+        if node is None:
+            return None
+        metadata = node.metadata if isinstance(node.metadata, dict) else {}
+        raw = metadata.get(FACET_META_KEY)
+        if not isinstance(raw, dict):
+            return None
+        base_node_id = str(raw.get("base_node_id", "") or "").strip()
+        facet_key = str(raw.get("facet_key", "") or "").strip()
+        facet_label = str(raw.get("facet_label", "") or node.title or "").strip()
+        if not base_node_id or not facet_key:
+            return None
+        return FacetSelection(
+            facet_id=str(node.node_id),
+            base_node_id=base_node_id,
+            facet_key=facet_key,
+            facet_label=facet_label or facet_key,
+        )
+
+    def _facet_selection_index(self, graph: ArchitectureGraph) -> Dict[str, FacetSelection]:
+        mapping: Dict[str, FacetSelection] = {}
+        for node in graph.nodes:
+            selection = self._facet_selection_from_node(node)
+            if selection is None:
+                continue
+            mapping[selection.facet_id] = selection
+        return mapping
 
     def _refresh_breadcrumb(self) -> None:
         while self.breadcrumb_layout.count():
@@ -956,20 +1101,33 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._graph_stack = self._graph_stack[: index + 1]
         self._set_graph(self._graph_stack[-1])
 
+    def _normalize_source_value(self, value: str) -> str:
+        text = (value or "").strip()
+        if text == "Demo":
+            return SOURCE_DEMO
+        if text in (SOURCE_DEMO, SOURCE_ATLAS, SOURCE_SNAPSHOT):
+            return text
+        return SOURCE_DEMO
+
     def _on_source_changed(self, value: str) -> None:
-        if value == self._source:
+        normalized = self._normalize_source_value(value)
+        if normalized != value:
+            blocker = QtCore.QSignalBlocker(self.source_combo)
+            self.source_combo.setCurrentText(normalized)
+            del blocker
+        if normalized == self._source:
             return
         self._save_layout()
-        self._source = value
+        self._source = normalized
         self._update_action_state()
-        if value == SOURCE_DEMO:
+        if normalized == SOURCE_DEMO:
             self._set_active_graphs(self._demo_root, self._demo_subgraphs)
             self.status_label.setText("")
             return
-        if value == SOURCE_ATLAS:
+        if normalized == SOURCE_ATLAS:
             self._build_atlas()
             return
-        if value == SOURCE_SNAPSHOT:
+        if normalized == SOURCE_SNAPSHOT:
             self._load_latest_snapshot(show_status=True)
 
     def _set_active_graphs(
@@ -982,6 +1140,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._relation_index_compare = None
         self._relation_index_compare_key = None
         self._inspector_relations_state_key = None
+        self._render_node_map = {}
+        self._facet_selection_by_id = {}
+        self._active_facet_selection = None
         self._active_root = root
         self._active_subgraphs = subgraphs
         self._graph_stack = [root.graph_id]
@@ -1040,6 +1201,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.triggered.connect(lambda _checked=False, value=theme_id: self._set_node_theme(value))
             theme_menu.addAction(action)
             self._theme_actions[theme_id] = action
+        self.view_menu.addSeparator()
+        self.facet_settings_action = QtGui.QAction("Facet Settings...", self.view_menu)
+        self.facet_settings_action.triggered.connect(self._open_facet_settings)
+        self.view_menu.addAction(self.facet_settings_action)
 
     def _build_filter_menu(self) -> None:
         self.filters_menu.clear()
@@ -1131,6 +1296,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _sync_view_controls(self) -> None:
         self._sync_lens_combo()
+        self.source_combo.blockSignals(True)
+        self.source_combo.setCurrentText(self._normalize_source_value(self._source))
+        self.source_combo.blockSignals(False)
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)
@@ -1694,6 +1862,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._icon_style = self._view_config.icon_style
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
+        self._facet_settings = self._view_config.facet_settings
         self._sync_view_controls()
         self.scene.set_node_theme(self._node_theme)
         self._render_current_graph()
@@ -1741,6 +1910,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _persist_view_config(self) -> None:
         self._view_config.live_enabled = bool(self._live_enabled)
+        self._view_config.pulse_settings = self._pulse_settings
+        self._view_config.facet_settings = self._facet_settings
         view_config.save_view_config(
             self._workspace_id(),
             self._view_config,
@@ -1751,13 +1922,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _clear_all_filters(self) -> None:
         current_theme = self._node_theme
         current_pulse = self._pulse_settings
+        current_facets = self._facet_settings
         current_stuck = self._view_config.span_stuck_seconds
         self._view_config = view_config.reset_to_defaults(self._lens, icon_style=self._icon_style)
         self._view_config.node_theme = current_theme
         self._view_config.pulse_settings = current_pulse
+        self._view_config.facet_settings = current_facets
         self._view_config.span_stuck_seconds = current_stuck
         self._node_theme = current_theme
         self._pulse_settings = current_pulse
+        self._facet_settings = current_facets
         self._diff_filters = {key: False for key in self._diff_filters}
         self._sync_view_controls()
         self._persist_view_config()
@@ -2478,6 +2652,63 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._persist_view_config()
         self._render_current_graph()
 
+    def _on_set_facet_density(self, density: str) -> None:
+        normalized = str(density or "").strip().lower()
+        if normalized not in view_config.FACET_DENSITIES:
+            normalized = "minimal"
+        current_enabled = _facet_enabled_defaults_for_density(normalized)
+        for key, value in dict(getattr(self._facet_settings, "enabled", {})).items():
+            if key in current_enabled and isinstance(value, bool):
+                current_enabled[key] = value
+        self._facet_settings = view_config.FacetSettings(
+            density=normalized,
+            enabled=current_enabled,
+            show_in_normal_view=bool(self._facet_settings.show_in_normal_view),
+            show_in_peek_view=bool(self._facet_settings.show_in_peek_view),
+        )
+        self._view_config.facet_settings = self._facet_settings
+        self._persist_view_config()
+        self._render_current_graph()
+
+    def _on_toggle_facet_enabled(self, key: str, enabled: bool) -> None:
+        if key not in view_config.FACET_KEYS:
+            return
+        next_enabled = dict(getattr(self._facet_settings, "enabled", {}))
+        next_enabled[key] = bool(enabled)
+        self._facet_settings = view_config.FacetSettings(
+            density=self._facet_settings.density,
+            enabled=next_enabled,
+            show_in_normal_view=bool(self._facet_settings.show_in_normal_view),
+            show_in_peek_view=bool(self._facet_settings.show_in_peek_view),
+        )
+        self._view_config.facet_settings = self._facet_settings
+        self._persist_view_config()
+        self._render_current_graph()
+
+    def _on_open_facet_settings(self) -> None:
+        self._open_facet_settings()
+
+    def _open_facet_settings(self) -> None:
+        new_settings = open_facet_settings(self, self._facet_settings)
+        if new_settings is None:
+            return
+        density = str(new_settings.density or "").strip().lower()
+        if density not in view_config.FACET_DENSITIES:
+            density = "minimal"
+        enabled = _facet_enabled_defaults_for_density(density)
+        for key, value in dict(getattr(new_settings, "enabled", {})).items():
+            if key in enabled and isinstance(value, bool):
+                enabled[key] = value
+        self._facet_settings = view_config.FacetSettings(
+            density=density,
+            enabled=enabled,
+            show_in_normal_view=bool(new_settings.show_in_normal_view),
+            show_in_peek_view=bool(new_settings.show_in_peek_view),
+        )
+        self._view_config.facet_settings = self._facet_settings
+        self._persist_view_config()
+        self._render_current_graph()
+
     def _save_preset(self) -> None:
         name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", "Preset name:")
         if not ok:
@@ -2512,6 +2743,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._node_theme = node_theme
             self._view_config.node_theme = node_theme
         self._pulse_settings = self._view_config.pulse_settings
+        self._facet_settings = self._view_config.facet_settings
         self._sync_view_controls()
         self.scene.set_node_theme(self._node_theme)
         self.scene.set_icon_style(self._resolved_icon_style())
@@ -2596,6 +2828,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._inspector_dock = dock
 
     def _inspect_node(self, node: Node, badge: Optional[Badge]) -> None:
+        self._active_facet_selection = self._facet_selection_from_node(node)
         item_ref = itemref_from_node(node)
         self.selected_item = item_ref
         if self._peek.peek_active:
@@ -2616,6 +2849,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         node_item = next((item for item in selected_items if isinstance(item, NodeItem)), None)
         if not node_item:
             return
+        self._active_facet_selection = self._facet_selection_from_node(node_item.node)
         item_ref = itemref_from_node(node_item.node)
         self.selected_item = item_ref
         if self._peek.peek_active:
@@ -2660,6 +2894,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._refresh_inspector_panel()
 
     def _on_inspector_relation_selected(self, item_ref: ItemRef) -> None:
+        self._active_facet_selection = None
         self.selected_item = item_ref
         if self._peek.peek_active:
             self._set_peek_breadcrumb(item_ref)
@@ -2670,6 +2905,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._refresh_inspector_panel()
 
     def _on_inspector_relation_inspect(self, item_ref: ItemRef) -> None:
+        self._active_facet_selection = None
         self.selected_item = item_ref
         if self._peek.peek_active:
             self._set_peek_breadcrumb(item_ref)
@@ -2681,9 +2917,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         graph = self._current_graph
         if self._diff_mode and self._diff_compare_graph:
             graph = self._diff_compare_graph
-        if not graph:
-            return None
-        return graph.get_node(item_ref.id)
+        if graph:
+            resolved = graph.get_node(item_ref.id)
+            if resolved is not None:
+                return resolved
+        return self._render_node_map.get(item_ref.id)
 
     def _inspector_properties(self, node: Node) -> Dict[str, str]:
         props: Dict[str, str] = {
@@ -2758,14 +2996,28 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._inspector_relations_state_key = None
             self._inspector_panel.set_stale(item_ref)
             return
+        facet_selection = self._facet_selection_by_id.get(item_ref.id) or self._facet_selection_from_node(node)
+        if facet_selection is not None:
+            self._active_facet_selection = facet_selection
+        else:
+            self._active_facet_selection = None
         name = node.title or itemref_display_name(item_ref)
-        summary = "Overview details are available. Relations and Activity tabs are placeholders in V5.5d2."
+        summary = "Overview details are available. Use Relations and Activity tabs for deeper context."
         self._inspector_panel.set_content(
             item_ref=item_ref,
             name=name,
             kind=item_ref.kind,
             summary=summary,
             properties=self._inspector_properties(node),
+        )
+        if facet_selection is not None:
+            self._refresh_facet_inspector(item_ref, node, facet_selection)
+            return
+        self._inspector_panel.show_activity(
+            mode="activity",
+            title=f"{name} activity",
+            items=self._build_activity_rows_for_node(item_ref.id, mode="activity"),
+            activate=False,
         )
         relation_revision = self._relation_revision_key_for_inspector()
         state_key = (item_ref.kind, item_ref.id, relation_revision)
@@ -2785,6 +3037,93 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
         self._inspector_panel.set_relations_provider(item_ref, provider)
         self._inspector_relations_state_key = state_key
+
+    def _refresh_facet_inspector(self, item_ref: ItemRef, node: Node, selection: FacetSelection) -> None:
+        if not self._inspector_panel:
+            return
+        base_ref = ItemRef(kind="node", id=selection.base_node_id)
+        base_node = self._resolve_node_for_item(base_ref)
+        base_name = base_node.title if base_node is not None else selection.base_node_id
+        title = f"{base_name} / {selection.facet_label}"
+        self._inspector_panel.set_content(
+            item_ref=item_ref,
+            name=title,
+            kind="facet",
+            summary="Facet node selected. Canvas remains stable while Inspector focuses the selected facet.",
+            properties={
+                "facet_key": selection.facet_key,
+                "base_node_id": selection.base_node_id,
+                "facet_label": selection.facet_label,
+            },
+        )
+        if selection.facet_key in FACET_KEYS_RELATIONS:
+            relation_revision = self._relation_revision_key_for_inspector()
+            state_key = ("facet_rel", item_ref.id, selection.facet_key, selection.base_node_id, relation_revision)
+            if self._inspector_relations_state_key != state_key:
+                relation_index = self._relation_index_for_inspector()
+
+                def provider(category: str, offset: int, limit: int, filter_text: str):
+                    return query_relation_page(
+                        relation_index,
+                        base_ref,
+                        category,
+                        offset,
+                        limit,
+                        filter_text,
+                    )
+
+                self._inspector_panel.set_relations_provider(base_ref, provider)
+                self._inspector_relations_state_key = state_key
+            self._inspector_panel.show_relations(
+                mode=selection.facet_key,
+                title=f"{selection.facet_label} for {base_name}",
+            )
+            self._inspector_panel.select_tab("relations")
+            return
+
+        self._inspector_relations_state_key = ("facet_act", item_ref.id, selection.facet_key, selection.base_node_id)
+        self._inspector_panel.show_activity(
+            mode=selection.facet_key,
+            title=f"{selection.facet_label} for {base_name}",
+            items=self._build_activity_rows_for_node(selection.base_node_id, mode=selection.facet_key),
+        )
+        self._inspector_panel.select_tab("activity")
+
+    def _build_activity_rows_for_node(self, node_id: str, *, mode: str) -> list[dict[str, str]]:
+        mode_key = (mode or "").strip().lower()
+        rows: list[dict[str, str]] = []
+        events = list(self._events_by_node.get(node_id, []))
+        for event in reversed(events[-120:]):
+            if not _event_matches_activity_mode(event, mode_key):
+                continue
+            rows.append(
+                {
+                    "when": str(event.ts or ""),
+                    "type": str(event.kind or ""),
+                    "source": str(event.source or "runtime"),
+                    "detail": str(event.message or event.detail or ""),
+                }
+            )
+            if len(rows) >= 80:
+                break
+        if mode_key in ("spans", "runs", "activity") and self._runtime_hub:
+            span_rows = _span_rows_for_node(
+                self._runtime_hub.list_active_spans() + self._runtime_hub.list_recent_spans(),
+                node_id=node_id,
+                mode=mode_key,
+                limit=max(0, 80 - len(rows)),
+            )
+            rows.extend(span_rows)
+        if not rows:
+            rows.append(
+                {
+                    "when": "",
+                    "type": mode_key or "activity",
+                    "source": "codesee",
+                    "detail": f"No data yet for {(mode_key or 'activity').replace('_', ' ')}.",
+                }
+            )
+        return rows[:80]
 
     def _build_atlas(self) -> None:
         ctx = CollectorContext(
@@ -3111,6 +3450,69 @@ def _set_combo_by_data(combo: QtWidgets.QComboBox, value: Optional[str]) -> None
 
 def _format_active_total(active: int, total: int) -> str:
     return f"{int(active)} / {int(total)}"
+
+
+def _facet_enabled_defaults_for_density(density: str) -> Dict[str, bool]:
+    normalized = str(density or "").strip().lower()
+    if normalized not in view_config.FACET_DENSITIES:
+        normalized = "minimal"
+    enabled = {key: False for key in view_config.FACET_KEYS}
+    if normalized == "off":
+        return enabled
+    for key in ("deps", "activity"):
+        enabled[key] = True
+    if normalized in ("standard", "expanded", "debug"):
+        for key in ("packs", "entry_points", "signals", "errors", "spans"):
+            enabled[key] = True
+    if normalized in ("expanded", "debug"):
+        for key in ("runs", "logs"):
+            enabled[key] = True
+    if normalized == "debug":
+        for key in view_config.FACET_KEYS:
+            enabled[key] = True
+    return enabled
+
+
+def _event_matches_activity_mode(event: CodeSeeEvent, mode: str) -> bool:
+    if mode in ("", "activity", "logs"):
+        return True
+    if mode == "errors":
+        return event.severity in ("error", "crash", "failure") or event.kind in (EVENT_APP_ERROR, EVENT_APP_CRASH)
+    if mode == "signals":
+        return event.kind in (EVENT_BUS_REQUEST, EVENT_BUS_REPLY, EVENT_TEST_PULSE)
+    if mode == "spans":
+        return event.kind in (EVENT_SPAN_START, EVENT_SPAN_UPDATE, EVENT_SPAN_END)
+    if mode == "runs":
+        return event.kind in (EVENT_JOB_UPDATE, EVENT_SPAN_START, EVENT_SPAN_END)
+    return True
+
+
+def _span_rows_for_node(
+    spans: list[SpanRecord],
+    *,
+    node_id: str,
+    mode: str,
+    limit: int,
+) -> list[dict[str, str]]:
+    if limit <= 0:
+        return []
+    rows: list[dict[str, str]] = []
+    for span in reversed(spans):
+        if span.node_id != node_id:
+            continue
+        if mode == "runs" and span.status not in ("active", "failed", "done", "success", "ok"):
+            continue
+        rows.append(
+            {
+                "when": f"{span.updated_ts:.2f}" if span.updated_ts else "",
+                "type": f"span.{span.status}",
+                "source": str(span.source_id or "runtime"),
+                "detail": str(span.message or span.label or span.span_id),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
 
 # --- [NAV-90B] badge keys + labels + filter summaries
 def _badge_key_for_event(event: CodeSeeEvent) -> Optional[str]:

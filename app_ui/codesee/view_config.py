@@ -19,6 +19,7 @@ class ViewConfig:
     icon_style: str = ICON_STYLE_AUTO
     node_theme: str = "neutral"
     pulse_settings: "PulseSettings" = field(default_factory=lambda: default_pulse_settings())
+    facet_settings: "FacetSettings" = field(default_factory=lambda: default_facet_settings())
     span_stuck_seconds: int = 10
     live_enabled: bool = False
 
@@ -40,6 +41,28 @@ class PulseSettings:
     max_concurrent_signals: int = 6
     tint_active_spans: bool = False
     topic_enabled: Dict[str, bool] = field(default_factory=lambda: _default_pulse_topics())
+
+
+FACET_DENSITIES = ("off", "minimal", "standard", "expanded", "debug")
+FACET_KEYS = (
+    "deps",
+    "packs",
+    "entry_points",
+    "logs",
+    "activity",
+    "spans",
+    "runs",
+    "errors",
+    "signals",
+)
+
+
+@dataclass
+class FacetSettings:
+    density: str = "minimal"
+    enabled: Dict[str, bool] = field(default_factory=lambda: _default_facet_enabled_for_density("minimal"))
+    show_in_normal_view: bool = True
+    show_in_peek_view: bool = True
 
 
 _CATEGORY_DEFAULTS = {
@@ -86,12 +109,23 @@ def default_view_config(lens_id: str, *, icon_style: str = ICON_STYLE_AUTO) -> V
         icon_style=icon_style,
         node_theme="neutral",
         pulse_settings=default_pulse_settings(),
+        facet_settings=default_facet_settings(),
         span_stuck_seconds=10,
     )
 
 
 def default_pulse_settings() -> PulseSettings:
     return PulseSettings()
+
+
+def default_facet_settings() -> FacetSettings:
+    density = "minimal"
+    return FacetSettings(
+        density=density,
+        enabled=_default_facet_enabled_for_density(density),
+        show_in_normal_view=True,
+        show_in_peek_view=True,
+    )
 
 
 def reset_to_defaults(lens_id: str, *, icon_style: str = ICON_STYLE_AUTO) -> ViewConfig:
@@ -203,6 +237,7 @@ def load_view_config(workspace_id: str, lens_id: str) -> ViewConfig:
     if isinstance(raw_theme, str) and raw_theme.strip():
         config.node_theme = raw_theme.strip()
     config.pulse_settings = _merge_pulse_settings(config.pulse_settings, settings.get("pulse_settings"))
+    config.facet_settings = _merge_facet_settings(config.facet_settings, settings.get("facet_settings"))
     config.span_stuck_seconds = _merge_int_setting(settings.get("span_stuck_seconds"), config.span_stuck_seconds)
     config.live_enabled = bool(settings.get("live_enabled", False))
     return config
@@ -229,6 +264,7 @@ def save_view_config(
     if config.node_theme:
         settings["node_theme"] = config.node_theme
     settings["pulse_settings"] = _pulse_settings_to_dict(config.pulse_settings)
+    settings["facet_settings"] = _facet_settings_to_dict(config.facet_settings)
     settings["span_stuck_seconds"] = int(config.span_stuck_seconds)
     settings["live_enabled"] = bool(config.live_enabled)
     lenses = settings.get("lenses")
@@ -258,6 +294,7 @@ def build_view_preset(
         "show_badge_layers": dict(config.show_badge_layers),
         "quick_filters": dict(config.quick_filters),
         "pulse_settings": _pulse_settings_to_dict(config.pulse_settings),
+        "facet_settings": _facet_settings_to_dict(config.facet_settings),
         "span_stuck_seconds": int(config.span_stuck_seconds),
         "live_enabled": bool(config.live_enabled),
     }
@@ -268,6 +305,7 @@ def apply_view_preset(config: ViewConfig, preset: Dict[str, object]) -> ViewConf
     config.show_badge_layers = _merge_bool_map(config.show_badge_layers, preset.get("show_badge_layers"))
     config.quick_filters = _merge_bool_map(config.quick_filters, preset.get("quick_filters"))
     config.pulse_settings = _merge_pulse_settings(config.pulse_settings, preset.get("pulse_settings"))
+    config.facet_settings = _merge_facet_settings(config.facet_settings, preset.get("facet_settings"))
     config.span_stuck_seconds = _merge_int_setting(
         preset.get("span_stuck_seconds"),
         config.span_stuck_seconds,
@@ -335,6 +373,62 @@ def _merge_pulse_settings(defaults: PulseSettings, raw) -> PulseSettings:
     return merged
 
 
+def _normalize_facet_density(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if text in FACET_DENSITIES:
+        return text
+    return "minimal"
+
+
+def _default_facet_enabled_for_density(density: str) -> Dict[str, bool]:
+    normalized = _normalize_facet_density(density)
+    enabled = {key: False for key in FACET_KEYS}
+    if normalized == "off":
+        return enabled
+    for key in ("deps", "activity"):
+        enabled[key] = True
+    if normalized in ("standard", "expanded", "debug"):
+        for key in ("packs", "entry_points", "signals", "errors", "spans"):
+            enabled[key] = True
+    if normalized in ("expanded", "debug"):
+        for key in ("runs", "logs"):
+            enabled[key] = True
+    if normalized == "debug":
+        for key in FACET_KEYS:
+            enabled[key] = True
+    return enabled
+
+
+def _merge_facet_settings(defaults: FacetSettings, raw) -> FacetSettings:
+    if not isinstance(raw, dict):
+        return defaults
+    density = _normalize_facet_density(raw.get("density", defaults.density))
+    enabled = _default_facet_enabled_for_density(density)
+    raw_enabled = raw.get("enabled")
+    if isinstance(raw_enabled, dict):
+        for key, value in raw_enabled.items():
+            name = str(key)
+            if name not in FACET_KEYS:
+                _debug_log(f"ignoring unknown facet key: {name}")
+                continue
+            if isinstance(value, bool):
+                enabled[name] = value
+    show_in_normal_view = defaults.show_in_normal_view
+    show_in_peek_view = defaults.show_in_peek_view
+    raw_normal = raw.get("show_in_normal_view")
+    raw_peek = raw.get("show_in_peek_view")
+    if isinstance(raw_normal, bool):
+        show_in_normal_view = raw_normal
+    if isinstance(raw_peek, bool):
+        show_in_peek_view = raw_peek
+    return FacetSettings(
+        density=density,
+        enabled=enabled,
+        show_in_normal_view=bool(show_in_normal_view),
+        show_in_peek_view=bool(show_in_peek_view),
+    )
+
+
 def _merge_int_setting(raw, default: int) -> int:
     if raw is None:
         return default
@@ -361,6 +455,21 @@ def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:
         "max_concurrent_signals": int(settings.max_concurrent_signals),
         "tint_active_spans": bool(settings.tint_active_spans),
         "topic_enabled": dict(settings.topic_enabled),
+    }
+
+
+def _facet_settings_to_dict(settings: FacetSettings) -> Dict[str, object]:
+    density = _normalize_facet_density(settings.density)
+    enabled = _default_facet_enabled_for_density(density)
+    for key, value in (settings.enabled or {}).items():
+        name = str(key)
+        if name in FACET_KEYS and isinstance(value, bool):
+            enabled[name] = value
+    return {
+        "density": density,
+        "enabled": enabled,
+        "show_in_normal_view": bool(settings.show_in_normal_view),
+        "show_in_peek_view": bool(settings.show_in_peek_view),
     }
 
 
