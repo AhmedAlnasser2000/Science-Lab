@@ -30,6 +30,20 @@
 - **Example:** Switch to Bus lens to focus on message flow entities.
 - **Common confusion (what it's NOT):** Not a single-node detail popup.
 
+### System Map
+- **Meaning (plain English):** Curated architecture overview source.
+- **Real-life analogy:** A city map with key districts highlighted.
+- **In PhysicsLab:** The renamed CodeSee source previously shown as "Demo".
+- **Example:** Choose `System Map` in Source to view the curated core layout.
+- **Common confusion (what it's NOT):** Not the Atlas source; Atlas reflects discovered graph data.
+
+### Facet Node
+- **Meaning (plain English):** Synthetic helper node that represents a specific slice of a module.
+- **Real-life analogy:** A sticky tab on a document section (dependencies, logs, activity).
+- **In PhysicsLab:** Runtime-injected nodes in System Map to route directly into Inspector relations/activity views.
+- **Example:** Clicking an `activity` facet opens the Inspector Activity tab for that base node.
+- **Common confusion (what it's NOT):** Not a persisted graph node in snapshots.
+
 ### Dependents
 - **Meaning (plain English):** Items that rely on the current item.
 - **Real-life analogy:** Apps that stop working if one shared library is removed.
