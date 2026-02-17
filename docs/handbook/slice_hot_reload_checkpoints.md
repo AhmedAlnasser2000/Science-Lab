@@ -78,8 +78,17 @@ Expected contents:
 ## Finalize definition
 "Finalize" means:
 1. Keep only committed docs/tests/tooling files in the repo.
-2. Delete `.slice_tmp/<slice_id>`.
-3. Confirm cleanup in the gate summary.
+2. Run a preview first:
+   - `finalize <slice_id>` prints what would be deleted and performs no deletion.
+3. Delete only with explicit intent:
+   - `finalize <slice_id> --delete` removes `.slice_tmp/<slice_id>`.
+4. Confirm cleanup in the gate summary.
+
+Finalize behavior requirements:
+- Dry run output must include: `DRY RUN (no deletion performed)`.
+- Delete output must include: `DELETED: <path>`.
+- Deletion must be contained inside `.slice_tmp/<slice_id>/` only.
+- Malicious IDs (path traversal/absolute paths) must be rejected.
 
 ## Safe rollback guidance
 Use lightweight git rollback by context:
@@ -103,4 +112,5 @@ python tools/dev/slice_session.py note "Gate 1 started"
 python tools/dev/slice_session.py gate inspector-routing --kind ui
 python tools/dev/slice_session.py gate-done inspector-routing --result pass
 python tools/dev/slice_session.py finalize V5.5d6
+python tools/dev/slice_session.py finalize V5.5d6 --delete
 ```

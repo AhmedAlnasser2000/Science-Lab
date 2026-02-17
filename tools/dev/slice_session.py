@@ -13,6 +13,7 @@ from typing import Any
 
 _ACTIVE_FILE = ".active_session"
 _SCRATCH_ENV = "PHYSICSLAB_SLICE_TMP_DIR"
+_SLICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _utc_now() -> str:
@@ -50,6 +51,19 @@ def _normalize_slice_id(value: str) -> str:
     cleaned = (value or "").strip()
     if not cleaned:
         raise ValueError("slice_id is required")
+    path_value = Path(cleaned)
+    if path_value.is_absolute():
+        raise ValueError(f"invalid slice_id (absolute path not allowed): {cleaned}")
+    if cleaned in {".", ".."}:
+        raise ValueError(f"invalid slice_id: {cleaned}")
+    if "/" in cleaned or "\\" in cleaned:
+        raise ValueError(f"invalid slice_id (path separators not allowed): {cleaned}")
+    if ":" in cleaned:
+        raise ValueError(f"invalid slice_id (drive/path marker not allowed): {cleaned}")
+    if not _SLICE_ID_RE.fullmatch(cleaned):
+        raise ValueError(
+            "invalid slice_id; allowed pattern is [A-Za-z0-9][A-Za-z0-9._-]*"
+        )
     return cleaned
 
 
@@ -77,13 +91,29 @@ def _require_active_slice(root: Path) -> str:
     slice_id = active_file.read_text(encoding="utf-8").strip()
     if not slice_id:
         raise RuntimeError("Active session file is empty. Run: start <slice_id>")
-    return slice_id
+    return _normalize_slice_id(slice_id)
+
+
+def _contains_path(base: Path, target: Path) -> bool:
+    try:
+        target.relative_to(base)
+        return True
+    except ValueError:
+        return False
+
+
+def _session_dir(root: Path, slice_id: str) -> tuple[Path, str]:
+    safe_id = _normalize_slice_id(slice_id)
+    base = root.resolve()
+    target = (base / safe_id).resolve()
+    if not _contains_path(base, target):
+        raise RuntimeError(f"refusing unsafe path outside scratch root: {target}")
+    return target, safe_id
 
 
 def cmd_start(slice_id: str) -> int:
-    root = _scratch_root()
-    session_id = _normalize_slice_id(slice_id)
-    session_dir = root / session_id
+    root = _scratch_root().resolve()
+    session_dir, session_id = _session_dir(root, slice_id)
 
     _gates_dir(session_dir).mkdir(parents=True, exist_ok=True)
 
@@ -106,9 +136,9 @@ def cmd_start(slice_id: str) -> int:
 
 
 def cmd_note(text: str) -> int:
-    root = _scratch_root()
+    root = _scratch_root().resolve()
     session_id = _require_active_slice(root)
-    session_dir = root / session_id
+    session_dir, _ = _session_dir(root, session_id)
     if not session_dir.exists():
         raise RuntimeError(f"Active slice directory does not exist: {session_dir}")
     notes_file = _notes_path(session_dir)
@@ -121,9 +151,9 @@ def cmd_note(text: str) -> int:
 
 
 def cmd_gate(name: str, kind: str) -> int:
-    root = _scratch_root()
+    root = _scratch_root().resolve()
     session_id = _require_active_slice(root)
-    session_dir = root / session_id
+    session_dir, _ = _session_dir(root, session_id)
     state = _read_state(session_dir)
     gates = list(state.get("gates", []))
     gate_slug = _slug(name)
@@ -172,9 +202,9 @@ def cmd_gate(name: str, kind: str) -> int:
 
 
 def cmd_gate_done(name: str, result: str) -> int:
-    root = _scratch_root()
+    root = _scratch_root().resolve()
     session_id = _require_active_slice(root)
-    session_dir = root / session_id
+    session_dir, _ = _session_dir(root, session_id)
     state = _read_state(session_dir)
     gates = list(state.get("gates", []))
     gate_slug = _slug(name)
@@ -203,31 +233,39 @@ def cmd_gate_done(name: str, result: str) -> int:
     return 0
 
 
-def _print_delete_preview(path: Path) -> None:
-    print(f"Deleting session folder: {path}")
-    for child in sorted(path.rglob("*")):
-        rel = child.relative_to(path)
-        suffix = "/" if child.is_dir() else ""
-        print(f" - {rel}{suffix}")
+def _print_finalize_preview(path: Path) -> None:
+    print(f"Would delete: {path}")
+    if not path.exists():
+        print(" - (session folder does not exist)")
+        return
+    key_files = ("state.json", "notes.md")
+    for key in key_files:
+        candidate = path / key
+        if candidate.exists():
+            print(f" - {key}")
+    gates = path / "gates"
+    if gates.exists() and gates.is_dir():
+        count = sum(1 for _ in gates.glob("*.md"))
+        print(f" - gates/ ({count} files)")
 
 
-def cmd_finalize(slice_id: str) -> int:
-    root = _scratch_root()
-    session_id = _normalize_slice_id(slice_id)
-    session_dir = root / session_id
-    if not session_dir.exists():
-        print(f"Session does not exist: {session_dir}")
+def cmd_finalize(slice_id: str, *, delete: bool) -> int:
+    root = _scratch_root().resolve()
+    session_dir, session_id = _session_dir(root, slice_id)
+    _print_finalize_preview(session_dir)
+
+    if not delete:
+        print("DRY RUN (no deletion performed)")
         return 0
 
-    _print_delete_preview(session_dir)
-    shutil.rmtree(session_dir)
-
+    if session_dir.exists():
+        shutil.rmtree(session_dir)
     active_file = _active_path(root)
     if active_file.exists():
         active_id = active_file.read_text(encoding="utf-8").strip()
         if active_id == session_id:
             active_file.unlink(missing_ok=True)
-    print(f"Finalized and deleted: {session_id}")
+    print(f"DELETED: {session_dir}")
     return 0
 
 
@@ -249,8 +287,16 @@ def build_parser() -> argparse.ArgumentParser:
     gate_done.add_argument("name")
     gate_done.add_argument("--result", choices=("pass", "fail", "blocked"), required=True)
 
-    finalize = sub.add_parser("finalize", help="Delete one slice scratch session.")
+    finalize = sub.add_parser(
+        "finalize",
+        help="Preview deletion by default. Pass --delete to remove one slice scratch session.",
+    )
     finalize.add_argument("slice_id")
+    finalize.add_argument(
+        "--delete",
+        action="store_true",
+        help="Actually delete the session folder.",
+    )
 
     return parser
 
@@ -268,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "gate-done":
             return cmd_gate_done(args.name, args.result)
         if args.cmd == "finalize":
-            return cmd_finalize(args.slice_id)
+            return cmd_finalize(args.slice_id, delete=bool(args.delete))
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
