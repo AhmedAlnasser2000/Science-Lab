@@ -1813,14 +1813,21 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
-        if self._lens_palette_dock and obj is self._lens_palette_dock:
+        lens_palette_dock = getattr(self, "_lens_palette_dock", None)
+        lens_palette = getattr(self, "_lens_palette", None)
+        lens_palette_btn = getattr(self, "lens_palette_btn", None)
+        lens_palette_visible = bool(getattr(self, "_lens_palette_visible", False))
+        lens_palette_pinned = bool(getattr(self, "_lens_palette_pinned", False))
+
+        if lens_palette_dock and obj is lens_palette_dock:
             if event.type() == QtCore.QEvent.Type.Hide:
                 self._lens_palette_visible = False
-                self.lens_palette_btn.setChecked(False)
+                if lens_palette_btn is not None:
+                    lens_palette_btn.setChecked(False)
                 self._remove_lens_palette_event_filter()
         if (
-            self._lens_palette_visible
-            and not self._lens_palette_pinned
+            lens_palette_visible
+            and not lens_palette_pinned
             and event.type() == QtCore.QEvent.Type.MouseButtonPress
         ):
             mouse_event = event  # type: ignore[assignment]
@@ -1829,12 +1836,22 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 global_pos = mouse_event.globalPosition().toPoint()
             elif hasattr(mouse_event, "globalPos"):
                 global_pos = mouse_event.globalPos()
-            target = self._lens_palette_dock if self._lens_palette_dock else self._lens_palette
+            target = lens_palette_dock if lens_palette_dock else lens_palette
             if global_pos and target:
-                if not target.frameGeometry().contains(global_pos):
-                    if not self._global_rect(self.lens_palette_btn).contains(global_pos):
+                try:
+                    inside_target = target.frameGeometry().contains(global_pos)
+                except RuntimeError:
+                    inside_target = True
+                if not inside_target:
+                    inside_button = False
+                    if lens_palette_btn is not None:
+                        inside_button = self._global_rect(lens_palette_btn).contains(global_pos)
+                    if not inside_button:
                         self._hide_lens_palette()
-        return super().eventFilter(obj, event)
+        try:
+            return super().eventFilter(obj, event)
+        except RuntimeError:
+            return False
 
     def _sync_icon_style_combo(self) -> None:
         for idx in range(self.icon_style_combo.count()):
@@ -2845,7 +2862,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._inspector_dock.raise_()
 
     def _on_scene_selection_changed(self) -> None:
-        selected_items = self.scene.selectedItems()
+        scene = getattr(self, "scene", None)
+        if scene is None:
+            return
+        try:
+            selected_items = scene.selectedItems()
+        except RuntimeError:
+            return
         node_item = next((item for item in selected_items if isinstance(item, NodeItem)), None)
         if not node_item:
             return
