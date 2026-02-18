@@ -17,8 +17,8 @@ Use this skill when the user asks to start a new slice/milestone branch or creat
    - Push is disabled unless explicitly requested (`-Push`).
    - The start script enforces `fetch + ff-only pull` for local `main` vs `origin/main`; if main is ahead/diverged, repair main first.
 4. Before wrapping up a slice, always provide:
-   - one suggested PR title
-   - a concise PR summary/body ready to paste into GitHub.
+   - one suggested PR title based on what was actually achieved in committed slice changes
+   - a descriptive PR summary/body that covers all major change themes in that branch/slice.
 5. If hot-reload gate workflow is active for the slice:
    - start/maintain `tools/dev/slice_session.py` artifacts under `.slice_tmp/<slice_id>/`
    - run gates sequentially by default (one gate, stop for user confirmation)

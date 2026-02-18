@@ -85,6 +85,23 @@ Commit naming policy (non-ambiguous):
   - `fix(V5.5d7): facet labels and glyph spacing (follow-up 2)`
 - In user status/final updates, always map each commit hash to a one-line summary.
 
+PR handoff completeness policy (mandatory):
+- When providing PR title + summary/body for a slice, content must cover the full slice delta on that branch, not a partial subset.
+- PR title rule:
+  - Keep title focused on what was actually achieved by committed changes in that slice branch.
+  - Do not title PR as only `chore`/`docs` if commits also include feature/fix work.
+- PR summary rule:
+  - Summary/body must be more descriptive than title and include all significant shipped themes in that branch/slice.
+- The agent must check branch commits since slice start (or agreed base) and ensure major change categories are represented:
+  - features/fixes
+  - docs/policy updates
+  - tests/tooling changes
+- If a PR title/body only describes one category while branch includes others, the agent must revise it before presenting.
+- Before final PR handoff, include a brief coverage checklist mapping:
+  - commit ranges/hashes -> summarized themes
+  - and confirm no significant slice changes are omitted.
+- If there is any ambiguity about intended PR scope, stop and ask before proposing final PR text.
+
 Operational note:
 - Closing the app window does not stop terminal workflow; continue via terminal/tests/gates and relaunch app for UI verification.
 

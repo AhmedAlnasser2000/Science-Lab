@@ -128,6 +128,12 @@ Agents must follow these rules unless explicitly overridden:
      - `(follow-up 1)`, `(follow-up 2)`, etc.
    - In handoff updates, always map commit hash to a plain one-line description.
 
+6.2) **PR title/summary must match full slice outcome**
+   - PR title should reflect what was achieved by committed changes in the slice branch.
+   - PR summary/body should be descriptive and include all major change themes present in that branch/slice.
+   - Do not publish misleading PR metadata that mentions only one subset (for example only `chore`) when feature/fix commits are also included.
+   - Validate title/summary against commit list before handoff.
+
 7) **Mid-gate changes: split only when needed**
    - **First classify the change** in the gate note:
      - what changed
