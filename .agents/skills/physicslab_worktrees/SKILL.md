@@ -19,6 +19,12 @@ Use this skill when the user asks to start a new slice/milestone branch or creat
 4. Before wrapping up a slice, always provide:
    - one suggested PR title
    - a concise PR summary/body ready to paste into GitHub.
+5. If hot-reload gate workflow is active for the slice:
+   - start/maintain `tools/dev/slice_session.py` artifacts under `.slice_tmp/<slice_id>/`
+   - run gates sequentially by default (one gate, stop for user confirmation)
+   - only batch multiple gates when the user explicitly asks
+   - classify mid-gate changes and split into follow-up gates when scope/risk expands
+   - keep commit messages non-ambiguous with explicit follow-up suffixes when repeating scope.
 
 ## One-liners
 

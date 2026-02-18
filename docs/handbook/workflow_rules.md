@@ -117,16 +117,39 @@ Agents must follow these rules unless explicitly overridden:
    - Commit after MVP baseline
    - Commit after UX polish
 
-5) **Hot-reload gates are mandatory per slice**
-   - Start session first: `python tools/dev/slice_session.py start <slice_id>`
-   - Create gates and notes while working under `.slice_tmp/<slice_id>/`
-   - Backend gates require command/test evidence before marking pass
-   - UI gates stay pending until user verifies in-app behavior
-   - Do not commit until session + gates exist and reflect current slice state
+5) **Hot-reload gates are sequential by default**
+   - For slice execution, use `tools/dev/slice_session.py` with notes and gates under `.slice_tmp/<slice_id>/`.
+   - Run one gate at a time and stop for user confirmation before the next gate.
+   - Batch gate progression is allowed only with explicit user request.
 
-6) **Terminal-first continuity**
-   - If the app window is closed/crashes, continue workflow from terminal artifacts (notes/gates/tests).
-   - Relaunch app only for UI gate verification.
+6) **Commit naming must be explicit and unique**
+   - Include slice id + concrete scope in every commit message.
+   - For repeated/follow-up commits in same area, append a follow-up suffix:
+     - `(follow-up 1)`, `(follow-up 2)`, etc.
+   - In handoff updates, always map commit hash to a plain one-line description.
+
+7) **Mid-gate changes: split only when needed**
+   - **First classify the change** in the gate note:
+     - what changed
+     - why it changed
+     - risk class (`ui-only`, `logic`, `persistence`, `contract`, `performance`, `safety`)
+     - affected files/tests
+   - **Keep in current gate** only when all are true:
+     - same acceptance target
+     - no new risk class
+     - existing verification still sufficient
+     - no additional user-facing behavior outside gate scope
+   - **Create follow-up gate** when any are true:
+     - acceptance target changed/expanded
+     - new risk class introduced
+     - extra validation or tests required
+     - additional surfaces touched beyond gate scope
+   - **UI gate + backend risk discovered**:
+     - open backend follow-up gate immediately
+     - resolve backend gate first, then return to UI gate
+   - **Naming for follow-up gates**:
+     - `<gate_name>_followup_1`, `<gate_name>_followup_2`, ...
+   - **Do not close a gate** with unresolved scope changes or partial evidence.
 
 ---
 

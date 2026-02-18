@@ -22,25 +22,71 @@ Quick start:
 
 ## Hot-Reload Gate Workflow: Permanent Policy
 
-This repository now treats gate-based slice workflow as mandatory for all new slices.
+Gate workflow is mandatory for slice work.
 
 Rules:
-- Start a slice session before substantial edits:
+- Start a slice session before substantial slice edits:
   - `python tools/dev/slice_session.py start <slice_id>`
 - Record progress continuously:
   - `python tools/dev/slice_session.py note "..."`
   - `python tools/dev/slice_session.py gate <gate_name> --kind ui|backend`
 - Close backend gates only with command/test evidence.
-- Leave UI gates open until user confirms in-app behavior, then close with:
-  - `python tools/dev/slice_session.py gate-done <gate_name> --result pass|fail|blocked`
-- Do not commit slice code until the session and gate artifacts exist under `.slice_tmp/<slice_id>/`.
-- If work began before session start, create the session retroactively in the same slice and backfill gates/notes before committing.
-- Use non-destructive finalize by default:
-  - `python tools/dev/slice_session.py finalize <slice_id>`
-  - delete only with explicit intent: `--delete`
+- Leave UI gates open until user confirms in-app behavior.
+- Do not commit slice implementation until session + gates exist under `.slice_tmp/<slice_id>/`.
+- If work started without session, backfill session/gates before commit.
+
+Gate sequencing policy:
+- Default is sequential: one gate at a time.
+- After each gate implementation/verification summary, stop and wait for user confirmation before moving to the next gate.
+- Open/close multiple gates in one step only when the user explicitly requests batch handling.
+
+Mid-gate change policy:
+- Purpose:
+  - Prevent hidden scope growth inside one gate.
+  - Keep verification evidence matched to exactly one acceptance target.
+- Classification step (must be explicit in a note before proceeding):
+  - What changed
+  - Why it changed
+  - What risk class it touches: `ui-only`, `logic`, `persistence`, `contract`, `performance`, `safety`
+  - Which files and tests are affected
+- Keep change in current gate only if **all** are true:
+  - Acceptance target of current gate is unchanged.
+  - No new risk class beyond what this gate already covered.
+  - Existing verification plan still fully validates the change.
+  - No new user-facing behavior outside the gate statement.
+- Split into follow-up gate if **any** is true:
+  - Acceptance target changed or expanded.
+  - New risk class appears (especially `logic`, `persistence`, `contract`, `safety`).
+  - New validation steps/tests are required.
+  - Change affects additional surfaces not in current gate.
+  - Reviewer/user could reasonably read it as a different fix.
+- Backend risk discovered during a UI gate:
+  - Open backend follow-up gate immediately.
+  - Complete backend verification first.
+  - Return to UI gate only after backend gate is resolved or explicitly blocked.
+- Gate naming convention for follow-ups:
+  - `<gate_name>_followup_1`, `<gate_name>_followup_2`, etc.
+  - Keep names stable and descriptive (no generic `misc`/`extra`).
+- Required gate note fields for every mid-gate change:
+  - `trigger` (what prompted the change)
+  - `decision` (stay in gate vs split)
+  - `reason`
+  - `files_touched`
+  - `verification_delta` (new/changed tests or checks)
+  - `user_impact`
+- Gate close rule:
+  - Do not close a gate with unresolved scope changes.
+  - Do not close a gate if evidence only covers part of the final behavior in that gate.
+
+Commit naming policy (non-ambiguous):
+- Commit messages must include slice id and a specific scope.
+- For follow-up commits in the same slice/scope, add an explicit suffix, e.g.:
+  - `fix(V5.5d7): facet labels and glyph spacing (follow-up 1)`
+  - `fix(V5.5d7): facet labels and glyph spacing (follow-up 2)`
+- In user status/final updates, always map each commit hash to a one-line summary.
 
 Operational note:
-- Closing the app window does not end terminal workflow. Keep using terminal evidence (tests/logs/gates) and relaunch app when UI verification is needed.
+- Closing the app window does not stop terminal workflow; continue via terminal/tests/gates and relaunch app for UI verification.
 
 
 ## Skills
