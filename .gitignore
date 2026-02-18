@@ -31,3 +31,4 @@ data/store/runs/
 data/store/runs_local/
 content_store/
 ui_store/
+/.slice_tmp/
