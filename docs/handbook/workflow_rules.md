@@ -117,6 +117,89 @@ Agents must follow these rules unless explicitly overridden:
    - Commit after MVP baseline
    - Commit after UX polish
 
+5) **Hot-reload gates are sequential by default**
+   - For slice execution, use `tools/dev/slice_session.py` with notes and gates under `.slice_tmp/<slice_id>/`.
+   - Run one gate at a time and stop for user confirmation before the next gate.
+   - Batch gate progression is allowed only with explicit user request.
+
+6) **Commit naming must be explicit and unique**
+   - Include slice id + concrete scope in every commit message.
+   - For repeated/follow-up commits in same area, append a follow-up suffix:
+     - `(follow-up 1)`, `(follow-up 2)`, etc.
+   - In handoff updates, always map commit hash to a plain one-line description.
+
+6.1) **Pre-push confirmation is mandatory**
+   - Before any push, print a push plan and wait for explicit user approval.
+   - Push plan must include:
+     - active branch
+     - target remote branch
+     - commit list to be pushed (hash + summary)
+     - ahead/behind/diverged state vs upstream
+     - exact push command
+   - If branch/slice mismatch is detected, stop and ask.
+   - If upstream differs from intended slice branch, stop and ask.
+   - If user asks "commit and push", still present the plan first, then push only after explicit confirmation.
+   - If intent is ambiguous, default to local commit only (no push).
+
+6.2) **Same-slice branch containment is mandatory**
+   - Keep all slice-related changes on the same slice branch from first edit to final push.
+   - Include all change categories:
+     - code, tests, docs, policy files, workflow files, and tiny follow-up tweaks.
+   - Verify branch identity before commit and push using:
+     - `git rev-parse --abbrev-ref HEAD`
+     - `.physicslab_worktree.json` `branch` value (when file exists)
+   - If branch mismatch is found:
+     - stop immediately
+     - do not commit or push
+     - present recovery plan and wait for approval
+   - If wrong-branch commit already happened:
+     - transfer to correct branch first
+     - verify on correct branch
+     - clean wrong branch with approved recovery action
+   - Do not push mixed-slice commit batches.
+
+6.3) **No unpushed leftovers + main sync timing**
+   - At slice handoff (or before switching to a new slice), always report:
+     - `git status --short`
+     - branch ahead check vs upstream (`git log --oneline @{u}..` or equivalent)
+   - If commits are ahead of upstream:
+     - push with pre-push confirmation, or
+     - explicitly record user-approved deferment.
+   - Do not move to next slice with implicit/unreported unpushed commits.
+   - Main sync timing is fixed:
+     - after PR merge, sync local `main` immediately (`fetch` + `checkout main` + `pull --ff-only`)
+     - before creating the next slice, re-check local `main` against `origin/main`
+     - if local `main` is ahead/diverged, stop and repair before slice start.
+
+6.4) **PR title/summary must match full slice outcome**
+   - PR title should reflect what was achieved by committed changes in the slice branch.
+   - PR summary/body should be descriptive and include all major change themes present in that branch/slice.
+   - Do not publish misleading PR metadata that mentions only one subset (for example only `chore`) when feature/fix commits are also included.
+   - Validate title/summary against commit list before handoff.
+
+7) **Mid-gate changes: split only when needed**
+   - **First classify the change** in the gate note:
+     - what changed
+     - why it changed
+     - risk class (`ui-only`, `logic`, `persistence`, `contract`, `performance`, `safety`)
+     - affected files/tests
+   - **Keep in current gate** only when all are true:
+     - same acceptance target
+     - no new risk class
+     - existing verification still sufficient
+     - no additional user-facing behavior outside gate scope
+   - **Create follow-up gate** when any are true:
+     - acceptance target changed/expanded
+     - new risk class introduced
+     - extra validation or tests required
+     - additional surfaces touched beyond gate scope
+   - **UI gate + backend risk discovered**:
+     - open backend follow-up gate immediately
+     - resolve backend gate first, then return to UI gate
+   - **Naming for follow-up gates**:
+     - `<gate_name>_followup_1`, `<gate_name>_followup_2`, ...
+   - **Do not close a gate** with unresolved scope changes or partial evidence.
+
 ---
 
 ## Example: Block Catalog

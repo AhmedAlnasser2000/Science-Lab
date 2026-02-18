@@ -42,6 +42,15 @@ def open_facet_settings(
         density_combo.setCurrentIndex(density_index)
     form.addRow("Density", density_combo)
 
+    scope_combo = QtWidgets.QComboBox()
+    scope_combo.addItem("Selected node only", "selected")
+    scope_combo.addItem("Current Peek graph", "peek_graph")
+    scope_value = str(getattr(settings, "facet_scope", "selected") or "selected").strip().lower()
+    scope_index = scope_combo.findData(scope_value)
+    if scope_index >= 0:
+        scope_combo.setCurrentIndex(scope_index)
+    form.addRow("Facet scope", scope_combo)
+
     show_normal = QtWidgets.QCheckBox("Show in normal view")
     show_normal.setChecked(bool(getattr(settings, "show_in_normal_view", True)))
     form.addRow(show_normal)
@@ -77,6 +86,7 @@ def open_facet_settings(
     return view_config.FacetSettings(
         density=str(density_combo.currentData() or "minimal"),
         enabled={key: bool(check.isChecked()) for key, check in facet_checks.items()},
+        facet_scope=str(scope_combo.currentData() or "selected"),
         show_in_normal_view=bool(show_normal.isChecked()),
         show_in_peek_view=bool(show_peek.isChecked()),
     )

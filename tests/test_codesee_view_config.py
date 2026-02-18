@@ -43,6 +43,7 @@ def test_facet_settings_round_trip(tmp_path, monkeypatch) -> None:
             "errors": True,
             "signals": True,
         },
+        facet_scope="peek_graph",
         show_in_normal_view=False,
         show_in_peek_view=True,
     )
@@ -54,6 +55,7 @@ def test_facet_settings_round_trip(tmp_path, monkeypatch) -> None:
     assert loaded.facet_settings.show_in_peek_view is True
     assert loaded.facet_settings.enabled["logs"] is True
     assert loaded.facet_settings.enabled["entry_points"] is False
+    assert loaded.facet_settings.facet_scope == "peek_graph"
 
 
 def test_facet_settings_unknown_density_and_keys_are_ignored(tmp_path, monkeypatch) -> None:
@@ -67,6 +69,7 @@ def test_facet_settings_unknown_density_and_keys_are_ignored(tmp_path, monkeypat
                 "deps": False,
                 "unknown_facet": True,
             },
+            "facet_scope": "invalid_scope",
             "show_in_normal_view": True,
             "show_in_peek_view": False,
         },
@@ -80,3 +83,23 @@ def test_facet_settings_unknown_density_and_keys_are_ignored(tmp_path, monkeypat
     assert set(loaded.facet_settings.enabled.keys()) == set(view_config.FACET_KEYS)
     assert loaded.facet_settings.show_in_normal_view is True
     assert loaded.facet_settings.show_in_peek_view is False
+    assert loaded.facet_settings.facet_scope == "selected"
+
+
+def test_facet_settings_missing_scope_defaults_selected(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(view_config, "_settings_path", lambda _wid: settings_path)
+    payload = {
+        "pulse_settings": view_config._pulse_settings_to_dict(view_config.default_pulse_settings()),
+        "facet_settings": {
+            "density": "standard",
+            "enabled": {"deps": True},
+            "show_in_normal_view": True,
+            "show_in_peek_view": True,
+        },
+    }
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = view_config.load_view_config("ws", "atlas")
+    assert loaded.facet_settings.facet_scope == "selected"

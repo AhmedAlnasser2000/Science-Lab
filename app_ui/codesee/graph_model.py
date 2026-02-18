@@ -87,6 +87,11 @@ class Edge:
     src_node_id: str
     dst_node_id: str
     kind: str = "dependency"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        meta = self.metadata if isinstance(self.metadata, dict) else {}
+        object.__setattr__(self, "metadata", dict(meta))
 
     @property
     def id(self) -> str:

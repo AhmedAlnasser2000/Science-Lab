@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # NAV INDEX (search these tags)
 # [NAV-00] Imports / constants
 # [NAV-05] Stable re-exports for tests (lens palette + helpers)
@@ -109,6 +109,7 @@ ICON_STYLE_LABELS = {
 
 FACET_NODE_TYPE = "Facet"
 FACET_EDGE_KIND = "facet"
+FACET_EDGE_RELATION = "facet_of"
 FACET_META_KEY = "codesee_facet"
 FACET_KEYS_ACTIVITY = {"logs", "activity", "spans", "runs", "errors", "signals"}
 FACET_KEYS_RELATIONS = {"deps", "packs", "entry_points"}
@@ -128,6 +129,7 @@ FACET_LABELS = {
     "errors": "Errors",
     "signals": "Signals",
 }
+FACET_SOURCE_HINT = "Facet nodes are curated for System Map (Demo) right now. Switch Source -> Demo."
 # endregion NAV-00 Imports / constants
 
 
@@ -199,6 +201,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_node_map: Dict[str, Node] = {}
         self._facet_selection_by_id: Dict[str, FacetSelection] = {}
         self._active_facet_selection: Optional[FacetSelection] = None
+        self._facet_scope_multi_hint_key: Optional[str] = None
         self._relation_index_normal: Optional[RelationIndex] = None
         self._relation_index_normal_key: Optional[tuple] = None
         self._relation_index_compare: Optional[RelationIndex] = None
@@ -484,6 +487,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.view = GraphView(
             self.scene,
             on_set_facet_density=self._on_set_facet_density,
+            on_set_facet_scope=self._on_set_facet_scope,
             on_open_facet_settings=self._on_open_facet_settings,
         )
         self.view.setSizePolicy(
@@ -678,6 +682,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
 
     def _peek_menu_state(self, node: Node) -> tuple[bool, str]:
+        if str(node.node_id or "").startswith("facet:") or str(node.node_type or "").strip().lower() == "facet":
+            return False, "No deeper graph; open in Inspector."
         self._rebuild_peek_index()
         item_ref = itemref_from_node(node)
         children = self._peek_children_by_id.get(item_ref.id, [])
@@ -988,6 +994,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 defaults[key] = value
         return [key for key in view_config.FACET_KEYS if defaults.get(key, False)]
 
+    def _facet_scope(self) -> str:
+        scope = str(getattr(self._facet_settings, "facet_scope", "selected") or "selected").strip().lower()
+        if scope in getattr(view_config, "FACET_SCOPES", ("selected", "peek_graph")):
+            return scope
+        return "selected"
+
     def _should_show_facets(self, *, in_peek: bool) -> bool:
         if self._source != SOURCE_DEMO:
             return False
@@ -998,21 +1010,98 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return bool(self._facet_settings.show_in_peek_view)
         return bool(self._facet_settings.show_in_normal_view)
 
+    def _selected_owner_id(self, graph: ArchitectureGraph) -> Optional[str]:
+        node_map = graph.node_map()
+        chosen_id: Optional[str] = None
+
+        if self.selected_item and self.selected_item.kind == "node":
+            candidate_id = str(self.selected_item.id)
+            if candidate_id.startswith("facet:") and self._active_facet_selection is not None:
+                candidate_id = str(self._active_facet_selection.base_node_id or "")
+            candidate_node = node_map.get(candidate_id)
+            if candidate_node and str(candidate_node.node_type or "").strip().lower() == "module":
+                chosen_id = candidate_id
+
+        selected_module_ids: list[str] = []
+        for item in self.scene.selectedItems():
+            if not isinstance(item, NodeItem):
+                continue
+            node = item.node
+            node_id = str(node.node_id or "")
+            if node_id.startswith("facet:"):
+                continue
+            if str(node.node_type or "").strip().lower() != "module":
+                continue
+            if node_id not in node_map:
+                continue
+            selected_module_ids.append(node_id)
+        if selected_module_ids:
+            if chosen_id not in selected_module_ids:
+                chosen_id = selected_module_ids[-1]
+            if len(selected_module_ids) > 1 and chosen_id:
+                hint_key = "|".join(sorted(selected_module_ids))
+                if hint_key != self._facet_scope_multi_hint_key:
+                    owner_node = node_map.get(chosen_id)
+                    owner_label = owner_node.title if owner_node else chosen_id
+                    self.status_label.setText(
+                        f"Facets scope: using primary selection ({owner_label})."
+                    )
+                    self._facet_scope_multi_hint_key = hint_key
+            else:
+                self._facet_scope_multi_hint_key = None
+        else:
+            self._facet_scope_multi_hint_key = None
+        return chosen_id
+
+    @staticmethod
+    def _container_owner_ids(graph: ArchitectureGraph) -> set[str]:
+        owner_ids: set[str] = set()
+        for edge in graph.edges:
+            if str(edge.kind or "").strip().lower() == "contains":
+                owner_ids.add(str(edge.src_node_id))
+        return owner_ids
+
+    def _candidate_facet_owner_ids(self, graph: ArchitectureGraph, *, in_peek: bool) -> list[str]:
+        scope = self._facet_scope()
+        if scope == "peek_graph" and in_peek:
+            owners: list[str] = []
+            for node in graph.nodes:
+                node_id = str(node.node_id or "")
+                if node_id.startswith("facet:"):
+                    continue
+                if str(node.node_type or "").strip().lower() != "module":
+                    continue
+                owners.append(node_id)
+            return owners
+
+        selected_owner = self._selected_owner_id(graph)
+        if selected_owner:
+            return [selected_owner]
+        return []
+
     def _inject_system_map_facets(self, graph: ArchitectureGraph, *, in_peek: bool) -> ArchitectureGraph:
         if not self._should_show_facets(in_peek=in_peek):
             return graph
         enabled_keys = self._enabled_facet_keys()
         if not enabled_keys:
             return graph
+        owner_ids = self._candidate_facet_owner_ids(graph, in_peek=in_peek)
+        if not owner_ids:
+            return graph
+        node_map = graph.node_map()
+        container_owner_ids = self._container_owner_ids(graph)
         existing_node_ids = {node.node_id for node in graph.nodes}
         nodes = list(graph.nodes)
         edges = list(graph.edges)
-        for base in graph.nodes:
-            if base.node_id.startswith("facet:"):
+        for owner_id in owner_ids:
+            base = node_map.get(owner_id)
+            if base is None:
                 continue
-            if str(base.node_type or "").strip().lower() != "module":
-                continue
-            for key in enabled_keys:
+            owner_label = str(base.title or owner_id).strip() or owner_id
+            owner_keys = list(enabled_keys)
+            if owner_id in container_owner_ids:
+                owner_keys = [key for key in owner_keys if key not in FACET_KEYS_ACTIVITY]
+            for key in owner_keys:
                 facet_id = f"facet:{base.node_id}:{key}"
                 if facet_id in existing_node_ids:
                     continue
@@ -1020,13 +1109,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 nodes.append(
                     Node(
                         node_id=facet_id,
-                        title=facet_label,
+                        title=f"{owner_label} / {facet_label}",
                         node_type=FACET_NODE_TYPE,
                         metadata={
                             FACET_META_KEY: {
+                                "owner_id": base.node_id,
                                 "base_node_id": base.node_id,
+                                "facet_kind": key,
                                 "facet_key": key,
                                 "facet_label": facet_label,
+                                "owner_label": owner_label,
                             }
                         },
                     )
@@ -1037,6 +1129,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                         src_node_id=base.node_id,
                         dst_node_id=facet_id,
                         kind=FACET_EDGE_KIND,
+                        metadata={"relation": FACET_EDGE_RELATION},
                     )
                 )
                 existing_node_ids.add(facet_id)
@@ -1054,8 +1147,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         raw = metadata.get(FACET_META_KEY)
         if not isinstance(raw, dict):
             return None
-        base_node_id = str(raw.get("base_node_id", "") or "").strip()
-        facet_key = str(raw.get("facet_key", "") or "").strip()
+        base_node_id = str(raw.get("owner_id", "") or raw.get("base_node_id", "") or "").strip()
+        facet_key = str(raw.get("facet_kind", "") or raw.get("facet_key", "") or "").strip()
         facet_label = str(raw.get("facet_label", "") or node.title or "").strip()
         if not base_node_id or not facet_key:
             return None
@@ -1126,6 +1219,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         if normalized == SOURCE_ATLAS:
             self._build_atlas()
+            if self._facet_settings.density != "off":
+                self._show_facet_source_hint()
             return
         if normalized == SOURCE_SNAPSHOT:
             self._load_latest_snapshot(show_status=True)
@@ -2325,7 +2420,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             label = f"{label} ({_format_active_total(active_count, total_count)})"
             last_seen = status.get("last_seen")
             if isinstance(last_seen, (int, float)):
-                label = f"{label} — {self._format_age(float(last_seen))} ago"
+                label = f"{label} â€” {self._format_age(float(last_seen))} ago"
             action = QtGui.QAction(label, menu)
             icon = self._status_icon(status.get("color"))
             if icon:
@@ -2680,12 +2775,34 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._facet_settings = view_config.FacetSettings(
             density=normalized,
             enabled=current_enabled,
+            facet_scope=self._facet_scope(),
             show_in_normal_view=bool(self._facet_settings.show_in_normal_view),
             show_in_peek_view=bool(self._facet_settings.show_in_peek_view),
         )
         self._view_config.facet_settings = self._facet_settings
         self._persist_view_config()
         self._render_current_graph()
+        if self._source != SOURCE_DEMO and normalized != "off":
+            self._show_facet_source_hint()
+
+    def _on_set_facet_scope(self, scope: str) -> None:
+        normalized = str(scope or "").strip().lower()
+        if normalized not in getattr(view_config, "FACET_SCOPES", ("selected", "peek_graph")):
+            normalized = "selected"
+        if normalized == self._facet_scope():
+            return
+        self._facet_settings = view_config.FacetSettings(
+            density=self._facet_settings.density,
+            enabled=dict(getattr(self._facet_settings, "enabled", {})),
+            facet_scope=normalized,
+            show_in_normal_view=bool(self._facet_settings.show_in_normal_view),
+            show_in_peek_view=bool(self._facet_settings.show_in_peek_view),
+        )
+        self._view_config.facet_settings = self._facet_settings
+        self._persist_view_config()
+        self._render_current_graph()
+        if self._source != SOURCE_DEMO:
+            self._show_facet_source_hint()
 
     def _on_toggle_facet_enabled(self, key: str, enabled: bool) -> None:
         if key not in view_config.FACET_KEYS:
@@ -2695,6 +2812,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._facet_settings = view_config.FacetSettings(
             density=self._facet_settings.density,
             enabled=next_enabled,
+            facet_scope=self._facet_scope(),
             show_in_normal_view=bool(self._facet_settings.show_in_normal_view),
             show_in_peek_view=bool(self._facet_settings.show_in_peek_view),
         )
@@ -2716,15 +2834,24 @@ class CodeSeeScreen(QtWidgets.QWidget):
         for key, value in dict(getattr(new_settings, "enabled", {})).items():
             if key in enabled and isinstance(value, bool):
                 enabled[key] = value
+        facet_scope = str(getattr(new_settings, "facet_scope", "selected") or "selected").strip().lower()
+        if facet_scope not in getattr(view_config, "FACET_SCOPES", ("selected", "peek_graph")):
+            facet_scope = "selected"
         self._facet_settings = view_config.FacetSettings(
             density=density,
             enabled=enabled,
+            facet_scope=facet_scope,
             show_in_normal_view=bool(new_settings.show_in_normal_view),
             show_in_peek_view=bool(new_settings.show_in_peek_view),
         )
         self._view_config.facet_settings = self._facet_settings
         self._persist_view_config()
         self._render_current_graph()
+        if self._source != SOURCE_DEMO and density != "off":
+            self._show_facet_source_hint()
+
+    def _show_facet_source_hint(self) -> None:
+        self.status_label.setText(FACET_SOURCE_HINT)
 
     def _save_preset(self) -> None:
         name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", "Preset name:")
@@ -3349,7 +3476,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             diff_counts = (
                 f"+{len(self._diff_result.nodes_added)} "
                 f"-{len(self._diff_result.nodes_removed)} "
-                f"Δ{len(self._diff_result.nodes_changed)}"
+                f"Î”{len(self._diff_result.nodes_changed)}"
             )
         screen_label = f"Screen: {self._screen_context}" if self._screen_context else None
         bus_state = "Disconnected"
@@ -3919,3 +4046,4 @@ def run_pulse_smoke_test() -> None:
         raise AssertionError("expected at least one event")
     if result["activity_before"] <= 0:
         raise AssertionError("expected signal activity before rebuild")
+

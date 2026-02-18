@@ -44,6 +44,7 @@ class PulseSettings:
 
 
 FACET_DENSITIES = ("off", "minimal", "standard", "expanded", "debug")
+FACET_SCOPES = ("selected", "peek_graph")
 FACET_KEYS = (
     "deps",
     "packs",
@@ -61,6 +62,7 @@ FACET_KEYS = (
 class FacetSettings:
     density: str = "minimal"
     enabled: Dict[str, bool] = field(default_factory=lambda: _default_facet_enabled_for_density("minimal"))
+    facet_scope: str = "selected"
     show_in_normal_view: bool = True
     show_in_peek_view: bool = True
 
@@ -123,6 +125,7 @@ def default_facet_settings() -> FacetSettings:
     return FacetSettings(
         density=density,
         enabled=_default_facet_enabled_for_density(density),
+        facet_scope="selected",
         show_in_normal_view=True,
         show_in_peek_view=True,
     )
@@ -403,6 +406,7 @@ def _merge_facet_settings(defaults: FacetSettings, raw) -> FacetSettings:
     if not isinstance(raw, dict):
         return defaults
     density = _normalize_facet_density(raw.get("density", defaults.density))
+    facet_scope = _normalize_facet_scope(raw.get("facet_scope", defaults.facet_scope))
     enabled = _default_facet_enabled_for_density(density)
     raw_enabled = raw.get("enabled")
     if isinstance(raw_enabled, dict):
@@ -424,6 +428,7 @@ def _merge_facet_settings(defaults: FacetSettings, raw) -> FacetSettings:
     return FacetSettings(
         density=density,
         enabled=enabled,
+        facet_scope=facet_scope,
         show_in_normal_view=bool(show_in_normal_view),
         show_in_peek_view=bool(show_in_peek_view),
     )
@@ -460,6 +465,7 @@ def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:
 
 def _facet_settings_to_dict(settings: FacetSettings) -> Dict[str, object]:
     density = _normalize_facet_density(settings.density)
+    facet_scope = _normalize_facet_scope(getattr(settings, "facet_scope", "selected"))
     enabled = _default_facet_enabled_for_density(density)
     for key, value in (settings.enabled or {}).items():
         name = str(key)
@@ -468,9 +474,17 @@ def _facet_settings_to_dict(settings: FacetSettings) -> Dict[str, object]:
     return {
         "density": density,
         "enabled": enabled,
+        "facet_scope": facet_scope,
         "show_in_normal_view": bool(settings.show_in_normal_view),
         "show_in_peek_view": bool(settings.show_in_peek_view),
     }
+
+
+def _normalize_facet_scope(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if text in FACET_SCOPES:
+        return text
+    return "selected"
 
 
 def _default_pulse_topics() -> Dict[str, bool]:
