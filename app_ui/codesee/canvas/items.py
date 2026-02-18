@@ -10,6 +10,8 @@ from ..graph_model import Node
 from ..icon_pack import resolve_icon_path
 
 NODE_WIDTH = 180.0
+FACET_NODE_WIDTH_MIN = 240.0
+FACET_NODE_WIDTH_MAX = 252.0
 NODE_HEIGHT = 90.0
 NODE_RADIUS = 10.0
 RAIL_HEIGHT_BASE = 14
@@ -99,6 +101,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._context_active = False
         self._context_color = QtGui.QColor("#2f9e44")
         self._status_badges: List[dict] = []
+        self._node_width = self._compute_node_width()
 
         self.setFlags(
             QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -108,10 +111,27 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.setAcceptHoverEvents(True)
 
     def boundingRect(self) -> QtCore.QRectF:
-        return QtCore.QRectF(0.0, 0.0, NODE_WIDTH, NODE_HEIGHT)
+        return QtCore.QRectF(0.0, 0.0, self._node_width, NODE_HEIGHT)
 
     def center_pos(self) -> QtCore.QPointF:
-        return self.scenePos() + QtCore.QPointF(NODE_WIDTH / 2.0, NODE_HEIGHT / 2.0)
+        return self.scenePos() + QtCore.QPointF(self._node_width / 2.0, NODE_HEIGHT / 2.0)
+
+    def _is_facet_node(self) -> bool:
+        node_type = str(self.node.node_type or "").strip().lower()
+        if node_type == "facet":
+            return True
+        metadata = self.node.metadata if isinstance(self.node.metadata, dict) else {}
+        return isinstance(metadata.get("codesee_facet"), dict)
+
+    def _compute_node_width(self) -> float:
+        if not self._is_facet_node():
+            return NODE_WIDTH
+        title = str(self.node.title or "").strip()
+        font = QtGui.QFont("Segoe UI", 9)
+        metrics = QtGui.QFontMetrics(font)
+        text_px = float(metrics.horizontalAdvance(title))
+        desired = max(FACET_NODE_WIDTH_MIN, text_px + (TITLE_PADDING * 2.0) + 26.0)
+        return min(FACET_NODE_WIDTH_MAX, desired)
 
     def add_edge(self, edge: EdgeItem) -> None:
         self._edges.append(edge)
@@ -240,9 +260,30 @@ class NodeItem(QtWidgets.QGraphicsItem):
             rect.width() - 2 * TITLE_PADDING,
             rect.height() - (2 * rail_height) - 12.0,
         )
+        facet_kind = self._facet_kind()
+        if facet_kind:
+            glyph_rect = QtCore.QRectF(
+                title_rect.left() + 2.0,
+                title_rect.center().y() - 6.0,
+                12.0,
+                12.0,
+            )
+            _paint_facet_kind_glyph(painter, glyph_rect, facet_kind)
+            title_rect = title_rect.adjusted(14.0, 0.0, 0.0, 0.0)
+        title_font = QtGui.QFont("Segoe UI", 9)
         painter.setPen(QtGui.QPen(QtGui.QColor("#222"), 1.0))
-        painter.setFont(QtGui.QFont("Segoe UI", 9))
-        painter.drawText(title_rect, QtCore.Qt.AlignmentFlag.AlignCenter, self.node.title)
+        painter.setFont(title_font)
+        title_metrics = QtGui.QFontMetrics(title_font)
+        draw_rect = title_rect.adjusted(2.0, 0.0, -2.0, 0.0)
+        elided_title = title_metrics.elidedText(
+            self.node.title,
+            QtCore.Qt.TextElideMode.ElideRight,
+            max(8, int(draw_rect.width())),
+        )
+        title_alignment = QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignCenter
+        if facet_kind:
+            title_alignment = QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft
+        painter.drawText(draw_rect, title_alignment, elided_title)
 
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         self._paint_rail_badges(painter, top_rail, top=True)
@@ -372,16 +413,26 @@ class NodeItem(QtWidgets.QGraphicsItem):
         raw = metadata.get("codesee_facet")
         if not isinstance(raw, dict):
             return None
-        owner_id = str(raw.get("base_node_id") or "").strip()
-        facet_label = str(raw.get("facet_label") or raw.get("facet_key") or "").strip()
-        if not owner_id and not facet_label:
+        owner_id = str(raw.get("owner_id") or raw.get("base_node_id") or "").strip()
+        facet_kind = str(raw.get("facet_kind") or raw.get("facet_key") or "").strip()
+        if not facet_kind:
+            facet_kind = str(raw.get("facet_label") or "").strip()
+        if not owner_id and not facet_kind:
             return None
         parts: List[str] = []
         if owner_id:
             parts.append(f"owner: {owner_id}")
-        if facet_label:
-            parts.append(f"facet: {facet_label}")
+        if facet_kind:
+            parts.append(f"facet: {facet_kind}")
         return " | ".join(parts)
+
+    def _facet_kind(self) -> Optional[str]:
+        metadata = self.node.metadata if isinstance(self.node.metadata, dict) else {}
+        raw = metadata.get("codesee_facet")
+        if not isinstance(raw, dict):
+            return None
+        kind = str(raw.get("facet_kind") or raw.get("facet_key") or "").strip().lower()
+        return kind or None
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -805,6 +856,77 @@ def _mono_theme_style(node_type: str) -> tuple[QtCore.Qt.PenStyle, float]:
     style = styles.get(node_type or "", QtCore.Qt.PenStyle.SolidLine)
     width = 2.0 if node_type in ("Lab", "Block") else 1.5
     return style, width
+
+
+def _paint_facet_kind_glyph(painter: QtGui.QPainter, rect: QtCore.QRectF, kind: str) -> None:
+    kind = (kind or "").strip().lower()
+    base_pen = QtGui.QPen(QtGui.QColor("#2f3e59"), 1.2)
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(base_pen)
+    painter.setBrush(QtGui.QBrush(QtGui.QColor("#e7ecff")))
+    if kind == "logs":
+        painter.drawRoundedRect(rect, 1.5, 1.5)
+        x0 = rect.left() + 2.0
+        x1 = rect.right() - 2.0
+        for offset in (3.0, 5.5, 8.0):
+            y = rect.top() + offset
+            painter.drawLine(QtCore.QPointF(x0, y), QtCore.QPointF(x1, y))
+    elif kind == "deps":
+        left = QtCore.QRectF(rect.left() + 1.0, rect.top() + 3.0, 5.5, 5.5)
+        right = QtCore.QRectF(rect.left() + 5.5, rect.top() + 3.0, 5.5, 5.5)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(left)
+        painter.drawEllipse(right)
+    elif kind == "errors":
+        tri = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(rect.center().x(), rect.top() + 1.0),
+                QtCore.QPointF(rect.right() - 1.0, rect.bottom() - 1.0),
+                QtCore.QPointF(rect.left() + 1.0, rect.bottom() - 1.0),
+            ]
+        )
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("#ffe6e6")))
+        painter.drawPolygon(tri)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#8f1f1f"), 1.2))
+        painter.drawLine(
+            QtCore.QPointF(rect.center().x(), rect.top() + 4.0),
+            QtCore.QPointF(rect.center().x(), rect.bottom() - 4.0),
+        )
+        painter.drawPoint(QtCore.QPointF(rect.center().x(), rect.bottom() - 2.5))
+    elif kind == "spans":
+        x0 = rect.left() + 2.0
+        x1 = rect.right() - 2.0
+        y0 = rect.top() + 2.0
+        y1 = rect.bottom() - 2.0
+        painter.drawLine(QtCore.QPointF(x0 + 2.0, y0), QtCore.QPointF(x0, y0))
+        painter.drawLine(QtCore.QPointF(x0, y0), QtCore.QPointF(x0, y1))
+        painter.drawLine(QtCore.QPointF(x0, y1), QtCore.QPointF(x0 + 2.0, y1))
+        painter.drawLine(QtCore.QPointF(x1 - 2.0, y0), QtCore.QPointF(x1, y0))
+        painter.drawLine(QtCore.QPointF(x1, y0), QtCore.QPointF(x1, y1))
+        painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x1 - 2.0, y1))
+    elif kind == "runs":
+        tri = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(rect.left() + 3.0, rect.top() + 2.0),
+                QtCore.QPointF(rect.right() - 2.0, rect.center().y()),
+                QtCore.QPointF(rect.left() + 3.0, rect.bottom() - 2.0),
+            ]
+        )
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("#dff5e8")))
+        painter.drawPolygon(tri)
+    elif kind == "activity":
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        path = QtGui.QPainterPath(QtCore.QPointF(rect.left() + 1.0, rect.center().y()))
+        path.lineTo(rect.left() + 3.0, rect.center().y())
+        path.lineTo(rect.left() + 4.5, rect.top() + 3.0)
+        path.lineTo(rect.left() + 6.5, rect.bottom() - 3.0)
+        path.lineTo(rect.left() + 8.5, rect.center().y())
+        path.lineTo(rect.right() - 1.0, rect.center().y())
+        painter.drawPath(path)
+    else:
+        painter.drawEllipse(rect)
+    painter.restore()
 
 
 def _edge_pen(kind: str, diff_state: Optional[str]) -> QtGui.QPen:

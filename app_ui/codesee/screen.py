@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # NAV INDEX (search these tags)
 # [NAV-00] Imports / constants
 # [NAV-05] Stable re-exports for tests (lens palette + helpers)
@@ -129,6 +129,7 @@ FACET_LABELS = {
     "errors": "Errors",
     "signals": "Signals",
 }
+FACET_SOURCE_HINT = "Facet nodes are curated for System Map (Demo) right now. Switch Source -> Demo."
 # endregion NAV-00 Imports / constants
 
 
@@ -1108,11 +1109,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 nodes.append(
                     Node(
                         node_id=facet_id,
-                        title=f"{owner_label} · {facet_label}",
+                        title=f"{owner_label} / {facet_label}",
                         node_type=FACET_NODE_TYPE,
                         metadata={
                             FACET_META_KEY: {
+                                "owner_id": base.node_id,
                                 "base_node_id": base.node_id,
+                                "facet_kind": key,
                                 "facet_key": key,
                                 "facet_label": facet_label,
                                 "owner_label": owner_label,
@@ -1144,8 +1147,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         raw = metadata.get(FACET_META_KEY)
         if not isinstance(raw, dict):
             return None
-        base_node_id = str(raw.get("base_node_id", "") or "").strip()
-        facet_key = str(raw.get("facet_key", "") or "").strip()
+        base_node_id = str(raw.get("owner_id", "") or raw.get("base_node_id", "") or "").strip()
+        facet_key = str(raw.get("facet_kind", "") or raw.get("facet_key", "") or "").strip()
         facet_label = str(raw.get("facet_label", "") or node.title or "").strip()
         if not base_node_id or not facet_key:
             return None
@@ -1216,6 +1219,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         if normalized == SOURCE_ATLAS:
             self._build_atlas()
+            if self._facet_settings.density != "off":
+                self._show_facet_source_hint()
             return
         if normalized == SOURCE_SNAPSHOT:
             self._load_latest_snapshot(show_status=True)
@@ -2415,7 +2420,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             label = f"{label} ({_format_active_total(active_count, total_count)})"
             last_seen = status.get("last_seen")
             if isinstance(last_seen, (int, float)):
-                label = f"{label} — {self._format_age(float(last_seen))} ago"
+                label = f"{label} â€” {self._format_age(float(last_seen))} ago"
             action = QtGui.QAction(label, menu)
             icon = self._status_icon(status.get("color"))
             if icon:
@@ -2777,6 +2782,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.facet_settings = self._facet_settings
         self._persist_view_config()
         self._render_current_graph()
+        if self._source != SOURCE_DEMO and normalized != "off":
+            self._show_facet_source_hint()
 
     def _on_set_facet_scope(self, scope: str) -> None:
         normalized = str(scope or "").strip().lower()
@@ -2794,6 +2801,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.facet_settings = self._facet_settings
         self._persist_view_config()
         self._render_current_graph()
+        if self._source != SOURCE_DEMO:
+            self._show_facet_source_hint()
 
     def _on_toggle_facet_enabled(self, key: str, enabled: bool) -> None:
         if key not in view_config.FACET_KEYS:
@@ -2838,6 +2847,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._view_config.facet_settings = self._facet_settings
         self._persist_view_config()
         self._render_current_graph()
+        if self._source != SOURCE_DEMO and density != "off":
+            self._show_facet_source_hint()
+
+    def _show_facet_source_hint(self) -> None:
+        self.status_label.setText(FACET_SOURCE_HINT)
 
     def _save_preset(self) -> None:
         name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", "Preset name:")
@@ -3462,7 +3476,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             diff_counts = (
                 f"+{len(self._diff_result.nodes_added)} "
                 f"-{len(self._diff_result.nodes_removed)} "
-                f"Δ{len(self._diff_result.nodes_changed)}"
+                f"Î”{len(self._diff_result.nodes_changed)}"
             )
         screen_label = f"Screen: {self._screen_context}" if self._screen_context else None
         bus_state = "Disconnected"
@@ -4032,3 +4046,4 @@ def run_pulse_smoke_test() -> None:
         raise AssertionError("expected at least one event")
     if result["activity_before"] <= 0:
         raise AssertionError("expected signal activity before rebuild")
+
