@@ -64,7 +64,7 @@ def save_config(cfg: UiScaleConfig) -> None:
 
 
 def apply_to_app(app: QtWidgets.QApplication, cfg: UiScaleConfig) -> None:
-    global _BASE_FONT_SIZE, _CURRENT
+    global _BASE_FONT_SIZE, _CURRENT, _NOTIFIER
     if _BASE_FONT_SIZE is None:
         _BASE_FONT_SIZE = app.font().pointSizeF()
     scale = max(50, min(200, int(cfg.scale_percent)))
@@ -72,7 +72,11 @@ def apply_to_app(app: QtWidgets.QApplication, cfg: UiScaleConfig) -> None:
     font.setPointSizeF(_BASE_FONT_SIZE * (scale / 100.0))
     app.setFont(font)
     _CURRENT = UiScaleConfig(scale_percent=scale, density=cfg.density)
-    _NOTIFIER.changed.emit(_CURRENT)
+    try:
+        _NOTIFIER.changed.emit(_CURRENT)
+    except RuntimeError:
+        _NOTIFIER = UiScaleNotifier()
+        _NOTIFIER.changed.emit(_CURRENT)
 
 
 def get_config() -> UiScaleConfig:
@@ -91,7 +95,12 @@ def density_spacing(base: int) -> int:
 
 
 def register_listener(callback: Callable[[UiScaleConfig], None]) -> None:
-    _NOTIFIER.changed.connect(callback)
+    global _NOTIFIER
+    try:
+        _NOTIFIER.changed.connect(callback)
+    except RuntimeError:
+        _NOTIFIER = UiScaleNotifier()
+        _NOTIFIER.changed.connect(callback)
 
 
 # === [NAV-99] End =============================================================

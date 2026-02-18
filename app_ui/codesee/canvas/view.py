@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class GraphView(QtWidgets.QGraphicsView):
-    def __init__(self, scene: QtWidgets.QGraphicsScene, parent=None) -> None:
+    def __init__(
+        self,
+        scene: QtWidgets.QGraphicsScene,
+        parent=None,
+        *,
+        on_set_facet_density: Optional[Callable[[str], None]] = None,
+        on_open_facet_settings: Optional[Callable[[], None]] = None,
+    ) -> None:
         super().__init__(scene, parent)
+        self._on_set_facet_density = on_set_facet_density
+        self._on_open_facet_settings = on_open_facet_settings
         self.setRenderHints(
             QtGui.QPainter.RenderHint.Antialiasing
             | QtGui.QPainter.RenderHint.TextAntialiasing
@@ -58,3 +69,38 @@ class GraphView(QtWidgets.QGraphicsView):
             self._zoom = next_zoom
             self.scale(factor, factor)
         event.accept()
+
+    def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
+        hit = self.itemAt(event.pos())
+        if hit is not None:
+            super().contextMenuEvent(event)
+            return
+
+        menu = QtWidgets.QMenu(self)
+        facets_menu = menu.addMenu("Facets")
+
+        density_options = [
+            ("Off", "off"),
+            ("Minimal", "minimal"),
+            ("Standard", "standard"),
+            ("Expanded", "expanded"),
+            ("Debug", "debug"),
+        ]
+        for label, density in density_options:
+            action = facets_menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, value=density: self._emit_set_facet_density(value)
+            )
+        facets_menu.addSeparator()
+        configure = facets_menu.addAction("Configure...")
+        configure.triggered.connect(self._emit_open_facet_settings)
+        menu.exec(event.globalPos())
+        event.accept()
+
+    def _emit_set_facet_density(self, density: str) -> None:
+        if self._on_set_facet_density:
+            self._on_set_facet_density(density)
+
+    def _emit_open_facet_settings(self) -> None:
+        if self._on_open_facet_settings:
+            self._on_open_facet_settings()

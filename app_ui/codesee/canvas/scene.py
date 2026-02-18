@@ -218,10 +218,10 @@ class GraphScene(QtWidgets.QGraphicsScene):
         color: Optional[QtGui.QColor],
         settings,
     ) -> None:
-        linger_ms = _setting_value(settings, "arrive_linger_ms", 200)
-        fade_ms = _setting_value(settings, "fade_ms", 300)
-        duration_ms = _setting_value(settings, "pulse_duration_ms", 500)
-        min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
+        linger_ms = _setting_value(settings, "arrive_linger_ms", 300)
+        fade_ms = _setting_value(settings, "fade_ms", 500)
+        duration_ms = _setting_value(settings, "pulse_duration_ms", 650)
+        min_alpha = _setting_value(settings, "pulse_min_alpha", 0.18)
         intensity = _setting_value(settings, "intensity_multiplier", 1.0)
         curve = _setting_value(settings, "fade_curve", "linear")
         if self._reduced_motion:
@@ -289,12 +289,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
         linger_ms = _setting_value(settings, "arrive_linger_ms", 300)
         fade_ms = _setting_value(settings, "fade_ms", 500)
         radius = max(5.0, float(_setting_value(settings, "pulse_radius_px", 10)))
-        alpha = _setting_value(settings, "pulse_alpha", 0.6)
-        min_alpha = _setting_value(settings, "pulse_min_alpha", 0.1)
+        alpha = _setting_value(settings, "pulse_alpha", 0.7)
+        min_alpha = _setting_value(settings, "pulse_min_alpha", 0.18)
         intensity = _setting_value(settings, "intensity_multiplier", 1.0)
         curve = _setting_value(settings, "fade_curve", "linear")
         max_signals = _setting_value(settings, "max_concurrent_signals", 6)
-        trail_length = int(_setting_value(settings, "trail_length", 1))
+        trail_length = int(_setting_value(settings, "trail_length", 3))
         trail_spacing_ms = int(_setting_value(settings, "trail_spacing_ms", 70))
         if self._reduced_motion:
             self._queue_pulse(
