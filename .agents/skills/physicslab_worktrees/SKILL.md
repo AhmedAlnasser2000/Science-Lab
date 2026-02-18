@@ -25,6 +25,27 @@ Use this skill when the user asks to start a new slice/milestone branch or creat
    - only batch multiple gates when the user explicitly asks
    - classify mid-gate changes and split into follow-up gates when scope/risk expands
    - keep commit messages non-ambiguous with explicit follow-up suffixes when repeating scope.
+6. Before any push, enforce pre-push confirmation:
+   - print push plan with branch, upstream target, and commits to be pushed
+   - verify branch/slice match
+   - wait for explicit user approval
+   - if unclear, commit locally only and do not push.
+7. Enforce same-slice branch containment:
+   - keep all slice changes (code/docs/policies/tests/tweaks) on the same slice branch
+   - verify current branch against `.physicslab_worktree.json` when available
+   - if mismatch is detected, stop and present recovery plan before any commit/push
+   - do not push mixed-slice commit batches.
+8. Enforce no-leftover-commits + main-sync timing:
+   - at slice handoff (or before switching slices), run/report:
+     - `git status --short`
+     - `git log --oneline @{u}..` (or equivalent ahead check)
+   - if branch is ahead, either:
+     - push after pre-push confirmation, or
+     - record explicit user-approved deferral
+   - do not begin the next slice with implicit unpushed commits.
+   - sync `main` at two times:
+     - after PR merge: `fetch` + `checkout main` + `pull --ff-only`
+     - before starting the next slice: re-verify local `main` matches `origin/main`.
 
 ## One-liners
 

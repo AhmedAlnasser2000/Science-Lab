@@ -85,6 +85,60 @@ Commit naming policy (non-ambiguous):
   - `fix(V5.5d7): facet labels and glyph spacing (follow-up 2)`
 - In user status/final updates, always map each commit hash to a one-line summary.
 
+Pre-push confirmation policy (mandatory, no exceptions):
+- At the end of gates, before any push, the agent must print a push plan and wait for explicit user approval.
+- Required push-plan fields:
+  - active branch (`git rev-parse --abbrev-ref HEAD`)
+  - target remote branch (for example `origin/work/v5.5d7`)
+  - list of commit hashes to push (short hash + one-line message)
+  - whether branch is ahead/behind/diverged vs upstream
+  - exact push command that will be executed
+- If branch name and slice id do not match user intent, stop and ask; do not push.
+- If upstream branch differs from requested slice branch, stop and ask; do not push.
+- If the user says "commit and push", still show push plan first and require explicit "yes/push".
+- Default behavior if unclear: commit locally only, no push.
+- After push, report:
+  - pushed branch
+  - resulting remote range (for example `abc1234..def5678`)
+  - remaining local commits (if any).
+
+Unpushed commits + main sync policy (mandatory):
+- Do not end a slice with unknown local-only commits.
+- At slice handoff (or before moving to another slice), always run and report:
+  - `git status --short`
+  - `git log --oneline @{u}..` (or equivalent ahead check)
+- If commits are ahead of upstream:
+  - either push them after pre-push confirmation, or
+  - get explicit user confirmation to defer push.
+- Do not start the next slice until this ahead/defer state is explicit.
+- Main sync timing:
+  - **After PR merge:** sync local `main` immediately (`fetch` + `checkout main` + `pull --ff-only`).
+  - **Before starting any new slice:** re-verify `main` is up to date with `origin/main`.
+  - If local `main` is ahead/diverged, stop and repair before slice creation.
+
+Same-slice branch containment policy (mandatory, no exceptions):
+- All changes for an active slice must stay in that slice branch from first edit through final push.
+- This applies to every change type:
+  - features, fixes, docs, policy updates, tests, tiny tweaks, workflow files, and prompt amendments.
+- Before commit and before push, the agent must verify branch identity using both:
+  - `git rev-parse --abbrev-ref HEAD`
+  - `.physicslab_worktree.json` (`branch` field) when present
+- If these do not match the intended slice branch, stop and ask; do not commit, do not push.
+- If work is discovered on a wrong branch:
+  - freeze further edits immediately
+  - present a recovery plan (target branch, commits affected, transfer method)
+  - move changes first (for example cherry-pick or equivalent safe port)
+  - verify moved changes on the correct slice branch
+  - only then commit/push on the correct branch
+  - clean the wrong branch (revert/reset only with explicit user approval)
+- Mixed-slice commit batches are forbidden.
+  - If a commit contains content from different slice IDs/scopes, split before push.
+- End-of-gates push plan must explicitly state:
+  - active branch
+  - intended slice branch
+  - proof they match
+  - exact commits that belong to this slice only.
+
 PR handoff completeness policy (mandatory):
 - When providing PR title + summary/body for a slice, content must cover the full slice delta on that branch, not a partial subset.
 - PR title rule:
