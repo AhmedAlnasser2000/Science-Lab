@@ -117,6 +117,17 @@ Agents must follow these rules unless explicitly overridden:
    - Commit after MVP baseline
    - Commit after UX polish
 
+5) **Hot-reload gates are mandatory per slice**
+   - Start session first: `python tools/dev/slice_session.py start <slice_id>`
+   - Create gates and notes while working under `.slice_tmp/<slice_id>/`
+   - Backend gates require command/test evidence before marking pass
+   - UI gates stay pending until user verifies in-app behavior
+   - Do not commit until session + gates exist and reflect current slice state
+
+6) **Terminal-first continuity**
+   - If the app window is closed/crashes, continue workflow from terminal artifacts (notes/gates/tests).
+   - Relaunch app only for UI gate verification.
+
 ---
 
 ## Example: Block Catalog

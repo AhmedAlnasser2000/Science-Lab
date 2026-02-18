@@ -3,6 +3,14 @@ _Last updated: 2026-02-18_
 
 This workflow describes gate-based slice execution with local scratch tracking via `.slice_tmp/<slice_id>/`.
 
+## Policy status
+This is a permanent workflow standard for slice execution.
+
+- Start a session at slice start.
+- Maintain gate records during implementation.
+- Do not commit slice changes until session/gate artifacts exist and reflect actual status.
+- UI gates remain pending until user in-app confirmation.
+
 ## Finalize safety contract
 - `finalize <slice_id>` is dry-run by default.
 - Dry run must print:

@@ -4,6 +4,14 @@ _Last updated: 2026-02-18_
 ## Purpose
 This workflow defines how to run one larger slice with explicit checkpoints ("gates"), pause for confirmation between gates, and keep temporary slice notes in a local scratch area that can be deleted after acceptance.
 
+## Permanent policy
+This workflow is mandatory for all new slices.
+
+- Start session before substantial implementation work.
+- Track gates continuously while work is in progress.
+- Do not commit slice implementation until session/gate artifacts exist and are up to date.
+- If session start was missed, backfill it retroactively in the same slice before commit.
+
 ## Gate model
 A gate is a named checkpoint inside one slice.
 
@@ -38,6 +46,12 @@ Required handoff text pattern:
 - What changed in this gate
 - Verification result
 - Explicit question: "Proceed to next gate?"
+
+## App close safety
+Closing the app window does not end slice workflow.
+
+- Terminal commands, tests, notes, and gate files remain the source of truth.
+- UI gates remain pending until the app is relaunched and user confirmation is captured.
 
 ## Bugfix attempt limit (3-tries rule)
 For one bug in one gate:

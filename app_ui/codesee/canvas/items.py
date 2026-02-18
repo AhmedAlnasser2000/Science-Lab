@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -267,18 +267,24 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     def hoverMoveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
         if self._ellipsis_tooltip(event.pos()):
-            QtWidgets.QToolTip.showText(_screen_point(event), "More status items — open dropdown")
+            QtWidgets.QToolTip.showText(_screen_point(event), "More status items - open dropdown")
             self._last_badge_key = None
             super().hoverMoveEvent(event)
             return
         badge = self._badge_at(event.pos())
-        key = badge.key if badge else None
+        key: Optional[str] = badge.key if badge else None
+        facet_tooltip = None if badge else self._facet_tooltip()
+        if key is None and facet_tooltip:
+            key = "__facet__"
         if key != self._last_badge_key:
             if key:
-                summary = badge.summary if badge else ""
-                tooltip = f"{self.node.title} | {key}"
-                if summary:
-                    tooltip = f"{tooltip}: {summary}"
+                if badge:
+                    summary = badge.summary
+                    tooltip = f"{self.node.title} | {key}"
+                    if summary:
+                        tooltip = f"{tooltip}: {summary}"
+                else:
+                    tooltip = str(facet_tooltip or "")
                 QtWidgets.QToolTip.showText(_screen_point(event), tooltip)
             else:
                 QtWidgets.QToolTip.hideText()
@@ -342,13 +348,12 @@ class NodeItem(QtWidgets.QGraphicsItem):
         if not can_peek:
             reason_text = (peek_reason or "Peek available only for container nodes (has containment children).").strip()
             peek_action.setText(f"Peek ({reason_text})")
-            peek_action.setEnabled(False)
         inspect_action = menu.addAction("Inspect")
         open_action = None
         if self.node.subgraph_id and self.on_open_subgraph:
             open_action = menu.addAction("Open Subgraph")
         selected = menu.exec(_screen_point(event))
-        if selected == peek_action and can_peek and self.on_peek:
+        if selected == peek_action and self.on_peek:
             self.on_peek(self.node)
             event.accept()
             return
@@ -361,6 +366,22 @@ class NodeItem(QtWidgets.QGraphicsItem):
             event.accept()
             return
         super().contextMenuEvent(event)
+
+    def _facet_tooltip(self) -> Optional[str]:
+        metadata = self.node.metadata if isinstance(self.node.metadata, dict) else {}
+        raw = metadata.get("codesee_facet")
+        if not isinstance(raw, dict):
+            return None
+        owner_id = str(raw.get("base_node_id") or "").strip()
+        facet_label = str(raw.get("facet_label") or raw.get("facet_key") or "").strip()
+        if not owner_id and not facet_label:
+            return None
+        parts: List[str] = []
+        if owner_id:
+            parts.append(f"owner: {owner_id}")
+        if facet_label:
+            parts.append(f"facet: {facet_label}")
+        return " | ".join(parts)
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:

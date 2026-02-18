@@ -20,6 +20,28 @@ Quick start:
 - `powershell ./tools/dev/list_worktrees.ps1`
 - `powershell ./tools/dev/remove_slice_worktree.ps1 -Branch work/v5.5d2 -DeleteBranch`
 
+## Hot-Reload Gate Workflow: Permanent Policy
+
+This repository now treats gate-based slice workflow as mandatory for all new slices.
+
+Rules:
+- Start a slice session before substantial edits:
+  - `python tools/dev/slice_session.py start <slice_id>`
+- Record progress continuously:
+  - `python tools/dev/slice_session.py note "..."`
+  - `python tools/dev/slice_session.py gate <gate_name> --kind ui|backend`
+- Close backend gates only with command/test evidence.
+- Leave UI gates open until user confirms in-app behavior, then close with:
+  - `python tools/dev/slice_session.py gate-done <gate_name> --result pass|fail|blocked`
+- Do not commit slice code until the session and gate artifacts exist under `.slice_tmp/<slice_id>/`.
+- If work began before session start, create the session retroactively in the same slice and backfill gates/notes before committing.
+- Use non-destructive finalize by default:
+  - `python tools/dev/slice_session.py finalize <slice_id>`
+  - delete only with explicit intent: `--delete`
+
+Operational note:
+- Closing the app window does not end terminal workflow. Keep using terminal evidence (tests/logs/gates) and relaunch app when UI verification is needed.
+
 
 ## Skills
 A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and file path so you can open the source for full instructions when using a specific skill.

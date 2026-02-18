@@ -12,10 +12,12 @@ class GraphView(QtWidgets.QGraphicsView):
         parent=None,
         *,
         on_set_facet_density: Optional[Callable[[str], None]] = None,
+        on_set_facet_scope: Optional[Callable[[str], None]] = None,
         on_open_facet_settings: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(scene, parent)
         self._on_set_facet_density = on_set_facet_density
+        self._on_set_facet_scope = on_set_facet_scope
         self._on_open_facet_settings = on_open_facet_settings
         self.setRenderHints(
             QtGui.QPainter.RenderHint.Antialiasing
@@ -91,6 +93,16 @@ class GraphView(QtWidgets.QGraphicsView):
             action.triggered.connect(
                 lambda _checked=False, value=density: self._emit_set_facet_density(value)
             )
+        scope_menu = facets_menu.addMenu("Facet scope")
+        scope_options = [
+            ("Selected only", "selected"),
+            ("Peek graph", "peek_graph"),
+        ]
+        for label, scope in scope_options:
+            action = scope_menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, value=scope: self._emit_set_facet_scope(value)
+            )
         facets_menu.addSeparator()
         configure = facets_menu.addAction("Configure...")
         configure.triggered.connect(self._emit_open_facet_settings)
@@ -100,6 +112,10 @@ class GraphView(QtWidgets.QGraphicsView):
     def _emit_set_facet_density(self, density: str) -> None:
         if self._on_set_facet_density:
             self._on_set_facet_density(density)
+
+    def _emit_set_facet_scope(self, scope: str) -> None:
+        if self._on_set_facet_scope:
+            self._on_set_facet_scope(scope)
 
     def _emit_open_facet_settings(self) -> None:
         if self._on_open_facet_settings:
