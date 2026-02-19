@@ -7,6 +7,7 @@ from .events import (
     CodeSeeEvent,
     EVENT_APP_ACTIVITY,
     EVENT_APP_ERROR,
+    EVENT_BUS_REPLY,
     EVENT_BUS_REQUEST,
     EVENT_PULSE_TRAIL,
     SpanEnd,
@@ -205,7 +206,13 @@ class BusBridge:
                 message=message or None,
             )
         )
-        self._publish_bus_activity(envelope, node_id=node_id, message=message or "job completed")
+        self._publish_bus_activity(
+            envelope,
+            node_id=node_id,
+            message=message or "job completed",
+            kind=EVENT_BUS_REPLY,
+            phase="reply",
+        )
 
     def _on_content_request(self, envelope) -> None:
         payload = _payload(envelope)
@@ -261,7 +268,13 @@ class BusBridge:
                 message=message or None,
             )
         )
-        self._publish_bus_activity(envelope, node_id=node_id, message=message or "content completed")
+        self._publish_bus_activity(
+            envelope,
+            node_id=node_id,
+            message=message or "content completed",
+            kind=EVENT_BUS_REPLY,
+            phase="reply",
+        )
 
     def _on_lab_run_started(self, envelope) -> None:
         payload = _payload(envelope)
@@ -293,7 +306,13 @@ class BusBridge:
                 message="run stopped",
             )
         )
-        self._publish_bus_activity(envelope, node_id=node_id, message="run stopped")
+        self._publish_bus_activity(
+            envelope,
+            node_id=node_id,
+            message="run stopped",
+            kind=EVENT_BUS_REPLY,
+            phase="reply",
+        )
 
     def _on_cleanup_started(self, envelope) -> None:
         payload = _payload(envelope)
@@ -326,7 +345,13 @@ class BusBridge:
                 message=message or None,
             )
         )
-        self._publish_bus_activity(envelope, node_id=node_id, message=message or "cleanup completed")
+        self._publish_bus_activity(
+            envelope,
+            node_id=node_id,
+            message=message or "cleanup completed",
+            kind=EVENT_BUS_REPLY,
+            phase="reply",
+        )
 
     def _on_run_dir_request(self, envelope) -> None:
         payload = _payload(envelope)
@@ -422,17 +447,21 @@ class BusBridge:
         *,
         node_id: str,
         message: str,
+        kind: str = EVENT_BUS_REQUEST,
+        phase: str = "request",
         trail: bool = True,
     ) -> None:
+        payload = _bus_event_payload(envelope, phase=phase)
         event = CodeSeeEvent(
             ts=_event_ts(envelope),
-            kind=EVENT_BUS_REQUEST,
+            kind=kind,
             severity="info",
             message=_short_message(message),
             node_ids=[node_id or "system:runtime_bus"],
             source="runtime_bus",
             source_node_id="system:runtime_bus",
             target_node_id=node_id or "system:runtime_bus",
+            payload=payload,
         )
         self._hub.publish(event)
         if trail:
@@ -455,6 +484,26 @@ def _event_ts(envelope) -> str:
     if isinstance(ts, str) and ts:
         return ts
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+
+def _event_topic(envelope) -> str:
+    topic = getattr(envelope, "topic", None)
+    if isinstance(topic, str) and topic:
+        return topic
+    kind = getattr(envelope, "type", None)
+    if isinstance(kind, str) and kind:
+        return kind
+    return ""
+
+
+def _bus_event_payload(envelope, *, phase: str) -> Dict[str, object]:
+    trace_id = _str(getattr(envelope, "trace_id", ""))
+    topic = _event_topic(envelope)
+    return {
+        "trace_id": trace_id,
+        "topic": topic,
+        "phase": _str(phase or "request"),
+    }
 
 
 def _str(value: object) -> str:
