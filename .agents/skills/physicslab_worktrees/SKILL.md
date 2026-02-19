@@ -46,6 +46,14 @@ Use this skill when the user asks to start a new slice/milestone branch or creat
    - sync `main` at two times:
      - after PR merge: `fetch` + `checkout main` + `pull --ff-only`
      - before starting the next slice: re-verify local `main` matches `origin/main`.
+9. Enforce PR conflict prevention + recovery:
+   - before each push to an open PR branch: `git fetch origin --prune` and check branch vs `origin/main`
+   - if branch is behind main, integrate first (`rebase origin/main` unless user requests merge)
+   - resolve conflicts locally, rerun required verification, then push
+   - when rebase rewrites history, use only `--force-with-lease` (never plain `--force`)
+   - still show pre-push plan and wait for approval before push
+   - if conflicts occur, record decisions in `.slice_tmp/<slice_id>/pr_conflict_recovery.md`
+   - if PR is already merged/closed, start a new follow-up branch from updated main instead of appending unrelated commits to the closed branch.
 
 ## One-liners
 

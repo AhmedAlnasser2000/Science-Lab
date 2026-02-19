@@ -156,6 +156,30 @@ PR handoff completeness policy (mandatory):
   - and confirm no significant slice changes are omitted.
 - If there is any ambiguity about intended PR scope, stop and ask before proposing final PR text.
 
+PR conflict prevention + resolution policy (mandatory):
+- Objective:
+  - avoid merge-conflict PRs when possible
+  - resolve unavoidable conflicts with deterministic, auditable steps.
+- Prevention checks (before each push to an open PR branch):
+  - `git fetch origin --prune`
+  - compare branch vs `origin/main` (`ahead/behind/diverged`)
+  - if branch is behind `origin/main`, integrate first (rebase preferred unless user requests merge).
+- Required pre-push integration for behind branches:
+  - `git rebase origin/main` (or approved merge alternative)
+  - resolve conflicts locally
+  - rerun required verification/tests for touched scope
+  - only then push.
+- Force push safety:
+  - if rebase rewrites history, only use `--force-with-lease`
+  - never use plain `--force`
+  - still require pre-push confirmation plan before push.
+- Conflict recovery record (when conflicts occur):
+  - create `.slice_tmp/<slice_id>/pr_conflict_recovery.md`
+  - list conflicted files, chosen resolution basis, and verification evidence.
+- Closed/merged PR branch rule:
+  - do not continue adding unrelated commits to a merged/closed slice branch.
+  - create a new slice/follow-up branch from updated `main` for new policy or feature deltas.
+
 Operational note:
 - Closing the app window does not stop terminal workflow; continue via terminal/tests/gates and relaunch app for UI verification.
 

@@ -177,6 +177,26 @@ Agents must follow these rules unless explicitly overridden:
    - Do not publish misleading PR metadata that mentions only one subset (for example only `chore`) when feature/fix commits are also included.
    - Validate title/summary against commit list before handoff.
 
+6.5) **PR conflict prevention + deterministic recovery**
+   - Before each push to an open PR branch:
+     - `git fetch origin --prune`
+     - check branch state vs `origin/main` (ahead/behind/diverged)
+   - If branch is behind main, integrate first:
+     - rebase on `origin/main` (preferred) unless merge is explicitly chosen
+     - resolve conflicts locally
+     - rerun required verification/tests for touched scope
+     - then push.
+   - If history was rewritten by rebase:
+     - only use `git push --force-with-lease`
+     - never use plain `--force`.
+   - Pre-push confirmation remains mandatory even during conflict recovery.
+   - If conflicts occur, write recovery evidence to:
+     - `.slice_tmp/<slice_id>/pr_conflict_recovery.md`
+     - include conflicted files, resolution basis, and verification evidence.
+   - If PR is already merged/closed:
+     - do not append unrelated new work to that branch
+     - start a new follow-up branch from updated `main`.
+
 7) **Mid-gate changes: split only when needed**
    - **First classify the change** in the gate note:
      - what changed
