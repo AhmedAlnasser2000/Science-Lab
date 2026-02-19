@@ -222,6 +222,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 "active": bool(raw.get("active", False)),
                 "stuck": bool(raw.get("stuck", False)),
                 "fatal": bool(raw.get("fatal", False)),
+                "error_count": int(raw.get("error_count", 0)),
             }
         self._monitor_states = normalized
         self._apply_monitor_states()
@@ -746,11 +747,19 @@ class GraphScene(QtWidgets.QGraphicsScene):
             monitor_state = str(monitor.get("state") or "").upper() if isinstance(monitor, dict) else ""
             monitor_color = _monitor_state_color(monitor_state)
             if monitor_color:
+                detail = monitor_state
+                if monitor_state == "DEGRADED" and isinstance(monitor, dict):
+                    if bool(monitor.get("stuck", False)):
+                        detail = "DEGRADED (stuck span)"
+                    else:
+                        error_count = max(0, int(monitor.get("error_count", 0)))
+                        if error_count > 0:
+                            detail = f"DEGRADED ({error_count} error events)"
                 statuses.append(
                     {
                         "key": "monitor",
                         "label": "Monitor state",
-                        "detail": monitor_state,
+                        "detail": detail,
                         "color": monitor_color.name(),
                         "active_count": 1,
                         "total_count": 1,

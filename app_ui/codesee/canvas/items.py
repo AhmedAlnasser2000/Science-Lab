@@ -449,7 +449,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
             self.on_open_subgraph(self.node.subgraph_id)
             event.accept()
             return
-        super().contextMenuEvent(event)
+        # Avoid calling base handler after menu actions that may trigger scene rebuilds.
+        event.accept()
 
     def _facet_tooltip(self) -> Optional[str]:
         metadata = self.node.metadata if isinstance(self.node.metadata, dict) else {}

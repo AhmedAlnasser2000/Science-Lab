@@ -61,6 +61,7 @@ def compute_trail_focus(
     trace_nodes: Iterable[str] | None,
     trace_edges: Iterable[tuple[str, str]] | None,
     selected_node_ids: Iterable[str] | None,
+    context_node_ids: Iterable[str] | None = None,
     enabled: bool,
     inactive_node_opacity: object = DEFAULT_INACTIVE_NODE_OPACITY,
     inactive_edge_opacity: object = DEFAULT_INACTIVE_EDGE_OPACITY,
@@ -68,6 +69,7 @@ def compute_trail_focus(
     normalized_nodes = {str(node_id).strip() for node_id in visible_nodes if str(node_id).strip()}
     normalized_edges = _normalize_edges(visible_edges)
     selected = {str(node_id).strip() for node_id in (selected_node_ids or []) if str(node_id).strip()}
+    context_nodes = {str(node_id).strip() for node_id in (context_node_ids or []) if str(node_id).strip()}
     trace_node_set = {str(node_id).strip() for node_id in (trace_nodes or []) if str(node_id).strip()}
 
     focus_nodes = _compute_focus_nodes(
@@ -75,6 +77,7 @@ def compute_trail_focus(
         monitor_states=monitor_states or {},
         trace_nodes=trace_node_set,
         selected_node_ids=selected,
+        context_node_ids=context_nodes,
     )
     focus_edges = _compute_focus_edges(
         visible_edges=normalized_edges,
@@ -104,6 +107,7 @@ def _compute_focus_nodes(
     monitor_states: Mapping[str, Mapping[str, object]],
     trace_nodes: set[str],
     selected_node_ids: set[str],
+    context_node_ids: set[str],
 ) -> set[str]:
     focus = set()
     for node_id, state in monitor_states.items():
@@ -113,6 +117,7 @@ def _compute_focus_nodes(
             focus.add(node_id)
     focus.update(node_id for node_id in trace_nodes if node_id in visible_nodes)
     focus.update(node_id for node_id in selected_node_ids if node_id in visible_nodes)
+    focus.update(node_id for node_id in context_node_ids if node_id in visible_nodes)
     return focus
 
 

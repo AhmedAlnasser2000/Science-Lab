@@ -630,6 +630,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._screen_context = context
         if self.scene:
             self.scene.set_context_nodes(self._context_nodes_for(context), label=context)
+        now = time.time()
+        if self._monitor_enabled:
+            self._apply_monitor_overlay(now=now)
+        elif self._trail_focus_enabled:
+            self._apply_trail_focus_overlay(now=now)
         self._update_mode_status(0, 0)
 
     def _context_nodes_for(self, context: str) -> set[str]:
@@ -2307,6 +2312,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         states = self._monitor.snapshot_states()
         trace_edges, trace_nodes, _trace_id = self._monitor.snapshot_trace()
         selected_nodes = self._trail_focus_selected_node_ids()
+        context_nodes = self._context_nodes_for(self._screen_context or "")
         result = compute_trail_focus(
             visible_nodes=set(self._render_node_map.keys()),
             visible_edges=self.scene.edge_pairs(),
@@ -2314,6 +2320,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             trace_nodes=trace_nodes,
             trace_edges=trace_edges,
             selected_node_ids=selected_nodes,
+            context_node_ids=context_nodes,
             enabled=(self._trail_focus_enabled and self._trail_focus_available()),
             inactive_node_opacity=self._inactive_node_opacity,
             inactive_edge_opacity=self._inactive_edge_opacity,
