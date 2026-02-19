@@ -45,6 +45,7 @@ from app_ui.codesee.runtime.events import CodeSeeEvent, EVENT_APP_ACTIVITY, EVEN
 from app_ui.codesee.runtime.bus_bridge import BusBridge
 from app_ui.codesee.runtime.hooks import install_exception_hooks
 from app_ui.codesee.runtime.hub import CodeSeeRuntimeHub, get_global_hub, set_global_hub
+from app_ui.codesee import harness as codesee_harness
 from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.codesee.window import CodeSeeWindow
 from app_ui import ui_scale
@@ -2846,6 +2847,7 @@ class MainWindow(QtWidgets.QMainWindow):
             cleanup_enabled=CORE_CENTER_AVAILABLE,
             bus=APP_BUS,
             workspace_selector_factory=selector_factory,
+            on_run_codesee_trail_self_test=self._run_codesee_trail_visual_self_test,
         )
         self.content_management = ContentManagementScreen(
             self.adapter,
@@ -3541,6 +3543,65 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_codesee_window_closed(self) -> None:
         self.codesee_window = None
+
+    def _run_codesee_trail_visual_self_test(self) -> Dict[str, Any]:
+        if self.current_profile != "Explorer":
+            return {"ok": False, "summary": "CodeSee self-test unavailable outside Explorer profile."}
+        if getattr(self, "_codesee_disabled", False) or not self.codesee_hub:
+            return {"ok": False, "summary": "CodeSee self-test unavailable (CodeSee disabled)."}
+        self._open_code_see()
+        screen = getattr(self, "codesee", None)
+        if not isinstance(screen, CodeSeeScreen):
+            return {"ok": False, "summary": "CodeSee screen is unavailable."}
+        try:
+            screen.open_root()
+        except Exception:
+            pass
+        try:
+            atlas_source = "Atlas"
+            if screen.source_combo.currentText() != atlas_source:
+                screen.source_combo.setCurrentText(atlas_source)
+        except Exception:
+            pass
+        try:
+            for idx in range(screen.lens_combo.count()):
+                if screen.lens_combo.itemData(idx) == "atlas":
+                    if screen.lens_combo.currentIndex() != idx:
+                        screen.lens_combo.setCurrentIndex(idx)
+                    break
+        except Exception:
+            pass
+        try:
+            screen.monitor_toggle.setChecked(True)
+        except Exception:
+            pass
+        try:
+            if hasattr(screen, "_on_trail_focus_toggled"):
+                screen._on_trail_focus_toggled(True)
+        except Exception:
+            pass
+
+        logic = codesee_harness.evaluate_trail_visual_self_test_logic(
+            inactive_node_opacity=float(getattr(screen, "_inactive_node_opacity", 0.40)),
+            inactive_edge_opacity=float(getattr(screen, "_inactive_edge_opacity", 0.20)),
+            monitor_border_px=int(getattr(screen, "_monitor_border_px", 2)),
+        )
+        emitted = codesee_harness.emit_trail_visual_self_test(self.codesee_hub)
+        self.codesee_hub.flush_activity()
+        merged_checks = {}
+        merged_checks.update(logic.get("checks", {}) if isinstance(logic, dict) else {})
+        merged_checks.update(emitted.get("checks", {}) if isinstance(emitted, dict) else {})
+        ok = bool(logic.get("ok", False)) and bool(emitted.get("ok", False))
+        return {
+            "ok": ok,
+            "summary": (
+                f"Trail self-test {'PASS' if ok else 'FAIL'} "
+                f"(trace={str(emitted.get('trace_id', ''))[:8]})"
+            ),
+            "checks": merged_checks,
+            "logic": logic,
+            "emitted": emitted,
+        }
 
     def _open_component_by_id(self, component_id: str) -> None:
         self._dispose_lab_widget()

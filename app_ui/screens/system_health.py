@@ -253,10 +253,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
         *,
         bus=None,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
+        on_run_codesee_trail_self_test: Optional[Callable[[], Dict[str, Any]]] = None,
     ):
         super().__init__()
         self.on_back = on_back
         self.bus = bus
+        self._on_run_codesee_trail_self_test = on_run_codesee_trail_self_test
         self.direct_available = bool(cleanup_enabled)
         self.refresh_capability = bool(self.bus or self.direct_available)
         self._task_thread: Optional[QtCore.QThread] = None
@@ -340,11 +342,17 @@ class SystemHealthScreen(QtWidgets.QWidget):
         open_store_btn = QtWidgets.QPushButton("Open content store")
         open_store_btn.clicked.connect(lambda: self._open_folder(Path("content_store")))
         overview_top.addWidget(open_store_btn)
+        self.codesee_trail_self_test_btn = QtWidgets.QPushButton("Run CodeSee Trail Self-Test")
+        self.codesee_trail_self_test_btn.clicked.connect(self._run_codesee_trail_self_test)
+        overview_top.addWidget(self.codesee_trail_self_test_btn)
         overview_top.addStretch()
         page_overview_layout.addLayout(overview_top)
 
         self.status_label = QtWidgets.QLabel()
         page_overview_layout.addWidget(self.status_label)
+        self.codesee_trail_self_test_status = QtWidgets.QLabel("CodeSee trail self-test: not run.")
+        self.codesee_trail_self_test_status.setStyleSheet("color: #666;")
+        page_overview_layout.addWidget(self.codesee_trail_self_test_status)
 
         self.pillars_summary_card = QtWidgets.QFrame()
         self.pillars_summary_card.setStyleSheet(
@@ -696,6 +704,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _set_control_enabled(self, enabled: bool) -> None:
         enable_refresh = bool(self.refresh_capability and enabled)
         self.refresh_btn.setEnabled(enable_refresh)
+        if hasattr(self, "codesee_trail_self_test_btn"):
+            self.codesee_trail_self_test_btn.setEnabled(bool(enabled and self._on_run_codesee_trail_self_test))
         cleanup_available = bool(self.bus or self.direct_available)
         cleanup_enabled = bool(enabled and cleanup_available and not self._cleanup_running)
         self.purge_btn.setEnabled(cleanup_enabled)
@@ -736,6 +746,27 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
+
+    def _run_codesee_trail_self_test(self) -> None:
+        callback = self._on_run_codesee_trail_self_test
+        if not callable(callback):
+            self.codesee_trail_self_test_status.setText("CodeSee trail self-test unavailable.")
+            self._set_status("CodeSee trail self-test unavailable.")
+            return
+        self.codesee_trail_self_test_status.setText("CodeSee trail self-test running...")
+        try:
+            result = callback() or {}
+        except Exception as exc:
+            self.codesee_trail_self_test_status.setText(f"CodeSee trail self-test failed: {exc}")
+            self._set_status("CodeSee trail self-test failed.")
+            return
+        ok = bool(result.get("ok", False))
+        summary = str(result.get("summary") or ("Trail self-test PASS" if ok else "Trail self-test FAIL"))
+        self.codesee_trail_self_test_status.setText(f"CodeSee trail self-test: {summary}")
+        if ok:
+            self._set_status("CodeSee trail self-test completed.")
+        else:
+            self._set_status("CodeSee trail self-test reported failures.")
 
     def _update_module_button_labels(self) -> None:
         module_id = self.pending_module_id or terms.TOPIC.lower()
