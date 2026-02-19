@@ -126,6 +126,9 @@ class MonitorState:
         if self._follow_last_trace and not self._pinned_trace_id and self._last_seen_trace_id:
             self._active_trace_id = self._last_seen_trace_id
 
+    def set_span_stuck_seconds(self, seconds: int) -> None:
+        self._span_stuck_seconds = max(1, int(seconds))
+
     def snapshot_states(self) -> dict[str, dict]:
         out: dict[str, dict] = {}
         for node_id, node in self._nodes.items():

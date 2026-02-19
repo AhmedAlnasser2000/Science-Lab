@@ -80,6 +80,7 @@ from .runtime.events import (
 )
 # --- [NAV-05] Stable re-exports for tests (lens palette + helpers)
 from .runtime.hub import CodeSeeRuntimeHub
+from .runtime.monitor_state import MonitorState
 from .storage import layout_store, snapshot_index, snapshot_io
 from .dialogs.inspector import _span_is_stuck
 from .dialogs.facet_settings import open_facet_settings
@@ -106,6 +107,7 @@ ICON_STYLE_LABELS = {
     icon_pack.ICON_STYLE_COLOR: "Color",
     icon_pack.ICON_STYLE_MONO: "Mono",
 }
+MONITOR_TRACE_COLOR = QtGui.QColor("#4c6ef5")
 
 FACET_NODE_TYPE = "Facet"
 FACET_EDGE_KIND = "facet"
@@ -236,6 +238,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
             "only_changed": False,
         }
         self._live_enabled = bool(self._view_config.live_enabled)
+        self._monitor_enabled = bool(self._view_config.monitor_enabled)
+        self._monitor_follow_last_trace = bool(self._view_config.monitor_follow_last_trace)
+        self._monitor_show_edge_path = bool(self._view_config.monitor_show_edge_path)
+        self._monitor = MonitorState(
+            span_stuck_seconds=int(self._view_config.span_stuck_seconds),
+            follow_last_trace=self._monitor_follow_last_trace,
+        )
+        self._monitor_active_trace_id: Optional[str] = None
+        self._monitor_trace_pinned = False
         self._events_by_node: Dict[str, list[CodeSeeEvent]] = {}
         self._overlay_badges: Dict[str, list[Badge]] = {}
         self._overlay_limit = 8
@@ -367,8 +378,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.live_toggle.setCheckable(True)
         self.live_toggle.toggled.connect(self._on_live_toggled)
         source_row.addWidget(self.live_toggle)
+        self.monitor_toggle = QtWidgets.QToolButton()
+        self.monitor_toggle.setText("Monitor")
+        self.monitor_toggle.setCheckable(True)
+        self.monitor_toggle.setToolTip("Monitoring Mode: stateful activity + trace path (no time-window semantics)")
+        self.monitor_toggle.toggled.connect(self._on_monitor_toggled)
+        source_row.addWidget(self.monitor_toggle)
         toggle_style = _toggle_style()
-        _apply_toggle_style([self.live_toggle], toggle_style)
+        _apply_toggle_style([self.live_toggle, self.monitor_toggle], toggle_style)
         self.icon_style_combo = QtWidgets.QComboBox()
         for style, label in ICON_STYLE_LABELS.items():
             self.icon_style_combo.addItem(label, style)
@@ -553,6 +570,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
         self._facet_settings = self._view_config.facet_settings
+        self._monitor_enabled = bool(self._view_config.monitor_enabled)
+        self._monitor_follow_last_trace = bool(self._view_config.monitor_follow_last_trace)
+        self._monitor_show_edge_path = bool(self._view_config.monitor_show_edge_path)
+        self._monitor.clear()
+        self._monitor_active_trace_id = None
+        self._monitor_trace_pinned = False
+        self._monitor.set_follow_last_trace(self._monitor_follow_last_trace)
+        self._monitor.set_span_stuck_seconds(int(self._view_config.span_stuck_seconds))
         self._diff_mode = False
         self._diff_result = None
         self._diff_baseline_graph = None
@@ -571,6 +596,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.set_node_theme(self._node_theme)
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
         self._refresh_snapshot_history()
+        self._render_current_graph()
         if hasattr(self, "diff_action"):
             self.diff_action.blockSignals(True)
             self.diff_action.setChecked(False)
@@ -981,6 +1007,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
         self._update_span_tints(filtered)
+        self._apply_monitor_overlay(now=time.time())
         self._update_debug_status()
         self._ensure_status_timer()
         self._update_peek_controls()
@@ -1260,6 +1287,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.baseline_action.setVisible(diff_visible)
         if hasattr(self, "compare_action"):
             self.compare_action.setVisible(diff_visible)
+        self._sync_monitor_actions()
         self._update_mode_status(0, 0)
 
     def _build_view_menu(self) -> None:
@@ -1300,6 +1328,26 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.facet_settings_action = QtGui.QAction("Facet Settings...", self.view_menu)
         self.facet_settings_action.triggered.connect(self._open_facet_settings)
         self.view_menu.addAction(self.facet_settings_action)
+        self.monitor_menu = self.view_menu.addMenu("Monitoring")
+        self.monitor_clear_action = QtGui.QAction("Clear state", self.monitor_menu)
+        self.monitor_clear_action.triggered.connect(self._clear_monitor_state)
+        self.monitor_menu.addAction(self.monitor_clear_action)
+        self.monitor_menu.addSeparator()
+        self.monitor_follow_action = QtGui.QAction("Follow last trace", self.monitor_menu)
+        self.monitor_follow_action.setCheckable(True)
+        self.monitor_follow_action.toggled.connect(self._on_monitor_follow_toggled)
+        self.monitor_menu.addAction(self.monitor_follow_action)
+        self.monitor_show_edge_action = QtGui.QAction("Show edge path", self.monitor_menu)
+        self.monitor_show_edge_action.setCheckable(True)
+        self.monitor_show_edge_action.toggled.connect(self._on_monitor_show_edge_toggled)
+        self.monitor_menu.addAction(self.monitor_show_edge_action)
+        self.monitor_menu.addSeparator()
+        self.monitor_pin_action = QtGui.QAction("Pin Active Trace", self.monitor_menu)
+        self.monitor_pin_action.triggered.connect(self._pin_active_monitor_trace)
+        self.monitor_menu.addAction(self.monitor_pin_action)
+        self.monitor_unpin_action = QtGui.QAction("Unpin Trace", self.monitor_menu)
+        self.monitor_unpin_action.triggered.connect(self._unpin_monitor_trace)
+        self.monitor_menu.addAction(self.monitor_unpin_action)
 
     def _build_filter_menu(self) -> None:
         self.filters_menu.clear()
@@ -1397,6 +1445,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)
+        self.monitor_toggle.blockSignals(True)
+        self.monitor_toggle.setChecked(self._monitor_enabled)
+        self.monitor_toggle.blockSignals(False)
         if hasattr(self, "diff_action"):
             self.diff_action.blockSignals(True)
             self.diff_action.setChecked(self._diff_mode)
@@ -1426,6 +1477,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             action.blockSignals(True)
             action.setChecked(self._diff_filters.get(key, False))
             action.blockSignals(False)
+        self._sync_monitor_actions()
         self._build_presets_menu()
         self._build_more_menu()
 
@@ -1975,6 +2027,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._node_theme = self._view_config.node_theme
         self._pulse_settings = self._view_config.pulse_settings
         self._facet_settings = self._view_config.facet_settings
+        self._monitor_enabled = bool(self._view_config.monitor_enabled)
+        self._monitor_follow_last_trace = bool(self._view_config.monitor_follow_last_trace)
+        self._monitor_show_edge_path = bool(self._view_config.monitor_show_edge_path)
+        self._monitor.set_follow_last_trace(self._monitor_follow_last_trace)
+        self._monitor.set_span_stuck_seconds(int(self._view_config.span_stuck_seconds))
         self._sync_view_controls()
         self.scene.set_node_theme(self._node_theme)
         self._render_current_graph()
@@ -2022,6 +2079,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _persist_view_config(self) -> None:
         self._view_config.live_enabled = bool(self._live_enabled)
+        self._view_config.monitor_enabled = bool(self._monitor_enabled)
+        self._view_config.monitor_follow_last_trace = bool(self._monitor_follow_last_trace)
+        self._view_config.monitor_show_edge_path = bool(self._monitor_show_edge_path)
         self._view_config.pulse_settings = self._pulse_settings
         self._view_config.facet_settings = self._facet_settings
         view_config.save_view_config(
@@ -2036,19 +2096,113 @@ class CodeSeeScreen(QtWidgets.QWidget):
         current_pulse = self._pulse_settings
         current_facets = self._facet_settings
         current_stuck = self._view_config.span_stuck_seconds
+        current_monitor_enabled = self._monitor_enabled
+        current_monitor_follow = self._monitor_follow_last_trace
+        current_monitor_show_path = self._monitor_show_edge_path
         self._view_config = view_config.reset_to_defaults(self._lens, icon_style=self._icon_style)
         self._view_config.node_theme = current_theme
         self._view_config.pulse_settings = current_pulse
         self._view_config.facet_settings = current_facets
         self._view_config.span_stuck_seconds = current_stuck
+        self._view_config.monitor_enabled = bool(current_monitor_enabled)
+        self._view_config.monitor_follow_last_trace = bool(current_monitor_follow)
+        self._view_config.monitor_show_edge_path = bool(current_monitor_show_path)
         self._node_theme = current_theme
         self._pulse_settings = current_pulse
         self._facet_settings = current_facets
+        self._monitor_enabled = bool(current_monitor_enabled)
+        self._monitor_follow_last_trace = bool(current_monitor_follow)
+        self._monitor_show_edge_path = bool(current_monitor_show_path)
+        self._monitor.set_follow_last_trace(self._monitor_follow_last_trace)
+        self._monitor.set_span_stuck_seconds(int(current_stuck))
         self._diff_filters = {key: False for key in self._diff_filters}
         self._sync_view_controls()
         self._persist_view_config()
         self._render_current_graph()
         self._update_mode_status(0, 0)
+
+    def _sync_monitor_actions(self) -> None:
+        trace_id = str(self._monitor_active_trace_id or "")
+        short_trace = trace_id[:8] if trace_id else ""
+        if hasattr(self, "monitor_follow_action"):
+            self.monitor_follow_action.blockSignals(True)
+            self.monitor_follow_action.setChecked(self._monitor_follow_last_trace)
+            self.monitor_follow_action.blockSignals(False)
+            self.monitor_follow_action.setEnabled(self._monitor_enabled)
+        if hasattr(self, "monitor_show_edge_action"):
+            self.monitor_show_edge_action.blockSignals(True)
+            self.monitor_show_edge_action.setChecked(self._monitor_show_edge_path)
+            self.monitor_show_edge_action.blockSignals(False)
+            self.monitor_show_edge_action.setEnabled(self._monitor_enabled)
+        if hasattr(self, "monitor_clear_action"):
+            self.monitor_clear_action.setEnabled(self._monitor_enabled)
+        if hasattr(self, "monitor_pin_action"):
+            self.monitor_pin_action.setEnabled(self._monitor_enabled and bool(trace_id))
+            if short_trace:
+                self.monitor_pin_action.setText(f"Pin Active Trace ({short_trace})")
+            else:
+                self.monitor_pin_action.setText("Pin Active Trace")
+        if hasattr(self, "monitor_unpin_action"):
+            self.monitor_unpin_action.setEnabled(self._monitor_enabled and self._monitor_trace_pinned)
+
+    def _apply_monitor_overlay(self, *, now: Optional[float] = None) -> None:
+        if not hasattr(self, "scene") or not self.scene:
+            return
+        if not self._monitor_enabled or not self._render_node_map:
+            self.scene.set_monitor_states({})
+            self.scene.set_trace_highlight([], set(), color=MONITOR_TRACE_COLOR)
+            self._monitor_active_trace_id = None
+            self._sync_monitor_actions()
+            return
+        current_now = float(time.time() if now is None else now)
+        self._monitor.tick(current_now)
+        states = self._monitor.snapshot_states()
+        self.scene.set_monitor_states(states)
+        edges, nodes, trace_id = self._monitor.snapshot_trace()
+        if self._monitor_show_edge_path:
+            self.scene.set_trace_highlight(edges, nodes, color=MONITOR_TRACE_COLOR)
+        else:
+            self.scene.set_trace_highlight([], set(), color=MONITOR_TRACE_COLOR)
+        self._monitor_active_trace_id = trace_id
+        self._sync_monitor_actions()
+
+    def _clear_monitor_state(self) -> None:
+        self._monitor.clear()
+        self._monitor_trace_pinned = False
+        self._monitor_active_trace_id = None
+        self._apply_monitor_overlay(now=time.time())
+        self._update_mode_status(0, 0)
+        self.status_label.setText("Monitoring state cleared.")
+
+    def _on_monitor_follow_toggled(self, checked: bool) -> None:
+        self._monitor_follow_last_trace = bool(checked)
+        self._monitor.set_follow_last_trace(self._monitor_follow_last_trace)
+        self._persist_view_config()
+        self._apply_monitor_overlay(now=time.time())
+        self._update_mode_status(0, 0)
+
+    def _on_monitor_show_edge_toggled(self, checked: bool) -> None:
+        self._monitor_show_edge_path = bool(checked)
+        self._persist_view_config()
+        self._apply_monitor_overlay(now=time.time())
+        self._update_mode_status(0, 0)
+
+    def _pin_active_monitor_trace(self) -> None:
+        trace_id = str(self._monitor_active_trace_id or "").strip()
+        if not trace_id:
+            return
+        self._monitor.pin_trace(trace_id)
+        self._monitor_trace_pinned = True
+        self._apply_monitor_overlay(now=time.time())
+        self._update_mode_status(0, 0)
+        self.status_label.setText(f"Pinned trace {trace_id[:8]}.")
+
+    def _unpin_monitor_trace(self) -> None:
+        self._monitor.unpin_trace()
+        self._monitor_trace_pinned = False
+        self._apply_monitor_overlay(now=time.time())
+        self._update_mode_status(0, 0)
+        self.status_label.setText("Trace pin cleared.")
 
     def _filtered_graph(self, graph: ArchitectureGraph) -> ArchitectureGraph:
         lens = self._active_lens()
@@ -2328,6 +2482,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _on_status_tick(self) -> None:
         self._update_debug_status()
         self._refresh_span_activity()
+        if self._monitor_enabled:
+            self._apply_monitor_overlay(now=time.time())
+            self._update_mode_status(0, 0)
         active_signals = self.scene.signals_active_count() if self.scene else 0
         active_spans = self._runtime_hub.active_span_count() if self._runtime_hub else 0
         if not active_signals and not active_spans:
@@ -2428,6 +2585,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             menu.addAction(action)
         menu.addSeparator()
         legend = [
+            "M = Monitor state",
             "C = Current screen context",
             "A = Recent activity",
             "P = Pulse active",
@@ -2563,6 +2721,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
         self._update_debug_status()
 
+    def _on_monitor_toggled(self, checked: bool) -> None:
+        self._monitor_enabled = bool(checked)
+        self._persist_view_config()
+        self._render_current_graph()
+        self._apply_monitor_overlay(now=time.time())
+        self._sync_monitor_actions()
+        self._update_action_state()
+        self._update_mode_status(0, 0)
+        self._update_debug_status()
+
     def _open_in_window(self) -> None:
         if self._on_open_window:
             self._on_open_window()
@@ -2653,6 +2821,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     # --- [NAV-70C] runtime event handler
     def _on_runtime_event(self, event: CodeSeeEvent) -> None:
+        now = time.time()
         for node_id in event.node_ids or []:
             events = self._events_by_node.setdefault(node_id, [])
             events.append(event)
@@ -2661,11 +2830,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
             if self._live_enabled:
                 self._add_overlay_badge(node_id, event)
                 self._add_overlay_check(node_id, event)
+        self._monitor.on_event(event)
         if self._live_enabled:
             self._render_current_graph()
             self._emit_live_signal(event)
         if event.kind in (EVENT_SPAN_START, EVENT_SPAN_UPDATE, EVENT_SPAN_END) and not self._live_enabled:
             self._render_current_graph()
+        if self._monitor_enabled:
+            self._apply_monitor_overlay(now=now)
+            self._update_mode_status(0, 0)
         self._update_debug_status()
         self._ensure_status_timer()
 
@@ -2886,6 +3059,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if isinstance(node_theme, str) and node_theme:
             self._node_theme = node_theme
             self._view_config.node_theme = node_theme
+        self._live_enabled = bool(self._view_config.live_enabled)
+        self._monitor_enabled = bool(self._view_config.monitor_enabled)
+        self._monitor_follow_last_trace = bool(self._view_config.monitor_follow_last_trace)
+        self._monitor_show_edge_path = bool(self._view_config.monitor_show_edge_path)
+        self._monitor.set_follow_last_trace(self._monitor_follow_last_trace)
+        self._monitor.set_span_stuck_seconds(int(self._view_config.span_stuck_seconds))
         self._pulse_settings = self._view_config.pulse_settings
         self._facet_settings = self._view_config.facet_settings
         self._sync_view_controls()
@@ -3469,6 +3648,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         lens_title = self._lens_map.get(self._lens).title if self._lens in self._lens_map else self._lens
         live_state = "On" if self._live_enabled else "Off"
         diff_state = "On" if self._diff_mode else "Off"
+        monitor_state = None
+        if self._monitor_enabled:
+            trace_id = str(self._monitor_active_trace_id or "")
+            trace_text = trace_id[:8] if trace_id else "none"
+            pin_state = " pinned" if self._monitor_trace_pinned else ""
+            monitor_state = f"On ({trace_text}{pin_state})"
         filter_count = len(view_config.build_active_filter_chips(self._view_config))
         filter_count += sum(1 for value in self._diff_filters.values() if value)
         diff_counts = None
@@ -3494,6 +3679,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             screen_label,
             f"Live: {live_state}",
             f"Diff: {diff_state}",
+            f"Monitor: {monitor_state}" if monitor_state else None,
             f"Delta: {diff_counts}" if diff_counts else None,
             f"Bus: {bus_state}",
             f"Spans: {active_spans}",
@@ -4046,4 +4232,3 @@ def run_pulse_smoke_test() -> None:
         raise AssertionError("expected at least one event")
     if result["activity_before"] <= 0:
         raise AssertionError("expected signal activity before rebuild")
-
