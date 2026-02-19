@@ -103,3 +103,43 @@ def test_facet_settings_missing_scope_defaults_selected(tmp_path, monkeypatch) -
 
     loaded = view_config.load_view_config("ws", "atlas")
     assert loaded.facet_settings.facet_scope == "selected"
+
+
+def test_monitor_settings_round_trip_and_defaults(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(view_config, "_settings_path", lambda _wid: settings_path)
+
+    config = view_config.default_view_config("atlas")
+    config.monitor_enabled = True
+    config.monitor_follow_last_trace = False
+    config.monitor_show_edge_path = False
+    view_config.save_view_config("ws", config, last_lens_id="atlas")
+
+    loaded = view_config.load_view_config("ws", "atlas")
+    assert loaded.monitor_enabled is True
+    assert loaded.monitor_follow_last_trace is False
+    assert loaded.monitor_show_edge_path is False
+
+    # Backward-compatible defaults when monitor keys are missing from settings.
+    raw = json.loads(settings_path.read_text(encoding="utf-8"))
+    raw.pop("monitor_enabled", None)
+    raw.pop("monitor_follow_last_trace", None)
+    raw.pop("monitor_show_edge_path", None)
+    settings_path.write_text(json.dumps(raw), encoding="utf-8")
+    loaded_defaults = view_config.load_view_config("ws", "atlas")
+    assert loaded_defaults.monitor_enabled is False
+    assert loaded_defaults.monitor_follow_last_trace is True
+    assert loaded_defaults.monitor_show_edge_path is True
+
+
+def test_monitor_settings_apply_via_preset() -> None:
+    config = view_config.default_view_config("atlas")
+    preset = {
+        "monitor_enabled": True,
+        "monitor_follow_last_trace": False,
+        "monitor_show_edge_path": False,
+    }
+    updated = view_config.apply_view_preset(config, preset)
+    assert updated.monitor_enabled is True
+    assert updated.monitor_follow_last_trace is False
+    assert updated.monitor_show_edge_path is False

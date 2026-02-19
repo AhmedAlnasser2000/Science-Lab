@@ -22,6 +22,9 @@ class ViewConfig:
     facet_settings: "FacetSettings" = field(default_factory=lambda: default_facet_settings())
     span_stuck_seconds: int = 10
     live_enabled: bool = False
+    monitor_enabled: bool = False
+    monitor_follow_last_trace: bool = True
+    monitor_show_edge_path: bool = True
 
 
 @dataclass
@@ -242,7 +245,16 @@ def load_view_config(workspace_id: str, lens_id: str) -> ViewConfig:
     config.pulse_settings = _merge_pulse_settings(config.pulse_settings, settings.get("pulse_settings"))
     config.facet_settings = _merge_facet_settings(config.facet_settings, settings.get("facet_settings"))
     config.span_stuck_seconds = _merge_int_setting(settings.get("span_stuck_seconds"), config.span_stuck_seconds)
-    config.live_enabled = bool(settings.get("live_enabled", False))
+    config.live_enabled = _merge_bool_setting(settings.get("live_enabled"), config.live_enabled)
+    config.monitor_enabled = _merge_bool_setting(settings.get("monitor_enabled"), config.monitor_enabled)
+    config.monitor_follow_last_trace = _merge_bool_setting(
+        settings.get("monitor_follow_last_trace"),
+        config.monitor_follow_last_trace,
+    )
+    config.monitor_show_edge_path = _merge_bool_setting(
+        settings.get("monitor_show_edge_path"),
+        config.monitor_show_edge_path,
+    )
     return config
 
 
@@ -270,6 +282,9 @@ def save_view_config(
     settings["facet_settings"] = _facet_settings_to_dict(config.facet_settings)
     settings["span_stuck_seconds"] = int(config.span_stuck_seconds)
     settings["live_enabled"] = bool(config.live_enabled)
+    settings["monitor_enabled"] = bool(config.monitor_enabled)
+    settings["monitor_follow_last_trace"] = bool(config.monitor_follow_last_trace)
+    settings["monitor_show_edge_path"] = bool(config.monitor_show_edge_path)
     lenses = settings.get("lenses")
     if not isinstance(lenses, dict):
         lenses = {}
@@ -300,6 +315,9 @@ def build_view_preset(
         "facet_settings": _facet_settings_to_dict(config.facet_settings),
         "span_stuck_seconds": int(config.span_stuck_seconds),
         "live_enabled": bool(config.live_enabled),
+        "monitor_enabled": bool(config.monitor_enabled),
+        "monitor_follow_last_trace": bool(config.monitor_follow_last_trace),
+        "monitor_show_edge_path": bool(config.monitor_show_edge_path),
     }
 
 
@@ -313,7 +331,19 @@ def apply_view_preset(config: ViewConfig, preset: Dict[str, object]) -> ViewConf
         preset.get("span_stuck_seconds"),
         config.span_stuck_seconds,
     )
-    config.live_enabled = bool(preset.get("live_enabled", config.live_enabled))
+    config.live_enabled = _merge_bool_setting(preset.get("live_enabled"), config.live_enabled)
+    config.monitor_enabled = _merge_bool_setting(
+        preset.get("monitor_enabled"),
+        config.monitor_enabled,
+    )
+    config.monitor_follow_last_trace = _merge_bool_setting(
+        preset.get("monitor_follow_last_trace"),
+        config.monitor_follow_last_trace,
+    )
+    config.monitor_show_edge_path = _merge_bool_setting(
+        preset.get("monitor_show_edge_path"),
+        config.monitor_show_edge_path,
+    )
     return config
 
 
@@ -441,6 +471,12 @@ def _merge_int_setting(raw, default: int) -> int:
         return int(raw)
     except Exception:
         return default
+
+
+def _merge_bool_setting(raw, default: bool) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    return bool(default)
 
 
 def _pulse_settings_to_dict(settings: PulseSettings) -> Dict[str, object]:
