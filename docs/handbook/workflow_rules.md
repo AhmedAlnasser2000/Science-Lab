@@ -177,6 +177,24 @@ Agents must follow these rules unless explicitly overridden:
    - Do not publish misleading PR metadata that mentions only one subset (for example only `chore`) when feature/fix commits are also included.
    - Validate title/summary against commit list before handoff.
 
+6.5) **Wrong-branch recovery must be patch-first**
+   - If edits are made on the wrong branch, stop further edits there immediately.
+   - In the correct slice, create a recovery artifact:
+     - `.slice_tmp/<slice_id>/wrong_branch_recovery.patch`
+   - Export exact wrong-branch diff into that artifact (or equivalent exact hunk record).
+   - Reapply from that artifact only; do not retype from memory.
+   - Verify parity before commit:
+     - no missing hunks
+     - no unintended extra hunks
+     - equivalent file-level diff.
+   - Commit with explicit provenance suffix:
+     - `(recovered-from-wrong-branch)`
+   - Handoff must include:
+     - source branch
+     - target branch
+     - recovery artifact path
+     - parity verification method.
+
 7) **Mid-gate changes: split only when needed**
    - **First classify the change** in the gate note:
      - what changed
