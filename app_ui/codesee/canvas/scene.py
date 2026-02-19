@@ -55,6 +55,11 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._status_totals: Dict[str, Dict[str, int]] = {}
         self._context_nodes: set[str] = set()
         self._context_label: Optional[str] = None
+        self._monitor_states: Dict[str, dict] = {}
+        self._trace_highlight_edges: set[Tuple[str, str]] = set()
+        self._trace_highlight_nodes: set[str] = set()
+        self._trace_highlight_color = QtGui.QColor("#4c6ef5")
+        self._trace_tints: Dict[str, dict] = {}
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -129,7 +134,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
         self._apply_tints()
         self._apply_context()
-        self._update_node_statuses()
+        self._apply_monitor_states()
 
         for edge in graph.edges:
             src = self._nodes.get(edge.src_node_id)
@@ -144,6 +149,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
             self.addItem(edge_item)
             self._edges.append(edge_item)
             self._edge_index[(edge.src_node_id, edge.dst_node_id)] = edge_item
+        self._apply_trace_highlights()
+        self._update_node_statuses()
 
     def set_icon_style(self, style: str) -> None:
         self._icon_style = style
@@ -185,6 +192,46 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for node_id in node_ids:
             self._span_tints[str(node_id)] = {"color": color, "strength": strength}
         self._apply_tints()
+
+    def set_monitor_states(self, states: dict[str, dict]) -> None:
+        normalized: Dict[str, dict] = {}
+        for node_id, raw in (states or {}).items():
+            if not isinstance(raw, dict):
+                continue
+            state = str(raw.get("state") or "").strip().upper()
+            if not state:
+                continue
+            normalized[str(node_id)] = {
+                "state": state,
+                "active": bool(raw.get("active", False)),
+                "stuck": bool(raw.get("stuck", False)),
+                "fatal": bool(raw.get("fatal", False)),
+            }
+        self._monitor_states = normalized
+        self._apply_monitor_states()
+        self._update_node_statuses()
+
+    def set_trace_highlight(
+        self,
+        edges: list[tuple[str, str]],
+        nodes: set[str],
+        *,
+        color: QtGui.QColor | None = None,
+    ) -> None:
+        normalized_edges: set[Tuple[str, str]] = set()
+        for edge in edges or []:
+            if not isinstance(edge, tuple) or len(edge) != 2:
+                continue
+            src = str(edge[0] or "").strip()
+            dst = str(edge[1] or "").strip()
+            if src and dst:
+                normalized_edges.add((src, dst))
+        self._trace_highlight_edges = normalized_edges
+        self._trace_highlight_nodes = {str(node_id) for node_id in (nodes or set()) if str(node_id)}
+        if color is not None:
+            self._trace_highlight_color = QtGui.QColor(color)
+        self._apply_trace_highlights()
+        self._update_node_statuses()
 
     def bump_activity(
         self,
@@ -584,12 +631,16 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for node_id, item in self._nodes.items():
             base = self._span_tints.get(node_id)
             active = self._activity_glow.get(node_id)
+            trace = self._trace_tints.get(node_id)
             base_strength = float(base.get("strength", 0.0)) if base else 0.0
             active_strength = float(active.get("current", 0.0)) if active else 0.0
-            if active and active_strength >= base_strength:
+            trace_strength = float(trace.get("strength", 0.0)) if trace else 0.0
+            if active and active_strength >= max(base_strength, trace_strength):
                 item.set_tint(active_strength, active.get("color"))
-            elif base and base_strength > 0.0:
+            elif base and base_strength >= trace_strength and base_strength > 0.0:
                 item.set_tint(base_strength, base.get("color"))
+            elif trace and trace_strength > 0.0:
+                item.set_tint(trace_strength, trace.get("color"))
             else:
                 item.set_tint(0.0, None)
 
@@ -644,6 +695,20 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for node_id, item in self._nodes.items():
             totals = self._status_totals.get(node_id, {})
             statuses: list[dict] = []
+            monitor = self._monitor_states.get(node_id)
+            monitor_state = str(monitor.get("state") or "").upper() if isinstance(monitor, dict) else ""
+            monitor_color = _monitor_state_color(monitor_state)
+            if monitor_color:
+                statuses.append(
+                    {
+                        "key": "monitor",
+                        "label": "Monitor state",
+                        "detail": monitor_state,
+                        "color": monitor_color.name(),
+                        "active_count": 1,
+                        "total_count": 1,
+                    }
+                )
             if node_id in self._context_nodes:
                 statuses.append(
                     {
@@ -702,6 +767,47 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
     def _apply_span_tints(self) -> None:
         self._apply_tints()
+
+    def _apply_monitor_states(self) -> None:
+        if not self._nodes:
+            return
+        for node_id, item in self._nodes.items():
+            state = self._monitor_states.get(node_id, {})
+            monitor_state = str(state.get("state") or "").upper() if isinstance(state, dict) else ""
+            color = _monitor_state_color(monitor_state)
+            if color is None:
+                item.set_monitor(0.0, None)
+            else:
+                item.set_monitor(1.0, color)
+
+    def _apply_trace_highlights(self) -> None:
+        self._trace_tints = {}
+        for node_id in self._trace_highlight_nodes:
+            self._trace_tints[node_id] = {"color": self._trace_highlight_color, "strength": 0.16}
+        for edge_item in self._edges:
+            src_id = edge_item.src.node.node_id
+            dst_id = edge_item.dst.node.node_id
+            direct = (src_id, dst_id)
+            reverse = (dst_id, src_id)
+            enabled = False
+            if direct in self._trace_highlight_edges:
+                enabled = True
+            elif reverse in self._trace_highlight_edges and reverse not in self._edge_index:
+                # Directed lookup fallback for curated graphs where reverse edge is absent.
+                enabled = True
+            edge_item.set_trace_highlight(enabled, self._trace_highlight_color)
+        self._apply_tints()
+
+
+def _monitor_state_color(state: str) -> Optional[QtGui.QColor]:
+    normalized = str(state or "").strip().upper()
+    if normalized == "RUNNING":
+        return QtGui.QColor("#2f9e44")
+    if normalized == "DEGRADED":
+        return QtGui.QColor("#f59f00")
+    if normalized == "FATAL":
+        return QtGui.QColor("#e03131")
+    return None
 
 
 def _setting_value(settings, key: str, default):

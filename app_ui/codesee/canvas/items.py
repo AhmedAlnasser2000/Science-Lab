@@ -36,8 +36,11 @@ class EdgeItem(QtWidgets.QGraphicsPathItem):
         self.dst = dst
         self.kind = kind
         self.diff_state = diff_state
+        self._base_pen = _edge_pen(kind, diff_state)
+        self._trace_highlight = False
+        self._trace_color = QtGui.QColor("#4c6ef5")
         self.setZValue(-1)
-        self.setPen(_edge_pen(kind, diff_state))
+        self.setPen(self._base_pen)
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
 
     def update_path(self) -> None:
@@ -58,6 +61,25 @@ class EdgeItem(QtWidgets.QGraphicsPathItem):
             self.update_path()
             path = self.path()
         return path
+
+    def set_trace_highlight(self, enabled: bool, color: Optional[QtGui.QColor] = None) -> None:
+        self._trace_highlight = bool(enabled)
+        if color is not None:
+            self._trace_color = QtGui.QColor(color)
+        self.update()
+
+    def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
+        super().paint(painter, option, widget)
+        if not self._trace_highlight:
+            return
+        pen = QtGui.QPen(self._trace_color, max(2.6, self._base_pen.widthF() + 1.4))
+        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.setPen(pen)
+        painter.drawPath(self.path())
+        painter.restore()
 
 
 class NodeItem(QtWidgets.QGraphicsItem):
@@ -100,6 +122,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._activity_color = QtGui.QColor("#4c6ef5")
         self._context_active = False
         self._context_color = QtGui.QColor("#2f9e44")
+        self._monitor_strength = 0.0
+        self._monitor_color = QtGui.QColor("#2f9e44")
         self._status_badges: List[dict] = []
         self._node_width = self._compute_node_width()
 
@@ -196,6 +220,12 @@ class NodeItem(QtWidgets.QGraphicsItem):
         if color is not None:
             self._context_color = color
         self._context_active = bool(active)
+        self.update()
+
+    def set_monitor(self, strength: float, color: Optional[QtGui.QColor] = None) -> None:
+        if color is not None:
+            self._monitor_color = QtGui.QColor(color)
+        self._monitor_strength = max(0.0, min(1.0, float(strength)))
         self.update()
 
     def set_status_badges(self, badges: List[dict]) -> None:
@@ -298,6 +328,13 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
         if self._diff_state:
             _paint_diff_badge(painter, rect, self._diff_state)
+
+        if self._monitor_strength > 0.0:
+            color = QtGui.QColor(self._monitor_color)
+            color.setAlphaF(max(0.45, min(1.0, self._monitor_strength)))
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.setPen(QtGui.QPen(color, 2.4))
+            painter.drawRoundedRect(rect.adjusted(3.0, 3.0, -3.0, -3.0), NODE_RADIUS - 1.6, NODE_RADIUS - 1.6)
 
         if self._highlight_strength > 0.0:
             color = QtGui.QColor(self._highlight_color)
@@ -1054,6 +1091,7 @@ def _status_badge_label(badge: dict) -> str:
         "activity": "A",
         "pulse": "P",
         "signal": "S",
+        "monitor": "M",
         "error": "!",
     }
     if key in mapping:
