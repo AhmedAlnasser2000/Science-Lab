@@ -124,6 +124,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._context_color = QtGui.QColor("#2f9e44")
         self._monitor_strength = 0.0
         self._monitor_color = QtGui.QColor("#2f9e44")
+        self._monitor_border_px = 2.0
         self._status_badges: List[dict] = []
         self._node_width = self._compute_node_width()
 
@@ -226,6 +227,11 @@ class NodeItem(QtWidgets.QGraphicsItem):
         if color is not None:
             self._monitor_color = QtGui.QColor(color)
         self._monitor_strength = max(0.0, min(1.0, float(strength)))
+        self.update()
+
+    def set_monitor_border_px(self, width_px: int) -> None:
+        clamped = max(1, min(6, int(width_px)))
+        self._monitor_border_px = float(clamped)
         self.update()
 
     def set_status_badges(self, badges: List[dict]) -> None:
@@ -333,7 +339,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
             color = QtGui.QColor(self._monitor_color)
             color.setAlphaF(max(0.45, min(1.0, self._monitor_strength)))
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-            painter.setPen(QtGui.QPen(color, 2.4))
+            painter.setPen(QtGui.QPen(color, self._monitor_border_px))
             painter.drawRoundedRect(rect.adjusted(3.0, 3.0, -3.0, -3.0), NODE_RADIUS - 1.6, NODE_RADIUS - 1.6)
 
         if self._highlight_strength > 0.0:

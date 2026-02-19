@@ -113,23 +113,39 @@ def test_monitor_settings_round_trip_and_defaults(tmp_path, monkeypatch) -> None
     config.monitor_enabled = True
     config.monitor_follow_last_trace = False
     config.monitor_show_edge_path = False
+    config.trail_focus_enabled = True
+    config.inactive_node_opacity = 0.33
+    config.inactive_edge_opacity = 0.15
+    config.monitor_border_px = 4
     view_config.save_view_config("ws", config, last_lens_id="atlas")
 
     loaded = view_config.load_view_config("ws", "atlas")
     assert loaded.monitor_enabled is True
     assert loaded.monitor_follow_last_trace is False
     assert loaded.monitor_show_edge_path is False
+    assert loaded.trail_focus_enabled is True
+    assert loaded.inactive_node_opacity == 0.33
+    assert loaded.inactive_edge_opacity == 0.15
+    assert loaded.monitor_border_px == 4
 
     # Backward-compatible defaults when monitor keys are missing from settings.
     raw = json.loads(settings_path.read_text(encoding="utf-8"))
     raw.pop("monitor_enabled", None)
     raw.pop("monitor_follow_last_trace", None)
     raw.pop("monitor_show_edge_path", None)
+    raw.pop("trail_focus_enabled", None)
+    raw.pop("inactive_node_opacity", None)
+    raw.pop("inactive_edge_opacity", None)
+    raw.pop("monitor_border_px", None)
     settings_path.write_text(json.dumps(raw), encoding="utf-8")
     loaded_defaults = view_config.load_view_config("ws", "atlas")
     assert loaded_defaults.monitor_enabled is False
     assert loaded_defaults.monitor_follow_last_trace is True
     assert loaded_defaults.monitor_show_edge_path is True
+    assert loaded_defaults.trail_focus_enabled is False
+    assert loaded_defaults.inactive_node_opacity == 0.40
+    assert loaded_defaults.inactive_edge_opacity == 0.20
+    assert loaded_defaults.monitor_border_px == 2
 
 
 def test_monitor_settings_apply_via_preset() -> None:
@@ -138,8 +154,35 @@ def test_monitor_settings_apply_via_preset() -> None:
         "monitor_enabled": True,
         "monitor_follow_last_trace": False,
         "monitor_show_edge_path": False,
+        "trail_focus_enabled": True,
+        "inactive_node_opacity": 0.28,
+        "inactive_edge_opacity": 0.12,
+        "monitor_border_px": 5,
     }
     updated = view_config.apply_view_preset(config, preset)
     assert updated.monitor_enabled is True
     assert updated.monitor_follow_last_trace is False
     assert updated.monitor_show_edge_path is False
+    assert updated.trail_focus_enabled is True
+    assert updated.inactive_node_opacity == 0.28
+    assert updated.inactive_edge_opacity == 0.12
+    assert updated.monitor_border_px == 5
+
+
+def test_trail_focus_settings_clamp(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(view_config, "_settings_path", lambda _wid: settings_path)
+    payload = {
+        "trail_focus_enabled": True,
+        "inactive_node_opacity": -3.0,
+        "inactive_edge_opacity": 99.0,
+        "monitor_border_px": 100,
+    }
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = view_config.load_view_config("ws", "atlas")
+    assert loaded.trail_focus_enabled is True
+    assert loaded.inactive_node_opacity == 0.10
+    assert loaded.inactive_edge_opacity == 1.00
+    assert loaded.monitor_border_px == 6

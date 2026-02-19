@@ -9,6 +9,14 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from ..diff import DiffResult, edge_key
 from ..graph_model import ArchitectureGraph
 from .items import EdgeItem, NodeItem, SignalDotItem, NODE_HEIGHT, NODE_WIDTH
+from ..runtime.trail_focus import (
+    DEFAULT_INACTIVE_EDGE_OPACITY,
+    DEFAULT_INACTIVE_NODE_OPACITY,
+    DEFAULT_MONITOR_BORDER_PX,
+    clamp_inactive_edge_opacity,
+    clamp_inactive_node_opacity,
+    clamp_monitor_border_px,
+)
 
 
 class GraphScene(QtWidgets.QGraphicsScene):
@@ -60,6 +68,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._trace_highlight_nodes: set[str] = set()
         self._trace_highlight_color = QtGui.QColor("#4c6ef5")
         self._trace_tints: Dict[str, dict] = {}
+        self._monitor_border_px = clamp_monitor_border_px(DEFAULT_MONITOR_BORDER_PX)
+        self._trail_focus_enabled = False
+        self._trail_focus_nodes: set[str] = set()
+        self._trail_focus_edges: set[Tuple[str, str]] = set()
+        self._inactive_node_opacity = clamp_inactive_node_opacity(DEFAULT_INACTIVE_NODE_OPACITY)
+        self._inactive_edge_opacity = clamp_inactive_edge_opacity(DEFAULT_INACTIVE_EDGE_OPACITY)
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -116,6 +130,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 x = col * (NODE_WIDTH + 80.0)
                 y = row * (NODE_HEIGHT + 60.0)
                 item.setPos(x, y)
+            item.set_monitor_border_px(self._monitor_border_px)
             self._nodes[node.node_id] = item
 
         if self._node_activity_ts:
@@ -151,6 +166,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
             self._edge_index[(edge.src_node_id, edge.dst_node_id)] = edge_item
         self._apply_trace_highlights()
         self._update_node_statuses()
+        self._apply_trail_focus_overlay()
 
     def set_icon_style(self, style: str) -> None:
         self._icon_style = style
@@ -232,6 +248,37 @@ class GraphScene(QtWidgets.QGraphicsScene):
             self._trace_highlight_color = QtGui.QColor(color)
         self._apply_trace_highlights()
         self._update_node_statuses()
+
+    def edge_pairs(self) -> set[Tuple[str, str]]:
+        pairs: set[Tuple[str, str]] = set()
+        for edge_item in self._edges:
+            pairs.add((edge_item.src.node.node_id, edge_item.dst.node.node_id))
+        return pairs
+
+    def set_monitor_border_px(self, width_px: int) -> None:
+        self._monitor_border_px = clamp_monitor_border_px(width_px)
+        for item in self._nodes.values():
+            item.set_monitor_border_px(self._monitor_border_px)
+
+    def set_trail_focus_overlay(
+        self,
+        *,
+        enabled: bool,
+        focus_nodes: set[str],
+        focus_edges: set[Tuple[str, str]],
+        inactive_node_opacity: float,
+        inactive_edge_opacity: float,
+    ) -> None:
+        self._trail_focus_enabled = bool(enabled)
+        self._trail_focus_nodes = {str(node_id) for node_id in (focus_nodes or set()) if str(node_id)}
+        self._trail_focus_edges = {
+            (str(edge[0]), str(edge[1]))
+            for edge in (focus_edges or set())
+            if isinstance(edge, tuple) and len(edge) == 2 and str(edge[0]) and str(edge[1])
+        }
+        self._inactive_node_opacity = clamp_inactive_node_opacity(inactive_node_opacity)
+        self._inactive_edge_opacity = clamp_inactive_edge_opacity(inactive_edge_opacity)
+        self._apply_trail_focus_overlay()
 
     def bump_activity(
         self,
@@ -779,6 +826,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 item.set_monitor(0.0, None)
             else:
                 item.set_monitor(1.0, color)
+            item.set_monitor_border_px(self._monitor_border_px)
 
     def _apply_trace_highlights(self) -> None:
         self._trace_tints = {}
@@ -797,6 +845,27 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 enabled = True
             edge_item.set_trace_highlight(enabled, self._trace_highlight_color)
         self._apply_tints()
+
+    def _apply_trail_focus_overlay(self) -> None:
+        if not self._nodes and not self._edges:
+            return
+        if not self._trail_focus_enabled:
+            for item in self._nodes.values():
+                item.setOpacity(1.0)
+            for edge_item in self._edges:
+                edge_item.setOpacity(1.0)
+            return
+        for node_id, item in self._nodes.items():
+            if node_id in self._trail_focus_nodes:
+                item.setOpacity(1.0)
+            else:
+                item.setOpacity(self._inactive_node_opacity)
+        for edge_item in self._edges:
+            edge_key = (edge_item.src.node.node_id, edge_item.dst.node.node_id)
+            if edge_key in self._trail_focus_edges:
+                edge_item.setOpacity(1.0)
+            else:
+                edge_item.setOpacity(self._inactive_edge_opacity)
 
 
 def _monitor_state_color(state: str) -> Optional[QtGui.QColor]:

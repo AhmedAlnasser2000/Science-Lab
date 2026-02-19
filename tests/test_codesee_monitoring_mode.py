@@ -12,6 +12,7 @@ from app_ui.codesee.runtime.monitor_state import (
     STATE_FATAL,
     STATE_INACTIVE,
     STATE_RUNNING,
+    _compute_state,
 )
 
 
@@ -184,3 +185,46 @@ def test_monitor_trace_follow_and_pin_behavior() -> None:
     monitor.unpin_trace()
     _edges, _nodes, trace_id = monitor.snapshot_trace()
     assert trace_id == "trace-3"
+
+
+def test_monitor_state_priority_order() -> None:
+    assert (
+        _compute_state(
+            fatal=True,
+            active=True,
+            stuck=True,
+            error_count=5,
+            repeated_error_threshold=2,
+        )
+        == STATE_FATAL
+    )
+    assert (
+        _compute_state(
+            fatal=False,
+            active=True,
+            stuck=True,
+            error_count=0,
+            repeated_error_threshold=2,
+        )
+        == STATE_DEGRADED
+    )
+    assert (
+        _compute_state(
+            fatal=False,
+            active=True,
+            stuck=False,
+            error_count=0,
+            repeated_error_threshold=2,
+        )
+        == STATE_RUNNING
+    )
+    assert (
+        _compute_state(
+            fatal=False,
+            active=False,
+            stuck=False,
+            error_count=0,
+            repeated_error_threshold=2,
+        )
+        == STATE_INACTIVE
+    )

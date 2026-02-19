@@ -158,12 +158,14 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._on_float_palette: Optional[Callable[[], None]] = None
         self._on_reset_layout: Optional[Callable[[], None]] = None
         self._on_refresh_inventory: Optional[Callable[[], None]] = None
+        self._on_trail_focus_toggled: Optional[Callable[[bool], None]] = None
         self._pinned = False
         self._expanded = False
         self._active_lens_id = ""
         self._recent: list[str] = []
         self._tile_buttons: Dict[str, QtWidgets.QToolButton] = {}
         self._tile_widgets: list[QtWidgets.QToolButton] = []
+        self._trail_focus_syncing = False
 
         self.setObjectName("codeseeLensPalette")
         self.setWindowFlags(QtCore.Qt.WindowType.Widget)
@@ -176,6 +178,8 @@ class LensPaletteWidget(QtWidgets.QFrame):
             "QToolButton[lens_tile=\"true\"] { color: #cfd8dc; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 6px; }"
             "QToolButton[lens_tile=\"true\"]:hover { border: 1px solid #2f3540; background: #222733; }"
             "QToolButton[lens_tile=\"true\"]:checked { border: 1px solid #3b5bdb; background: #222733; color: #ffffff; }"
+            "QToolButton#lensPaletteTrail { color: #cfd8dc; background: #222733; border: 1px solid #2f3540; border-radius: 8px; padding: 4px 10px; }"
+            "QToolButton#lensPaletteTrail:checked { background: #2c3e63; border: 1px solid #4c6ef5; color: #ffffff; }"
         )
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Preferred,
@@ -225,6 +229,22 @@ class LensPaletteWidget(QtWidgets.QFrame):
         self._status.setStyleSheet("color: #9aa4b2; padding: 2px 4px;")
         self._status.setMinimumHeight(int(ui_scale.scale_px(18)))
         layout.addWidget(self._status)
+
+        self._trail_row = QtWidgets.QWidget()
+        trail_layout = QtWidgets.QHBoxLayout(self._trail_row)
+        trail_layout.setContentsMargins(0, 0, 0, 0)
+        trail_layout.setSpacing(6)
+        self._trail_label = QtWidgets.QLabel("Trail")
+        self._trail_toggle = QtWidgets.QToolButton()
+        self._trail_toggle.setObjectName("lensPaletteTrail")
+        self._trail_toggle.setCheckable(True)
+        self._trail_toggle.setText("OFF")
+        self._trail_toggle.toggled.connect(self._on_trail_toggle_changed)
+        trail_layout.addWidget(self._trail_label)
+        trail_layout.addStretch()
+        trail_layout.addWidget(self._trail_toggle)
+        self._trail_row.setVisible(False)
+        layout.addWidget(self._trail_row)
 
         self._empty_banner = QtWidgets.QLabel("")
         self._empty_banner.setStyleSheet("color: #9aa4b2; padding: 2px 4px;")
@@ -331,6 +351,19 @@ class LensPaletteWidget(QtWidgets.QFrame):
 
     def set_on_refresh_inventory(self, callback: Callable[[], None]) -> None:
         self._on_refresh_inventory = callback
+
+    def set_on_trail_focus_toggled(self, callback: Callable[[bool], None]) -> None:
+        self._on_trail_focus_toggled = callback
+
+    def set_trail_focus_control(self, *, visible: bool, enabled: bool, checked: bool) -> None:
+        self._trail_row.setVisible(bool(visible))
+        self._trail_toggle.setEnabled(bool(enabled))
+        self._trail_focus_syncing = True
+        try:
+            self._trail_toggle.setChecked(bool(checked))
+            self._trail_toggle.setText("ON" if bool(checked) else "OFF")
+        finally:
+            self._trail_focus_syncing = False
 
     def set_recent(self, recent: list[str]) -> None:
         self._recent = list(recent or [])
@@ -540,6 +573,13 @@ class LensPaletteWidget(QtWidgets.QFrame):
     def _emit_pin(self, checked: bool) -> None:
         if self._on_pin:
             self._on_pin(bool(checked))
+
+    def _on_trail_toggle_changed(self, checked: bool) -> None:
+        self._trail_toggle.setText("ON" if bool(checked) else "OFF")
+        if self._trail_focus_syncing:
+            return
+        if self._on_trail_focus_toggled:
+            self._on_trail_focus_toggled(bool(checked))
 
     def _menu_icon(self, icon_key: str) -> QtGui.QIcon:
         icon_size = int(ui_scale.scale_px(16))
