@@ -38,6 +38,7 @@ class _SpanState:
 @dataclass
 class _NodeState:
     active_span_ids: Set[str] = field(default_factory=set)
+    latched_keys: Set[str] = field(default_factory=set)
     running_error_count: int = 0
     stuck: bool = False
     fatal: bool = False
@@ -83,6 +84,7 @@ class MonitorState:
         elif event.kind == EVENT_SPAN_END:
             self._on_span_end(event, now)
 
+        self._on_latch_event(event, now)
         self._on_error_event(event, now)
         self._on_trace_event(event)
         self._recompute_states(now)
@@ -134,8 +136,9 @@ class MonitorState:
         for node_id, node in self._nodes.items():
             out[node_id] = {
                 "state": node.state,
-                "active": bool(node.active_span_ids),
+                "active": bool(node.active_span_ids or node.latched_keys),
                 "active_span_count": int(len(node.active_span_ids)),
+                "latched_count": int(len(node.latched_keys)),
                 "stuck": bool(node.stuck),
                 "fatal": bool(node.fatal),
                 "error_count": int(node.running_error_count),
@@ -228,6 +231,23 @@ class MonitorState:
                 node.running_error_count += 1
                 node.last_change_ts = now
 
+    def _on_latch_event(self, event: CodeSeeEvent, now: float) -> None:
+        if not isinstance(event.payload, dict):
+            return
+        latch_key = str(event.payload.get("monitor_latch_key") or "").strip()
+        if not latch_key:
+            return
+        node_id = _event_node_id(event)
+        if not node_id:
+            return
+        active = _payload_bool(event.payload, "monitor_latch_active", default=True)
+        node = self._node(node_id)
+        if active:
+            node.latched_keys.add(latch_key)
+        else:
+            node.latched_keys.discard(latch_key)
+        node.last_change_ts = now
+
     def _on_trace_event(self, event: CodeSeeEvent) -> None:
         if event.kind not in _TRACE_KINDS or not isinstance(event.payload, dict):
             return
@@ -256,7 +276,7 @@ class MonitorState:
         for node in self._nodes.values():
             next_state = _compute_state(
                 fatal=node.fatal,
-                active=bool(node.active_span_ids),
+                active=bool(node.active_span_ids or node.latched_keys),
                 stuck=node.stuck,
                 error_count=node.running_error_count,
                 repeated_error_threshold=self._repeated_error_threshold,
@@ -340,3 +360,19 @@ def _event_node_ids(event: CodeSeeEvent) -> list[str]:
         deduped.append(node_id)
         seen.add(node_id)
     return deduped
+
+
+def _payload_bool(payload: dict, key: str, *, default: bool) -> bool:
+    raw = payload.get(key)
+    if raw is None:
+        return bool(default)
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    text = str(raw).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off", ""}:
+        return False
+    return bool(default)

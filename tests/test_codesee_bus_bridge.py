@@ -88,6 +88,7 @@ def test_lab_run_stop_without_run_id_closes_auto_started_span() -> None:
     assert len(hub.span_starts) == 1
     started_span_id = hub.span_starts[0].span_id
     assert started_span_id.startswith("run:gravity:auto-")
+    assert hub.span_starts[0].node_id == "block:labhost:gravity"
 
     stopped = _Envelope(
         topic=bus_bridge.TOPIC_LAB_RUN_STOPPED,

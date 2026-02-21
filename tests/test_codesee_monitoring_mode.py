@@ -1,5 +1,6 @@
 from app_ui.codesee.runtime.events import (
     CodeSeeEvent,
+    EVENT_APP_ACTIVITY,
     EVENT_APP_ERROR,
     EVENT_BUS_REPLY,
     EVENT_BUS_REQUEST,
@@ -228,3 +229,58 @@ def test_monitor_state_priority_order() -> None:
         )
         == STATE_INACTIVE
     )
+
+
+def test_monitor_state_latch_set_and_clear() -> None:
+    monitor = MonitorState()
+    node_id = "system:ui_system"
+
+    monitor.on_event(
+        _event(
+            kind=EVENT_APP_ACTIVITY,
+            node_ids=[node_id],
+            target_node_id=node_id,
+            payload={"monitor_latch_key": "theme:quantum_smooth", "monitor_latch_active": True},
+        )
+    )
+    states = monitor.snapshot_states()
+    assert states[node_id]["state"] == STATE_RUNNING
+    assert states[node_id]["active"] is True
+    assert states[node_id]["latched_count"] == 1
+
+    monitor.on_event(
+        _event(
+            kind=EVENT_APP_ACTIVITY,
+            node_ids=[node_id],
+            target_node_id=node_id,
+            payload={"monitor_latch_key": "theme:quantum_smooth", "monitor_latch_active": False},
+        )
+    )
+    states = monitor.snapshot_states()
+    assert states[node_id]["state"] == STATE_INACTIVE
+    assert states[node_id]["active"] is False
+    assert states[node_id]["latched_count"] == 0
+
+
+def test_monitor_state_latch_payload_bool_parsing() -> None:
+    monitor = MonitorState()
+    node_id = "system:component_runtime"
+    monitor.on_event(
+        _event(
+            kind=EVENT_APP_ACTIVITY,
+            node_ids=[node_id],
+            target_node_id=node_id,
+            payload={"monitor_latch_key": "labhost:gravity", "monitor_latch_active": "true"},
+        )
+    )
+    assert monitor.snapshot_states()[node_id]["state"] == STATE_RUNNING
+
+    monitor.on_event(
+        _event(
+            kind=EVENT_APP_ACTIVITY,
+            node_ids=[node_id],
+            target_node_id=node_id,
+            payload={"monitor_latch_key": "labhost:gravity", "monitor_latch_active": "false"},
+        )
+    )
+    assert monitor.snapshot_states()[node_id]["state"] == STATE_INACTIVE

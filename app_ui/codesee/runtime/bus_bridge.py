@@ -286,7 +286,7 @@ class BusBridge:
         run_id = _str(payload.get("run_id") or payload.get("id") or "")
         run_key = run_id or f"auto-{int(time.time() * 1000)}"
         span_id = _run_span_id(lab_id, run_key)
-        node_id = f"lab:{lab_id}"
+        node_id = f"block:labhost:{lab_id}"
         self._active_spans[span_id] = node_id
         self._active_lab_run_span_ids[lab_id] = span_id
         self._hub.publish_span_start(
@@ -316,7 +316,7 @@ class BusBridge:
             span_id = _latest_active_span_for_prefix(self._active_spans, f"run:{lab_id}:") or _run_span_id(
                 lab_id, "active"
             )
-        node_id = self._active_spans.pop(span_id, None) or f"lab:{lab_id}"
+        node_id = self._active_spans.pop(span_id, None) or f"block:labhost:{lab_id}"
         if self._active_lab_run_span_ids.get(lab_id) == span_id:
             self._active_lab_run_span_ids.pop(lab_id, None)
         self._hub.publish_span_end(

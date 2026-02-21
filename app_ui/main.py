@@ -2779,6 +2779,8 @@ class MainWindow(QtWidgets.QMainWindow):
             install_exception_hooks(self.codesee_hub)
         self.codesee_window: Optional[CodeSeeWindow] = None
         self._codesee_context: str = "Main Menu"
+        self._active_theme_latch_key: Optional[str] = None
+        self._active_lab_latch_key: Optional[str] = None
         self.codesee_bus_bridge: Optional[BusBridge] = None
 
         self.stacked = QtWidgets.QStackedWidget()
@@ -2945,6 +2947,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.codesee)
         self.stacked.addWidget(self.component_host)
         self._refresh_workspace_selectors()
+        self._sync_theme_monitor_latch()
 
         if APP_BUS and BUS_WORKSPACE_ACTIVE_CHANGED:
             try:
@@ -3291,6 +3294,118 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.codesee_hub.publish(event)
 
+    def _publish_monitor_latch_event(
+        self,
+        *,
+        node_id: str,
+        latch_key: str,
+        active: bool,
+        message: str,
+    ) -> None:
+        if not self.codesee_hub:
+            return
+        target_node_id = str(node_id or "").strip() or "system:app_ui"
+        key_text = str(latch_key or "").strip()
+        if not key_text:
+            return
+        event = CodeSeeEvent(
+            ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            kind=EVENT_APP_ACTIVITY,
+            severity="info",
+            message=message,
+            node_ids=[target_node_id],
+            source="app_ui",
+            source_node_id="system:app_ui",
+            target_node_id=target_node_id,
+            payload={
+                "monitor_latch_key": key_text,
+                "monitor_latch_active": bool(active),
+                "topic": "app.monitor.latch",
+            },
+        )
+        self.codesee_hub.publish(event)
+
+    @staticmethod
+    def _theme_monitor_node_ids(pack_id: str) -> List[str]:
+        pack_text = str(pack_id or "").strip() or "default"
+        return [f"pack:ui:{pack_text}", "system:ui_system"]
+
+    @staticmethod
+    def _lab_monitor_node_ids(latch_key: str) -> List[str]:
+        key_text = str(latch_key or "").strip()
+        if not key_text:
+            return ["system:component_runtime"]
+        if ":" not in key_text:
+            return [f"block:{key_text}", "system:component_runtime"]
+        _, lab_id = key_text.split(":", 1)
+        lab_id = lab_id.strip()
+        if not lab_id:
+            return [f"block:{key_text}", "system:component_runtime"]
+        return [f"block:{key_text}", f"lab:{lab_id}", "system:component_runtime"]
+
+    def _publish_monitor_latch_to_nodes(
+        self,
+        *,
+        node_ids: List[str],
+        latch_key: str,
+        active: bool,
+        message: str,
+    ) -> None:
+        seen: set[str] = set()
+        for raw_node_id in node_ids:
+            node_id = str(raw_node_id or "").strip()
+            if not node_id or node_id in seen:
+                continue
+            seen.add(node_id)
+            self._publish_monitor_latch_event(
+                node_id=node_id,
+                latch_key=latch_key,
+                active=active,
+                message=message,
+            )
+
+    def _sync_theme_monitor_latch(self) -> None:
+        config = ui_config.load_ui_config()
+        pack_id = str(config.get("active_pack_id") or "default").strip() or "default"
+        next_key = f"theme:{pack_id}"
+        if self._active_theme_latch_key == next_key:
+            return
+        if self._active_theme_latch_key:
+            previous_pack_id = self._active_theme_latch_key.split(":", 1)[-1]
+            self._publish_monitor_latch_to_nodes(
+                node_ids=self._theme_monitor_node_ids(previous_pack_id),
+                latch_key=self._active_theme_latch_key,
+                active=False,
+                message=f"Theme inactive: {self._active_theme_latch_key.split(':', 1)[-1]}",
+            )
+        self._active_theme_latch_key = next_key
+        self._publish_monitor_latch_to_nodes(
+            node_ids=self._theme_monitor_node_ids(pack_id),
+            latch_key=next_key,
+            active=True,
+            message=f"Theme active: {pack_id}",
+        )
+
+    def _set_lab_monitor_latch(self, lab_id: Optional[str]) -> None:
+        next_key = f"labhost:{str(lab_id).strip()}" if lab_id else None
+        if self._active_lab_latch_key == next_key:
+            return
+        if self._active_lab_latch_key:
+            self._publish_monitor_latch_to_nodes(
+                node_ids=self._lab_monitor_node_ids(self._active_lab_latch_key),
+                latch_key=self._active_lab_latch_key,
+                active=False,
+                message=f"Lab inactive: {self._active_lab_latch_key.split(':', 1)[-1]}",
+            )
+        self._active_lab_latch_key = next_key
+        if next_key:
+            self._publish_monitor_latch_to_nodes(
+                node_ids=self._lab_monitor_node_ids(next_key),
+                latch_key=next_key,
+                active=True,
+                message=f"Lab active: {next_key.split(':', 1)[-1]}",
+            )
+
     def _on_workspace_changed(self, workspace: Dict[str, Any], *, notify_bus: bool = True) -> None:
         if self.codesee:
             try:
@@ -3446,8 +3561,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_settings(self):
         dialog = SettingsDialog(self)
-        dialog.exec()
+        result = dialog.exec()
         self.current_profile = ui_config.load_experience_profile()
+        if result == int(QtWidgets.QDialog.DialogCode.Accepted):
+            self._sync_theme_monitor_latch()
         if self.main_menu:
             self.main_menu.set_profile(self.current_profile)
         if self.content_browser:
@@ -3741,6 +3858,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _dispose_lab_widget(self):
+        had_lab_widget = self.lab_widget is not None or self.lab_host_widget is not None
         if self.lab_widget is not None:
             if hasattr(self.lab_widget, "stop_simulation"):
                 try:
@@ -3752,6 +3870,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.stacked.removeWidget(self.lab_host_widget)
             self.lab_host_widget.deleteLater()
             self.lab_host_widget = None
+        if had_lab_widget:
+            self._set_lab_monitor_latch(None)
 
     def _open_lab(self, lab_id: str, part_id: str, manifest: Dict, detail: Dict):
         plugin = lab_registry.get_lab(lab_id)
@@ -3797,6 +3917,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lab_host_widget = screen
         self.stacked.addWidget(screen)
         self.stacked.setCurrentWidget(screen)
+        self._set_lab_monitor_latch(lab_id)
         self._publish_codesee_event(f"Lab Opened: {title}", node_ids=["system:app_ui"])
 
 def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> str:
