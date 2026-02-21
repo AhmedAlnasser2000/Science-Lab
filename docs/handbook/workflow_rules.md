@@ -220,6 +220,31 @@ Agents must follow these rules unless explicitly overridden:
      - `<gate_name>_followup_1`, `<gate_name>_followup_2`, ...
    - **Do not close a gate** with unresolved scope changes or partial evidence.
 
+8) **Discuss first, implement second (explicit approval required)**
+   - Before implementing any new idea/step/gate, discuss scope, approach, and tradeoffs first.
+   - Do not begin implementation edits until the user explicitly approves start (for example: "go", "proceed", "implement").
+   - Read-only recon is allowed before approval; write actions must wait for approval.
+
+9) **Policy updates require conflict-check first**
+   - Before adding/changing policy rules, audit current policy docs to avoid conflicts or duplicates.
+   - Minimum audit targets:
+     - `AGENTS.md`
+     - `docs/handbook/workflow_rules.md`
+   - Prefer merging into existing sections rather than adding parallel rules.
+
+10) **Gate completion output contract**
+   - Every completed gate or mid-gate must be labeled as `Frontend` or `Backend`.
+   - Classification:
+     - any UI/manual in-app validation needed -> `Frontend`
+     - pure logic/runtime/tests/docs with no UI behavior validation -> `Backend`
+   - For `Frontend` completions, always provide:
+     - manual verification checklist for the user (actions + expected results)
+     - accurate summary of completed gate changes
+     - exact next gate plan
+   - For `Backend` completions, provide:
+     - accurate summary only
+     - no manual verification checklist
+
 ---
 
 ## Example: Block Catalog

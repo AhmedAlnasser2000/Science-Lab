@@ -40,6 +40,31 @@ Gate sequencing policy:
 - After each gate implementation/verification summary, stop and wait for user confirmation before moving to the next gate.
 - Open/close multiple gates in one step only when the user explicitly requests batch handling.
 
+Pre-implementation discussion policy (mandatory):
+- Before implementing any new idea/step/gate, discuss scope, approach, and tradeoffs with the user first.
+- Do not start implementation edits until explicit user approval to proceed (for example: "go", "proceed", "implement").
+- Read-only recon is allowed before approval; write actions must wait for approval.
+
+Policy conflict-check rule (mandatory):
+- Before adding or changing workflow/policy rules, audit existing rules first to avoid conflicting or duplicate instructions.
+- Minimum audit targets:
+  - `AGENTS.md`
+  - `docs/handbook/workflow_rules.md`
+- Merge into existing sections whenever possible; avoid creating parallel rules that say the same thing differently.
+
+Gate completion output contract (mandatory):
+- Every completed gate or mid-gate must be explicitly labeled as `Frontend` or `Backend`.
+- Classification rule:
+  - Any gate that touches UI/manual in-app behavior is `Frontend`.
+  - Pure logic/runtime/tests/docs with no UI behavior validation is `Backend`.
+- For `Frontend` completions, always provide:
+  - manual verification checklist for the user (`action` + expected result)
+  - accurate summary of what changed in the completed gate
+  - exact next gate plan
+- For `Backend` completions, provide:
+  - accurate summary of what changed
+  - no manual verification checklist
+
 Mid-gate change policy:
 - Purpose:
   - Prevent hidden scope growth inside one gate.
