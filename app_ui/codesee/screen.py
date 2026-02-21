@@ -643,15 +643,23 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _context_nodes_for(self, context: str) -> set[str]:
         key = context.lower()
+        nodes = {"system:app_ui"}
         if "system health" in key or "diagnostics" in key or "pack management" in key:
-            return {"system:core_center"}
+            nodes.add("system:core_center")
+            return nodes
         if "content browser" in key or "content management" in key:
-            return {"system:content_system"}
+            nodes.add("system:content_system")
+            return nodes
         if "block sandbox" in key or "block catalog" in key:
-            return {"system:component_runtime"}
+            nodes.add("system:component_runtime")
+            return nodes
         if "lab" in key:
-            return {"system:component_runtime"}
-        return {"system:app_ui"}
+            nodes.add("system:component_runtime")
+            return nodes
+        if "theme" in key or "settings" in key:
+            nodes.add("system:ui_system")
+            return nodes
+        return nodes
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)

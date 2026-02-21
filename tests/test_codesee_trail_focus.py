@@ -87,3 +87,22 @@ def test_compute_trail_focus_includes_context_nodes() -> None:
     assert result.focus_nodes == {"system:app_ui"}
     assert result.node_opacity["system:app_ui"] == 1.0
     assert result.node_opacity["system:core_center"] == 0.4
+
+
+def test_compute_trail_focus_handles_multiple_context_nodes() -> None:
+    result = compute_trail_focus(
+        visible_nodes={"system:app_ui", "system:component_runtime", "system:runtime_bus"},
+        visible_edges={("system:runtime_bus", "system:component_runtime")},
+        monitor_states={},
+        trace_nodes=set(),
+        trace_edges=[],
+        selected_node_ids=set(),
+        context_node_ids={"system:app_ui", "system:component_runtime"},
+        enabled=True,
+        inactive_node_opacity=0.4,
+        inactive_edge_opacity=0.2,
+    )
+    assert result.focus_nodes == {"system:app_ui", "system:component_runtime"}
+    assert result.node_opacity["system:app_ui"] == 1.0
+    assert result.node_opacity["system:component_runtime"] == 1.0
+    assert result.node_opacity["system:runtime_bus"] == 0.4
