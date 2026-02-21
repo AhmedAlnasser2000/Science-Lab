@@ -85,10 +85,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
         positions: Dict[str, Tuple[float, float]],
         diff_result: Optional[DiffResult] = None,
     ) -> None:
-        self.clear()
+        # Drop python-side item caches before clear() so re-entrant selection
+        # callbacks cannot touch deleted NodeItem wrappers.
         self._nodes = {}
         self._edges = []
         self._edge_index = {}
+        self.clear()
         self._empty_item = None
         self._signals = []
         self._pulses = {}
@@ -258,8 +260,14 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
     def set_monitor_border_px(self, width_px: int) -> None:
         self._monitor_border_px = clamp_monitor_border_px(width_px)
-        for item in self._nodes.values():
-            item.set_monitor_border_px(self._monitor_border_px)
+        stale_node_ids: list[str] = []
+        for node_id, item in list(self._nodes.items()):
+            try:
+                item.set_monitor_border_px(self._monitor_border_px)
+            except RuntimeError:
+                stale_node_ids.append(node_id)
+        for node_id in stale_node_ids:
+            self._nodes.pop(node_id, None)
 
     def set_trail_focus_overlay(
         self,

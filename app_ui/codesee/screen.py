@@ -260,6 +260,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._monitor_border_px = clamp_monitor_border_px(
             getattr(self._view_config, "monitor_border_px", DEFAULT_MONITOR_BORDER_PX)
         )
+        self._pending_render_while_drag = False
+        self._scene_rebuild_in_progress = False
         self._monitor = MonitorState(
             span_stuck_seconds=int(self._view_config.span_stuck_seconds),
             follow_last_trace=self._monitor_follow_last_trace,
@@ -509,7 +511,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
         self.scene = GraphScene(
             on_open_subgraph=self._enter_subgraph,
-            on_layout_changed=self._save_layout,
+            on_layout_changed=self._on_scene_layout_changed,
             on_inspect=self._inspect_node,
             on_peek=self._on_node_peek_requested,
             on_toggle_peek=self._on_node_double_click_in_peek,
@@ -978,9 +980,29 @@ class CodeSeeScreen(QtWidgets.QWidget):
             positions = existing
         layout_store.save_positions(self._workspace_id(), self._lens, self._render_graph_id, positions)
 
+    def _on_scene_layout_changed(self) -> None:
+        self._save_layout()
+        if self._pending_render_while_drag and not self._is_node_drag_in_progress():
+            self._pending_render_while_drag = False
+            self._render_current_graph()
+
+    def _is_node_drag_in_progress(self) -> bool:
+        scene = getattr(self, "scene", None)
+        if scene is None:
+            return False
+        try:
+            grabber = scene.mouseGrabberItem()
+        except RuntimeError:
+            return False
+        return isinstance(grabber, NodeItem)
+
     def _render_current_graph(self) -> None:
         if not self._current_graph_id or not self._current_graph:
             return
+        if self._is_node_drag_in_progress():
+            self._pending_render_while_drag = True
+            return
+        self._pending_render_while_drag = False
         graph_to_render = self._current_graph
         diff_result = None
         if self._diff_mode and self._diff_compare_graph and self._diff_result:
@@ -1027,7 +1049,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.set_empty_message(empty_message)
         self._render_node_map = {node.node_id: node for node in filtered.nodes}
         self._facet_selection_by_id = self._facet_selection_index(filtered)
-        self.scene.build_graph(filtered, positions, diff_result=diff_result)
+        self._scene_rebuild_in_progress = True
+        try:
+            self.scene.build_graph(filtered, positions, diff_result=diff_result)
+        finally:
+            self._scene_rebuild_in_progress = False
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
         self._update_span_tints(filtered)
@@ -2297,6 +2323,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _apply_trail_focus_overlay(self, *, now: Optional[float] = None) -> None:
         if not hasattr(self, "scene") or not self.scene:
             return
+        if self._scene_rebuild_in_progress:
+            return
         if not self._render_node_map:
             self.scene.set_trail_focus_overlay(
                 enabled=False,
@@ -3323,6 +3351,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._inspector_dock.raise_()
 
     def _on_scene_selection_changed(self) -> None:
+        if self._scene_rebuild_in_progress:
+            return
         scene = getattr(self, "scene", None)
         if scene is None:
             return
