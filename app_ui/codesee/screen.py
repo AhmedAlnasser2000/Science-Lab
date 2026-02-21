@@ -262,6 +262,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         self._pending_render_while_drag = False
         self._scene_rebuild_in_progress = False
+        self._view_node_drag_active = False
         self._monitor = MonitorState(
             span_stuck_seconds=int(self._view_config.span_stuck_seconds),
             follow_last_trace=self._monitor_follow_last_trace,
@@ -527,6 +528,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             on_set_facet_density=self._on_set_facet_density,
             on_set_facet_scope=self._on_set_facet_scope,
             on_open_facet_settings=self._on_open_facet_settings,
+            on_drag_state_changed=self._on_view_node_drag_state_changed,
         )
         self.view.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -986,7 +988,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._pending_render_while_drag = False
             self._render_current_graph()
 
+    def _on_view_node_drag_state_changed(self, active: bool) -> None:
+        self._view_node_drag_active = bool(active)
+        if not self._view_node_drag_active and self._pending_render_while_drag and not self._is_node_drag_in_progress():
+            self._pending_render_while_drag = False
+            self._render_current_graph()
+
     def _is_node_drag_in_progress(self) -> bool:
+        if self._view_node_drag_active:
+            return True
         scene = getattr(self, "scene", None)
         if scene is None:
             return False
@@ -994,7 +1004,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
             grabber = scene.mouseGrabberItem()
         except RuntimeError:
             return False
-        return isinstance(grabber, NodeItem)
+        if isinstance(grabber, NodeItem):
+            return True
+        buttons = QtWidgets.QApplication.mouseButtons()
+        if not (buttons & QtCore.Qt.MouseButton.LeftButton):
+            return False
+        try:
+            selected_items = scene.selectedItems()
+        except RuntimeError:
+            return False
+        return any(isinstance(item, NodeItem) for item in selected_items)
 
     def _render_current_graph(self) -> None:
         if not self._current_graph_id or not self._current_graph:
