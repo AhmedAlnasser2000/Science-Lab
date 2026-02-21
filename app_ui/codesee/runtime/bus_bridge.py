@@ -85,6 +85,8 @@ class BusBridge:
         self._workspace_id_provider = workspace_id_provider or (lambda: "default")
         self._subscriptions: list[str] = []
         self._active_spans: Dict[str, str] = {}
+        self._active_content_span_ids: Dict[str, str] = {}
+        self._active_lab_run_span_ids: Dict[str, str] = {}
         self._connected = False
 
     def start(self) -> None:
@@ -223,19 +225,20 @@ class BusBridge:
 
     def _on_content_progress(self, envelope) -> None:
         payload = _payload(envelope)
-        module_id = _str(payload.get("module_id") or payload.get("id") or "")
-        span_id = f"content:{module_id or 'module'}"
+        module_key = _content_module_key(payload)
+        span_id = _content_span_id(module_key)
         node_id = "system:content_system"
         if span_id not in self._active_spans:
             self._active_spans[span_id] = node_id
             self._hub.publish_span_start(
                 SpanStart(
                     span_id=span_id,
-                    label=f"Content {module_id or 'module'}",
+                    label=f"Content {module_key or 'module'}",
                     node_id=node_id,
                     source_id="system:runtime_bus",
                 )
             )
+        self._active_content_span_ids[module_key] = span_id
         progress = _progress_value(payload.get("percent"))
         stage = _str(payload.get("stage") or "")
         self._hub.publish_span_update(
@@ -254,9 +257,10 @@ class BusBridge:
 
     def _on_content_completed(self, envelope) -> None:
         payload = _payload(envelope)
+        module_key = _content_module_key(payload)
         module_id = _str(payload.get("module_id") or payload.get("id") or "")
         action = _str(payload.get("action") or "content")
-        span_id = f"content:{module_id or action}"
+        span_id = self._active_content_span_ids.pop(module_key, _content_span_id(module_key))
         node_id = self._active_spans.pop(span_id, None) or "system:content_system"
         ok = bool(payload.get("ok", True))
         status = "completed" if ok else "failed"
@@ -280,9 +284,11 @@ class BusBridge:
         payload = _payload(envelope)
         lab_id = _str(payload.get("lab_id") or "lab")
         run_id = _str(payload.get("run_id") or payload.get("id") or "")
-        span_id = f"run:{lab_id}:{run_id or int(time.time())}"
+        run_key = run_id or f"auto-{int(time.time() * 1000)}"
+        span_id = _run_span_id(lab_id, run_key)
         node_id = f"lab:{lab_id}"
         self._active_spans[span_id] = node_id
+        self._active_lab_run_span_ids[lab_id] = span_id
         self._hub.publish_span_start(
             SpanStart(
                 span_id=span_id,
@@ -297,8 +303,22 @@ class BusBridge:
         payload = _payload(envelope)
         lab_id = _str(payload.get("lab_id") or "lab")
         run_id = _str(payload.get("run_id") or payload.get("id") or "")
-        span_id = f"run:{lab_id}:{run_id or 'active'}"
+        span_id = ""
+        if run_id:
+            candidate = _run_span_id(lab_id, run_id)
+            if candidate in self._active_spans:
+                span_id = candidate
+        if not span_id:
+            span_id = self._active_lab_run_span_ids.get(lab_id, "")
+        if not span_id and run_id:
+            span_id = _run_span_id(lab_id, run_id)
+        if not span_id:
+            span_id = _latest_active_span_for_prefix(self._active_spans, f"run:{lab_id}:") or _run_span_id(
+                lab_id, "active"
+            )
         node_id = self._active_spans.pop(span_id, None) or f"lab:{lab_id}"
+        if self._active_lab_run_span_ids.get(lab_id) == span_id:
+            self._active_lab_run_span_ids.pop(lab_id, None)
         self._hub.publish_span_end(
             SpanEnd(
                 span_id=span_id,
@@ -531,6 +551,26 @@ def _progress_value(raw) -> Optional[float]:
     if value < 0.0:
         return 0.0
     return min(value, 1.0)
+
+
+def _content_module_key(payload: Dict[str, object]) -> str:
+    module_id = _str(payload.get("module_id") or payload.get("id") or "")
+    return module_id or "module"
+
+
+def _content_span_id(module_key: str) -> str:
+    return f"content:{module_key or 'module'}"
+
+
+def _run_span_id(lab_id: str, run_key: str) -> str:
+    return f"run:{lab_id}:{run_key}"
+
+
+def _latest_active_span_for_prefix(active_spans: Dict[str, str], prefix: str) -> Optional[str]:
+    for span_id in reversed(list(active_spans.keys())):
+        if span_id.startswith(prefix):
+            return span_id
+    return None
 
 
 def _node_for_job(job_type: str) -> str:
