@@ -64,6 +64,11 @@ Gate completion output contract (mandatory):
 - For `Backend` completions, provide:
   - accurate summary of what changed
   - no manual verification checklist
+- App launch code handoff (mandatory):
+  - After each completed task/gate/mid-gate, always provide a runnable app launch command block for the current environment.
+  - For `Frontend` completions, include launch command plus manual verification checklist.
+  - For `Backend` completions, include launch command only (no manual checklist unless requested).
+  - If launch is blocked in the current environment, state the blocker and provide the closest valid command.
 
 Mid-gate change policy:
 - Purpose:

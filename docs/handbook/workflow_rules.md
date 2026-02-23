@@ -244,6 +244,11 @@ Agents must follow these rules unless explicitly overridden:
    - For `Backend` completions, provide:
      - accurate summary only
      - no manual verification checklist
+   - **App launch code handoff (mandatory):**
+     - After each completed task/gate/mid-gate, always provide a runnable app launch command block for the current environment.
+     - For `Frontend` completions, include launch command plus manual verification checklist.
+     - For `Backend` completions, include launch command only (no manual checklist unless requested).
+     - If launch is blocked in the current environment, state the blocker and provide the closest valid command.
 
 ---
 
