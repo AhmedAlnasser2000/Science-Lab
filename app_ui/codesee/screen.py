@@ -2359,6 +2359,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 focus_edges=set(),
                 inactive_node_opacity=self._inactive_node_opacity,
                 inactive_edge_opacity=self._inactive_edge_opacity,
+                node_opacity_map={},
+                edge_opacity_map={},
             )
             return
         current_now = float(time.time() if now is None else now)
@@ -2387,6 +2389,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             focus_edges=result.focus_edges,
             inactive_node_opacity=self._inactive_node_opacity,
             inactive_edge_opacity=self._inactive_edge_opacity,
+            node_opacity_map=result.node_opacity,
+            edge_opacity_map=result.edge_opacity,
         )
 
     def _pin_active_monitor_trace(self) -> None:

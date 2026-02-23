@@ -7,6 +7,8 @@ STATE_INACTIVE = "INACTIVE"
 
 DEFAULT_INACTIVE_NODE_OPACITY = 0.40
 DEFAULT_INACTIVE_EDGE_OPACITY = 0.20
+DEFAULT_BACKGROUND_ACTIVE_NODE_OPACITY = 0.85
+DEFAULT_BACKGROUND_ACTIVE_EDGE_OPACITY = 0.65
 DEFAULT_MONITOR_BORDER_PX = 2
 
 MIN_INACTIVE_NODE_OPACITY = 0.10
@@ -79,22 +81,34 @@ def compute_trail_focus(
         alias_map=alias_map,
     )
 
-    focus_nodes = _compute_focus_nodes(
-        active_monitor_nodes=active_monitor_nodes,
+    foreground_nodes = _compute_foreground_nodes(
         trace_nodes=trace_node_set,
         selected_node_ids=selected,
         context_node_ids=context_nodes,
     )
-    focus_edges = _compute_focus_edges(
+    background_nodes = _compute_background_nodes(
+        active_monitor_nodes=active_monitor_nodes,
+        foreground_nodes=foreground_nodes,
+    )
+    foreground_edges = _compute_foreground_edges(
         visible_edges=normalized_edges,
         trace_edges=resolved_trace_edges,
         selected_node_ids=selected,
     )
+    background_edges = _compute_background_edges(
+        visible_edges=normalized_edges,
+        foreground_edges=foreground_edges,
+        active_nodes=foreground_nodes | background_nodes,
+    )
+    focus_nodes = foreground_nodes | background_nodes
+    focus_edges = foreground_edges | background_edges
     node_map, edge_map = _compute_opacity_maps(
         visible_nodes=normalized_nodes,
         visible_edges=normalized_edges,
-        focus_nodes=focus_nodes,
-        focus_edges=focus_edges,
+        foreground_nodes=foreground_nodes,
+        background_nodes=background_nodes,
+        foreground_edges=foreground_edges,
+        background_edges=background_edges,
         enabled=bool(enabled),
         inactive_node_opacity=clamp_inactive_node_opacity(inactive_node_opacity),
         inactive_edge_opacity=clamp_inactive_edge_opacity(inactive_edge_opacity),
@@ -107,21 +121,28 @@ def compute_trail_focus(
     )
 
 
-def _compute_focus_nodes(
+def _compute_foreground_nodes(
     *,
-    active_monitor_nodes: set[str],
     trace_nodes: set[str],
     selected_node_ids: set[str],
     context_node_ids: set[str],
 ) -> set[str]:
-    focus = set(active_monitor_nodes)
+    focus: set[str] = set()
     focus.update(trace_nodes)
     focus.update(selected_node_ids)
     focus.update(context_node_ids)
     return focus
 
 
-def _compute_focus_edges(
+def _compute_background_nodes(
+    *,
+    active_monitor_nodes: set[str],
+    foreground_nodes: set[str],
+) -> set[str]:
+    return {node_id for node_id in active_monitor_nodes if node_id not in foreground_nodes}
+
+
+def _compute_foreground_edges(
     *,
     visible_edges: set[EdgeKey],
     trace_edges: set[EdgeKey],
@@ -132,6 +153,22 @@ def _compute_focus_edges(
         if src in selected_node_ids or dst in selected_node_ids:
             focus.add((src, dst))
     return focus
+
+
+def _compute_background_edges(
+    *,
+    visible_edges: set[EdgeKey],
+    foreground_edges: set[EdgeKey],
+    active_nodes: set[str],
+) -> set[EdgeKey]:
+    background_edges: set[EdgeKey] = set()
+    for src, dst in visible_edges:
+        edge = (src, dst)
+        if edge in foreground_edges:
+            continue
+        if src in active_nodes and dst in active_nodes:
+            background_edges.add(edge)
+    return background_edges
 
 
 def _resolve_active_monitor_nodes(
@@ -194,8 +231,10 @@ def _compute_opacity_maps(
     *,
     visible_nodes: set[str],
     visible_edges: set[EdgeKey],
-    focus_nodes: set[str],
-    focus_edges: set[EdgeKey],
+    foreground_nodes: set[str],
+    background_nodes: set[str],
+    foreground_edges: set[EdgeKey],
+    background_edges: set[EdgeKey],
     enabled: bool,
     inactive_node_opacity: float,
     inactive_edge_opacity: float,
@@ -205,14 +244,23 @@ def _compute_opacity_maps(
             {node_id: 1.0 for node_id in visible_nodes},
             {edge: 1.0 for edge in visible_edges},
         )
-    node_map = {
-        node_id: 1.0 if node_id in focus_nodes else inactive_node_opacity
-        for node_id in visible_nodes
-    }
-    edge_map = {
-        edge: 1.0 if edge in focus_edges else inactive_edge_opacity
-        for edge in visible_edges
-    }
+    node_map: dict[str, float] = {}
+    for node_id in visible_nodes:
+        if node_id in foreground_nodes:
+            node_map[node_id] = 1.0
+        elif node_id in background_nodes:
+            node_map[node_id] = DEFAULT_BACKGROUND_ACTIVE_NODE_OPACITY
+        else:
+            node_map[node_id] = inactive_node_opacity
+
+    edge_map: dict[EdgeKey, float] = {}
+    for edge in visible_edges:
+        if edge in foreground_edges:
+            edge_map[edge] = 1.0
+        elif edge in background_edges:
+            edge_map[edge] = DEFAULT_BACKGROUND_ACTIVE_EDGE_OPACITY
+        else:
+            edge_map[edge] = inactive_edge_opacity
     return node_map, edge_map
 
 

@@ -72,6 +72,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._trail_focus_enabled = False
         self._trail_focus_nodes: set[str] = set()
         self._trail_focus_edges: set[Tuple[str, str]] = set()
+        self._trail_node_opacity: Dict[str, float] = {}
+        self._trail_edge_opacity: Dict[Tuple[str, str], float] = {}
         self._inactive_node_opacity = clamp_inactive_node_opacity(DEFAULT_INACTIVE_NODE_OPACITY)
         self._inactive_edge_opacity = clamp_inactive_edge_opacity(DEFAULT_INACTIVE_EDGE_OPACITY)
         self._signal_timer = QtCore.QTimer(self)
@@ -277,6 +279,8 @@ class GraphScene(QtWidgets.QGraphicsScene):
         focus_edges: set[Tuple[str, str]],
         inactive_node_opacity: float,
         inactive_edge_opacity: float,
+        node_opacity_map: Optional[Dict[str, float]] = None,
+        edge_opacity_map: Optional[Dict[Tuple[str, str], float]] = None,
     ) -> None:
         self._trail_focus_enabled = bool(enabled)
         self._trail_focus_nodes = {str(node_id) for node_id in (focus_nodes or set()) if str(node_id)}
@@ -285,6 +289,31 @@ class GraphScene(QtWidgets.QGraphicsScene):
             for edge in (focus_edges or set())
             if isinstance(edge, tuple) and len(edge) == 2 and str(edge[0]) and str(edge[1])
         }
+        self._trail_node_opacity = {}
+        if isinstance(node_opacity_map, dict):
+            for node_id, opacity in node_opacity_map.items():
+                text = str(node_id or "").strip()
+                if not text:
+                    continue
+                try:
+                    value = float(opacity)
+                except Exception:
+                    continue
+                self._trail_node_opacity[text] = max(0.0, min(1.0, value))
+        self._trail_edge_opacity = {}
+        if isinstance(edge_opacity_map, dict):
+            for raw_edge, opacity in edge_opacity_map.items():
+                if not isinstance(raw_edge, tuple) or len(raw_edge) != 2:
+                    continue
+                src = str(raw_edge[0] or "").strip()
+                dst = str(raw_edge[1] or "").strip()
+                if not src or not dst:
+                    continue
+                try:
+                    value = float(opacity)
+                except Exception:
+                    continue
+                self._trail_edge_opacity[(src, dst)] = max(0.0, min(1.0, value))
         self._inactive_node_opacity = clamp_inactive_node_opacity(inactive_node_opacity)
         self._inactive_edge_opacity = clamp_inactive_edge_opacity(inactive_edge_opacity)
         self._apply_trail_focus_overlay()
@@ -873,16 +902,16 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 edge_item.setOpacity(1.0)
             return
         for node_id, item in self._nodes.items():
-            if node_id in self._trail_focus_nodes:
-                item.setOpacity(1.0)
-            else:
-                item.setOpacity(self._inactive_node_opacity)
+            opacity = self._trail_node_opacity.get(node_id)
+            if opacity is None:
+                opacity = 1.0 if node_id in self._trail_focus_nodes else self._inactive_node_opacity
+            item.setOpacity(opacity)
         for edge_item in self._edges:
             edge_key = (edge_item.src.node.node_id, edge_item.dst.node.node_id)
-            if edge_key in self._trail_focus_edges:
-                edge_item.setOpacity(1.0)
-            else:
-                edge_item.setOpacity(self._inactive_edge_opacity)
+            opacity = self._trail_edge_opacity.get(edge_key)
+            if opacity is None:
+                opacity = 1.0 if edge_key in self._trail_focus_edges else self._inactive_edge_opacity
+            edge_item.setOpacity(opacity)
 
 
 def _monitor_state_color(state: str) -> Optional[QtGui.QColor]:

@@ -1,4 +1,6 @@
 from app_ui.codesee.runtime.trail_focus import (
+    DEFAULT_BACKGROUND_ACTIVE_EDGE_OPACITY,
+    DEFAULT_BACKGROUND_ACTIVE_NODE_OPACITY,
     clamp_inactive_edge_opacity,
     clamp_inactive_node_opacity,
     clamp_monitor_border_px,
@@ -23,7 +25,12 @@ def test_compute_trail_focus_sets_nodes_and_edges() -> None:
         inactive_edge_opacity=0.2,
     )
     assert result.focus_nodes == {"a", "b", "c"}
-    assert result.focus_edges == {("a", "b"), ("c", "d")}
+    assert result.focus_edges == {("a", "b"), ("b", "c"), ("c", "d")}
+    assert result.node_opacity["a"] == 1.0
+    assert result.node_opacity["b"] == DEFAULT_BACKGROUND_ACTIVE_NODE_OPACITY
+    assert result.node_opacity["c"] == 1.0
+    assert result.node_opacity["d"] == 0.4
+    assert result.edge_opacity[("b", "c")] == DEFAULT_BACKGROUND_ACTIVE_EDGE_OPACITY
 
 
 def test_compute_trail_focus_opacity_enabled() -> None:
@@ -39,7 +46,7 @@ def test_compute_trail_focus_opacity_enabled() -> None:
         inactive_node_opacity=0.35,
         inactive_edge_opacity=0.2,
     )
-    assert result.node_opacity["a"] == 1.0
+    assert result.node_opacity["a"] == DEFAULT_BACKGROUND_ACTIVE_NODE_OPACITY
     assert result.node_opacity["b"] == 0.35
     assert result.edge_opacity[("a", "b")] == 0.2
     assert result.edge_opacity[("b", "a")] == 0.2
