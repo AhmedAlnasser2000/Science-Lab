@@ -3262,6 +3262,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _show_main_menu(self):
         self._dispose_lab_widget()
+        self._set_lab_monitor_latch(None)
         if self.codesee and self.stacked.currentWidget() == self.codesee:
             try:
                 self.codesee.save_layout()
@@ -3342,6 +3343,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if not lab_id:
             return [f"block:{key_text}", "system:component_runtime"]
         return [f"block:{key_text}", f"lab:{lab_id}", "system:component_runtime"]
+
+    @staticmethod
+    def _lab_id_from_component_id(component_id: Optional[str]) -> Optional[str]:
+        component_text = str(component_id or "").strip()
+        if not component_text.startswith("labhost:"):
+            return None
+        lab_id = component_text.split(":", 1)[-1].strip()
+        return lab_id or None
+
+    def _sync_lab_latch_for_component(self, component_id: Optional[str]) -> None:
+        self._set_lab_monitor_latch(self._lab_id_from_component_id(component_id))
 
     def _publish_monitor_latch_to_nodes(
         self,
@@ -3507,6 +3519,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_content_browser(self, focus_part: Optional[str] = None) -> bool:
         self._dispose_lab_widget()
+        self._set_lab_monitor_latch(None)
         self.content_browser.set_profile(self.current_profile)
         self.content_browser.refresh_tree()
         selected = False
@@ -3518,6 +3531,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _show_content_browser(self):
         self._dispose_lab_widget()
+        self._set_lab_monitor_latch(None)
         self.stacked.setCurrentWidget(self.content_browser)
         self._publish_codesee_event("Content Browser", node_ids=["system:app_ui"])
 
@@ -3735,6 +3749,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.component_host.open_component(component_id, context)
         self.stacked.setCurrentWidget(self.component_host)
+        self._sync_lab_latch_for_component(component_id)
 
     def _open_block_host_empty(self) -> None:
         self._dispose_lab_widget()
@@ -3758,6 +3773,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.block_host.add_block(component_id, activate=True)
         self.stacked.setCurrentWidget(self.block_host)
+        self._sync_lab_latch_for_component(component_id)
 
     def _start_block_template(self, template: Dict[str, Any]) -> None:
         self._dispose_lab_widget()
@@ -3766,6 +3782,11 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.block_host.start_template(template)
         self.stacked.setCurrentWidget(self.block_host)
+        open_first = template.get("open_first")
+        if isinstance(open_first, str) and open_first:
+            self._sync_lab_latch_for_component(open_first)
+        else:
+            self._set_lab_monitor_latch(None)
 
     def _open_block_picker(self, on_pick: Callable[[str], None]) -> None:
         dialog = QtWidgets.QDialog(self)
@@ -3805,6 +3826,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.component_host.open_component(component_id, context)
         self.stacked.setCurrentWidget(self.component_host)
+        self._sync_lab_latch_for_component(component_id)
 
     def _quit_app(self):
         app = QtWidgets.QApplication.instance()
