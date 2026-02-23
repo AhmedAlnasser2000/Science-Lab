@@ -68,20 +68,26 @@ def compute_trail_focus(
 ) -> TrailFocusResult:
     normalized_nodes = {str(node_id).strip() for node_id in visible_nodes if str(node_id).strip()}
     normalized_edges = _normalize_edges(visible_edges)
-    selected = {str(node_id).strip() for node_id in (selected_node_ids or []) if str(node_id).strip()}
-    context_nodes = {str(node_id).strip() for node_id in (context_node_ids or []) if str(node_id).strip()}
-    trace_node_set = {str(node_id).strip() for node_id in (trace_nodes or []) if str(node_id).strip()}
+    alias_map = _build_visible_node_alias_map(normalized_nodes)
+    selected = _resolve_visible_nodes(selected_node_ids or (), alias_map)
+    context_nodes = _resolve_visible_nodes(context_node_ids or (), alias_map)
+    trace_node_set = _resolve_visible_nodes(trace_nodes or (), alias_map)
+    active_monitor_nodes = _resolve_active_monitor_nodes(monitor_states or {}, alias_map)
+    resolved_trace_edges = _resolve_trace_edges(
+        trace_edges=trace_edges or (),
+        visible_edges=normalized_edges,
+        alias_map=alias_map,
+    )
 
     focus_nodes = _compute_focus_nodes(
-        visible_nodes=normalized_nodes,
-        monitor_states=monitor_states or {},
+        active_monitor_nodes=active_monitor_nodes,
         trace_nodes=trace_node_set,
         selected_node_ids=selected,
         context_node_ids=context_nodes,
     )
     focus_edges = _compute_focus_edges(
         visible_edges=normalized_edges,
-        trace_edges=trace_edges or (),
+        trace_edges=resolved_trace_edges,
         selected_node_ids=selected,
     )
     node_map, edge_map = _compute_opacity_maps(
@@ -103,42 +109,85 @@ def compute_trail_focus(
 
 def _compute_focus_nodes(
     *,
-    visible_nodes: set[str],
-    monitor_states: Mapping[str, Mapping[str, object]],
+    active_monitor_nodes: set[str],
     trace_nodes: set[str],
     selected_node_ids: set[str],
     context_node_ids: set[str],
 ) -> set[str]:
-    focus = set()
-    for node_id, state in monitor_states.items():
-        if node_id not in visible_nodes:
-            continue
-        if _is_active_monitor_state(state):
-            focus.add(node_id)
-    focus.update(node_id for node_id in trace_nodes if node_id in visible_nodes)
-    focus.update(node_id for node_id in selected_node_ids if node_id in visible_nodes)
-    focus.update(node_id for node_id in context_node_ids if node_id in visible_nodes)
+    focus = set(active_monitor_nodes)
+    focus.update(trace_nodes)
+    focus.update(selected_node_ids)
+    focus.update(context_node_ids)
     return focus
 
 
 def _compute_focus_edges(
     *,
     visible_edges: set[EdgeKey],
-    trace_edges: Iterable[tuple[str, str]],
+    trace_edges: set[EdgeKey],
     selected_node_ids: set[str],
 ) -> set[EdgeKey]:
-    focus: set[EdgeKey] = set()
-    for raw_edge in trace_edges:
-        edge = _normalize_edge(raw_edge)
-        if not edge:
-            continue
-        resolved = _resolve_visible_edge(edge, visible_edges)
-        if resolved:
-            focus.add(resolved)
+    focus: set[EdgeKey] = set(trace_edges)
     for src, dst in visible_edges:
         if src in selected_node_ids or dst in selected_node_ids:
             focus.add((src, dst))
     return focus
+
+
+def _resolve_active_monitor_nodes(
+    monitor_states: Mapping[str, Mapping[str, object]],
+    alias_map: Mapping[str, set[str]],
+) -> set[str]:
+    focus: set[str] = set()
+    for node_id, state in monitor_states.items():
+        if not _is_active_monitor_state(state):
+            continue
+        focus.update(_resolve_visible_nodes((node_id,), alias_map))
+    return focus
+
+
+def _resolve_trace_edges(
+    *,
+    trace_edges: Iterable[tuple[str, str]],
+    visible_edges: set[EdgeKey],
+    alias_map: Mapping[str, set[str]],
+) -> set[EdgeKey]:
+    resolved: set[EdgeKey] = set()
+    for raw_edge in trace_edges:
+        edge = _normalize_edge(raw_edge)
+        if not edge:
+            continue
+        src_ids = _resolve_visible_nodes((edge[0],), alias_map)
+        dst_ids = _resolve_visible_nodes((edge[1],), alias_map)
+        if not src_ids:
+            src_ids = {edge[0]}
+        if not dst_ids:
+            dst_ids = {edge[1]}
+        for src in src_ids:
+            for dst in dst_ids:
+                visible = _resolve_visible_edge((src, dst), visible_edges)
+                if visible:
+                    resolved.add(visible)
+    return resolved
+
+
+def _build_visible_node_alias_map(visible_nodes: set[str]) -> dict[str, set[str]]:
+    alias_map: dict[str, set[str]] = {}
+    for node_id in visible_nodes:
+        for alias in _node_aliases(node_id):
+            alias_map.setdefault(alias, set()).add(node_id)
+    return alias_map
+
+
+def _resolve_visible_nodes(raw_node_ids: Iterable[str], alias_map: Mapping[str, set[str]]) -> set[str]:
+    resolved: set[str] = set()
+    for raw_id in raw_node_ids:
+        text = str(raw_id or "").strip()
+        if not text:
+            continue
+        for alias in _node_aliases(text):
+            resolved.update(alias_map.get(alias, set()))
+    return resolved
 
 
 def _compute_opacity_maps(
@@ -191,6 +240,26 @@ def _normalize_edge(raw_edge: tuple[str, str] | object) -> EdgeKey | None:
     if not src or not dst:
         return None
     return (src, dst)
+
+
+def _node_aliases(node_id: str) -> set[str]:
+    text = str(node_id or "").strip()
+    if not text:
+        return set()
+    aliases = {text}
+    if text.startswith("system:"):
+        aliases.add(text.split(":", 1)[1])
+    elif ":" not in text:
+        aliases.add(f"system:{text}")
+    if text.startswith("block:labhost:"):
+        suffix = text.split("block:labhost:", 1)[1]
+        if suffix:
+            aliases.add(f"lab:{suffix}")
+    elif text.startswith("lab:"):
+        suffix = text.split("lab:", 1)[1]
+        if suffix:
+            aliases.add(f"block:labhost:{suffix}")
+    return aliases
 
 
 def _resolve_visible_edge(edge: EdgeKey, visible_edges: set[EdgeKey]) -> EdgeKey | None:

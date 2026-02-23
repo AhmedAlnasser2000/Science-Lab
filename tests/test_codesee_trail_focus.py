@@ -106,3 +106,40 @@ def test_compute_trail_focus_handles_multiple_context_nodes() -> None:
     assert result.node_opacity["system:app_ui"] == 1.0
     assert result.node_opacity["system:component_runtime"] == 1.0
     assert result.node_opacity["system:runtime_bus"] == 0.4
+
+
+def test_compute_trail_focus_resolves_system_aliases() -> None:
+    result = compute_trail_focus(
+        visible_nodes={"system:core_center", "system:component_runtime", "system:app_ui"},
+        visible_edges={("system:core_center", "system:component_runtime")},
+        monitor_states={"core_center": {"state": "RUNNING"}},
+        trace_nodes={"component_runtime"},
+        trace_edges=[("core_center", "component_runtime")],
+        selected_node_ids={"app_ui"},
+        context_node_ids=set(),
+        enabled=True,
+        inactive_node_opacity=0.4,
+        inactive_edge_opacity=0.2,
+    )
+    assert "system:core_center" in result.focus_nodes
+    assert "system:component_runtime" in result.focus_nodes
+    assert "system:app_ui" in result.focus_nodes
+    assert ("system:core_center", "system:component_runtime") in result.focus_edges
+
+
+def test_compute_trail_focus_resolves_labhost_aliases() -> None:
+    result = compute_trail_focus(
+        visible_nodes={"lab:gravity_demo", "system:app_ui"},
+        visible_edges={("system:app_ui", "lab:gravity_demo")},
+        monitor_states={"block:labhost:gravity_demo": {"state": "RUNNING"}},
+        trace_nodes={"block:labhost:gravity_demo"},
+        trace_edges=[("system:app_ui", "block:labhost:gravity_demo")],
+        selected_node_ids=set(),
+        context_node_ids=set(),
+        enabled=True,
+        inactive_node_opacity=0.4,
+        inactive_edge_opacity=0.2,
+    )
+    assert "lab:gravity_demo" in result.focus_nodes
+    assert ("system:app_ui", "lab:gravity_demo") in result.focus_edges
+    assert result.node_opacity["lab:gravity_demo"] == 1.0
