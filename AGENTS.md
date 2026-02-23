@@ -20,6 +20,28 @@ Quick start:
 - `powershell ./tools/dev/list_worktrees.ps1`
 - `powershell ./tools/dev/remove_slice_worktree.ps1 -Branch work/v5.5d2 -DeleteBranch`
 
+## Wrong-Branch Recovery Policy (Patch-First, No Guessing)
+
+If edits are made on the wrong slice/branch, recovery must be done from an exact patch artifact, not memory.
+
+Rules:
+- Stop further edits on the wrong branch immediately.
+- In the intended/correct slice, create a recovery artifact under:
+  - `.slice_tmp/<slice_id>/wrong_branch_recovery.patch`
+- Generate exact diff from the wrong branch into that artifact (or equivalent file list + hunks).
+- Reapply from the artifact only. Do not manually retype from memory.
+- Verify parity before commit:
+  - no missing hunks
+  - no unintended extra hunks
+  - equivalent file-level diff against source changes.
+- Commit message must include recovery provenance suffix, for example:
+  - `(recovered-from-wrong-branch)`
+- In handoff, report:
+  - source wrong branch
+  - target correct branch
+  - recovery artifact path
+  - verification method used.
+
 ## Hot-Reload Gate Workflow: Permanent Policy
 
 Gate workflow is mandatory for slice work.
