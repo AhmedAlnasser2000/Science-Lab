@@ -1,4 +1,6 @@
-﻿## Git Hygiene: Worktree-First
+﻿> Snapshot generated during slice d9 from working tree based on HEAD 55fbe3f80f21b0722c1d7ab46aa5ee467f8cb766.
+
+## Git Hygiene: Worktree-First
 
 This repository uses a worktree-first workflow for all new slices/milestones.
 
@@ -19,15 +21,6 @@ Quick start:
 - `powershell ./tools/dev/start_slice_worktree.ps1 -Branch work/v5.5d2`
 - `powershell ./tools/dev/list_worktrees.ps1`
 - `powershell ./tools/dev/remove_slice_worktree.ps1 -Branch work/v5.5d2 -DeleteBranch`
-
-## Memory Recall Bundle
-
-- `memory/` is the portable recall bundle for this repo.
-- When ambiguous:
-  - read `memory/INDEX.md` plus relevant canonical docs first
-  - then verify in code before asserting.
-- Do not write to `memory/` unless the user explicitly issues a memory trigger command.
-- Discussions are non-binding context; only approved extracts are promoted into decisions/issues/runbooks.
 
 ## Wrong-Branch Recovery Policy (Patch-First, No Guessing)
 
@@ -50,6 +43,7 @@ Rules:
   - target correct branch
   - recovery artifact path
   - verification method used.
+
 ## Hot-Reload Gate Workflow: Permanent Policy
 
 Gate workflow is mandatory for slice work.
@@ -267,3 +261,4 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
   - Avoid deep reference-chasing: prefer opening only files directly linked from `SKILL.md` unless you're blocked.
   - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
 - Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue.
+
