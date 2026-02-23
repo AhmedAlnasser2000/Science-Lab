@@ -36,6 +36,11 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
 - `DISCUSSION ARCHIVE`
 - `DISCUSSION APPROVE`
 
+## 3.1) Git approval guardrail (strict)
+- Do not run `git commit` without explicit user approval.
+- Do not run `git push` without explicit user approval.
+- Before commit/push, present a short plan and wait for approval.
+
 ## 4) Trigger semantics
 ### `MEMORY CAPTURE`
 - Store raw material in `memory/external/sources/{chatgpt|codex|other_ai|docs}/`.

@@ -25,6 +25,11 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `DISCUSSION ARCHIVE`
      - `DISCUSSION APPROVE`
 
+2.1 Git approval gate:
+   - Do not run `git commit` without explicit user approval.
+   - Do not run `git push` without explicit user approval.
+   - Always show a short commit/push plan and wait for approval.
+
 3. Discussion lane policy:
    - Discussions are non-binding context by default.
    - Do not create canonical decisions/issues/runbooks from discussions unless explicit `DISCUSSION APPROVE` (or explicit `MEMORY PROMOTE` referencing the discussion source).

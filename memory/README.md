@@ -21,6 +21,10 @@ No writes to `memory/` unless the user explicitly commands one of these exact tr
 - `DISCUSSION ARCHIVE`
 - `DISCUSSION APPROVE`
 
+## Git approval policy
+- No `git commit` without explicit user approval.
+- No `git push` without explicit user approval.
+
 ## Quick links
 - Protocol: `memory/PROTOCOL.md`
 - Index: `memory/INDEX.md`
