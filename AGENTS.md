@@ -62,6 +62,36 @@ Gate sequencing policy:
 - After each gate implementation/verification summary, stop and wait for user confirmation before moving to the next gate.
 - Open/close multiple gates in one step only when the user explicitly requests batch handling.
 
+Pre-implementation discussion policy (mandatory):
+- Before implementing any new idea/step/gate, discuss scope, approach, and tradeoffs with the user first.
+- Do not start implementation edits until explicit user approval to proceed (for example: "go", "proceed", "implement").
+- Read-only recon is allowed before approval; write actions must wait for approval.
+
+Policy conflict-check rule (mandatory):
+- Before adding or changing workflow/policy rules, audit existing rules first to avoid conflicting or duplicate instructions.
+- Minimum audit targets:
+  - `AGENTS.md`
+  - `docs/handbook/workflow_rules.md`
+- Merge into existing sections whenever possible; avoid creating parallel rules that say the same thing differently.
+
+Gate completion output contract (mandatory):
+- Every completed gate or mid-gate must be explicitly labeled as `Frontend` or `Backend`.
+- Classification rule:
+  - Any gate that touches UI/manual in-app behavior is `Frontend`.
+  - Pure logic/runtime/tests/docs with no UI behavior validation is `Backend`.
+- For `Frontend` completions, always provide:
+  - manual verification checklist for the user (`action` + expected result)
+  - accurate summary of what changed in the completed gate
+  - exact next gate plan
+- For `Backend` completions, provide:
+  - accurate summary of what changed
+  - no manual verification checklist
+- App launch code handoff (mandatory):
+  - After each completed task/gate/mid-gate, always provide a runnable app launch command block for the current environment.
+  - For `Frontend` completions, include launch command plus manual verification checklist.
+  - For `Backend` completions, include launch command only (no manual checklist unless requested).
+  - If launch is blocked in the current environment, state the blocker and provide the closest valid command.
+
 Mid-gate change policy:
 - Purpose:
   - Prevent hidden scope growth inside one gate.
@@ -177,6 +207,30 @@ PR handoff completeness policy (mandatory):
   - commit ranges/hashes -> summarized themes
   - and confirm no significant slice changes are omitted.
 - If there is any ambiguity about intended PR scope, stop and ask before proposing final PR text.
+
+PR conflict prevention + resolution policy (mandatory):
+- Objective:
+  - avoid merge-conflict PRs when possible
+  - resolve unavoidable conflicts with deterministic, auditable steps.
+- Prevention checks (before each push to an open PR branch):
+  - `git fetch origin --prune`
+  - compare branch vs `origin/main` (`ahead/behind/diverged`)
+  - if branch is behind `origin/main`, integrate first (rebase preferred unless user requests merge).
+- Required pre-push integration for behind branches:
+  - `git rebase origin/main` (or approved merge alternative)
+  - resolve conflicts locally
+  - rerun required verification/tests for touched scope
+  - only then push.
+- Force push safety:
+  - if rebase rewrites history, only use `--force-with-lease`
+  - never use plain `--force`
+  - still require pre-push confirmation plan before push.
+- Conflict recovery record (when conflicts occur):
+  - create `.slice_tmp/<slice_id>/pr_conflict_recovery.md`
+  - list conflicted files, chosen resolution basis, and verification evidence.
+- Closed/merged PR branch rule:
+  - do not continue adding unrelated commits to a merged/closed slice branch.
+  - create a new slice/follow-up branch from updated `main` for new policy or feature deltas.
 
 Operational note:
 - Closing the app window does not stop terminal workflow; continue via terminal/tests/gates and relaunch app for UI verification.

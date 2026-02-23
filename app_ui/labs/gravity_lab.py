@@ -145,10 +145,17 @@ class GravityLabWidget(QtWidgets.QWidget):
         try:
             self.backend = KernelGravityBackend(self.initial_height, self.initial_vy)
             self.backend_name = "kernel"
+            self.backend_label.setToolTip("Rust kernel backend active.")
+        except kernel_bridge.KernelNotAvailable as exc:
+            kernel_bridge.log_kernel_fallback_once(exc)
+            self.backend = PythonGravityBackend(self.g, self.initial_height, self.initial_vy)
+            self.backend_name = "python-fallback"
+            self.backend_label.setToolTip("Rust kernel not available; using Python fallback.")
         except Exception as exc:
             print(f"Simulation fallback: {exc}")
             self.backend = PythonGravityBackend(self.g, self.initial_height, self.initial_vy)
             self.backend_name = "python-fallback"
+            self.backend_label.setToolTip("Kernel init failed; using Python fallback.")
         self.backend_label.setText(f"Backend: {self.backend_name}")
 
     def _current_dt(self) -> float:

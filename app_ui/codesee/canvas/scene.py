@@ -9,6 +9,14 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from ..diff import DiffResult, edge_key
 from ..graph_model import ArchitectureGraph
 from .items import EdgeItem, NodeItem, SignalDotItem, NODE_HEIGHT, NODE_WIDTH
+from ..runtime.trail_focus import (
+    DEFAULT_INACTIVE_EDGE_OPACITY,
+    DEFAULT_INACTIVE_NODE_OPACITY,
+    DEFAULT_MONITOR_BORDER_PX,
+    clamp_inactive_edge_opacity,
+    clamp_inactive_node_opacity,
+    clamp_monitor_border_px,
+)
 
 
 class GraphScene(QtWidgets.QGraphicsScene):
@@ -55,6 +63,19 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self._status_totals: Dict[str, Dict[str, int]] = {}
         self._context_nodes: set[str] = set()
         self._context_label: Optional[str] = None
+        self._monitor_states: Dict[str, dict] = {}
+        self._trace_highlight_edges: set[Tuple[str, str]] = set()
+        self._trace_highlight_nodes: set[str] = set()
+        self._trace_highlight_color = QtGui.QColor("#4c6ef5")
+        self._trace_tints: Dict[str, dict] = {}
+        self._monitor_border_px = clamp_monitor_border_px(DEFAULT_MONITOR_BORDER_PX)
+        self._trail_focus_enabled = False
+        self._trail_focus_nodes: set[str] = set()
+        self._trail_focus_edges: set[Tuple[str, str]] = set()
+        self._trail_node_opacity: Dict[str, float] = {}
+        self._trail_edge_opacity: Dict[Tuple[str, str], float] = {}
+        self._inactive_node_opacity = clamp_inactive_node_opacity(DEFAULT_INACTIVE_NODE_OPACITY)
+        self._inactive_edge_opacity = clamp_inactive_edge_opacity(DEFAULT_INACTIVE_EDGE_OPACITY)
         self._signal_timer = QtCore.QTimer(self)
         self._signal_timer.setInterval(33)
         self._signal_timer.timeout.connect(self._tick_signals)
@@ -66,10 +87,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
         positions: Dict[str, Tuple[float, float]],
         diff_result: Optional[DiffResult] = None,
     ) -> None:
-        self.clear()
+        # Drop python-side item caches before clear() so re-entrant selection
+        # callbacks cannot touch deleted NodeItem wrappers.
         self._nodes = {}
         self._edges = []
         self._edge_index = {}
+        self.clear()
         self._empty_item = None
         self._signals = []
         self._pulses = {}
@@ -111,6 +134,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 x = col * (NODE_WIDTH + 80.0)
                 y = row * (NODE_HEIGHT + 60.0)
                 item.setPos(x, y)
+            item.set_monitor_border_px(self._monitor_border_px)
             self._nodes[node.node_id] = item
 
         if self._node_activity_ts:
@@ -129,7 +153,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
         self._apply_tints()
         self._apply_context()
-        self._update_node_statuses()
+        self._apply_monitor_states()
 
         for edge in graph.edges:
             src = self._nodes.get(edge.src_node_id)
@@ -144,6 +168,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
             self.addItem(edge_item)
             self._edges.append(edge_item)
             self._edge_index[(edge.src_node_id, edge.dst_node_id)] = edge_item
+        self._apply_trace_highlights()
+        self._update_node_statuses()
+        self._apply_trail_focus_overlay()
 
     def set_icon_style(self, style: str) -> None:
         self._icon_style = style
@@ -185,6 +212,111 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for node_id in node_ids:
             self._span_tints[str(node_id)] = {"color": color, "strength": strength}
         self._apply_tints()
+
+    def set_monitor_states(self, states: dict[str, dict]) -> None:
+        normalized: Dict[str, dict] = {}
+        for node_id, raw in (states or {}).items():
+            if not isinstance(raw, dict):
+                continue
+            state = str(raw.get("state") or "").strip().upper()
+            if not state:
+                continue
+            normalized[str(node_id)] = {
+                "state": state,
+                "active": bool(raw.get("active", False)),
+                "stuck": bool(raw.get("stuck", False)),
+                "fatal": bool(raw.get("fatal", False)),
+                "error_count": int(raw.get("error_count", 0)),
+            }
+        self._monitor_states = normalized
+        self._apply_monitor_states()
+        self._update_node_statuses()
+
+    def set_trace_highlight(
+        self,
+        edges: list[tuple[str, str]],
+        nodes: set[str],
+        *,
+        color: QtGui.QColor | None = None,
+    ) -> None:
+        normalized_edges: set[Tuple[str, str]] = set()
+        for edge in edges or []:
+            if not isinstance(edge, tuple) or len(edge) != 2:
+                continue
+            src = str(edge[0] or "").strip()
+            dst = str(edge[1] or "").strip()
+            if src and dst:
+                normalized_edges.add((src, dst))
+        self._trace_highlight_edges = normalized_edges
+        self._trace_highlight_nodes = {str(node_id) for node_id in (nodes or set()) if str(node_id)}
+        if color is not None:
+            self._trace_highlight_color = QtGui.QColor(color)
+        self._apply_trace_highlights()
+        self._update_node_statuses()
+
+    def edge_pairs(self) -> set[Tuple[str, str]]:
+        pairs: set[Tuple[str, str]] = set()
+        for edge_item in self._edges:
+            pairs.add((edge_item.src.node.node_id, edge_item.dst.node.node_id))
+        return pairs
+
+    def set_monitor_border_px(self, width_px: int) -> None:
+        self._monitor_border_px = clamp_monitor_border_px(width_px)
+        stale_node_ids: list[str] = []
+        for node_id, item in list(self._nodes.items()):
+            try:
+                item.set_monitor_border_px(self._monitor_border_px)
+            except RuntimeError:
+                stale_node_ids.append(node_id)
+        for node_id in stale_node_ids:
+            self._nodes.pop(node_id, None)
+
+    def set_trail_focus_overlay(
+        self,
+        *,
+        enabled: bool,
+        focus_nodes: set[str],
+        focus_edges: set[Tuple[str, str]],
+        inactive_node_opacity: float,
+        inactive_edge_opacity: float,
+        node_opacity_map: Optional[Dict[str, float]] = None,
+        edge_opacity_map: Optional[Dict[Tuple[str, str], float]] = None,
+    ) -> None:
+        self._trail_focus_enabled = bool(enabled)
+        self._trail_focus_nodes = {str(node_id) for node_id in (focus_nodes or set()) if str(node_id)}
+        self._trail_focus_edges = {
+            (str(edge[0]), str(edge[1]))
+            for edge in (focus_edges or set())
+            if isinstance(edge, tuple) and len(edge) == 2 and str(edge[0]) and str(edge[1])
+        }
+        self._trail_node_opacity = {}
+        if isinstance(node_opacity_map, dict):
+            for node_id, opacity in node_opacity_map.items():
+                text = str(node_id or "").strip()
+                if not text:
+                    continue
+                try:
+                    value = float(opacity)
+                except Exception:
+                    continue
+                self._trail_node_opacity[text] = max(0.0, min(1.0, value))
+        self._trail_edge_opacity = {}
+        if isinstance(edge_opacity_map, dict):
+            for raw_edge, opacity in edge_opacity_map.items():
+                if not isinstance(raw_edge, tuple) or len(raw_edge) != 2:
+                    continue
+                src = str(raw_edge[0] or "").strip()
+                dst = str(raw_edge[1] or "").strip()
+                if not src or not dst:
+                    continue
+                try:
+                    value = float(opacity)
+                except Exception:
+                    continue
+                self._trail_edge_opacity[(src, dst)] = max(0.0, min(1.0, value))
+        self._inactive_node_opacity = clamp_inactive_node_opacity(inactive_node_opacity)
+        self._inactive_edge_opacity = clamp_inactive_edge_opacity(inactive_edge_opacity)
+        self._apply_trail_focus_overlay()
 
     def bump_activity(
         self,
@@ -584,12 +716,16 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for node_id, item in self._nodes.items():
             base = self._span_tints.get(node_id)
             active = self._activity_glow.get(node_id)
+            trace = self._trace_tints.get(node_id)
             base_strength = float(base.get("strength", 0.0)) if base else 0.0
             active_strength = float(active.get("current", 0.0)) if active else 0.0
-            if active and active_strength >= base_strength:
+            trace_strength = float(trace.get("strength", 0.0)) if trace else 0.0
+            if active and active_strength >= max(base_strength, trace_strength):
                 item.set_tint(active_strength, active.get("color"))
-            elif base and base_strength > 0.0:
+            elif base and base_strength >= trace_strength and base_strength > 0.0:
                 item.set_tint(base_strength, base.get("color"))
+            elif trace and trace_strength > 0.0:
+                item.set_tint(trace_strength, trace.get("color"))
             else:
                 item.set_tint(0.0, None)
 
@@ -644,6 +780,28 @@ class GraphScene(QtWidgets.QGraphicsScene):
         for node_id, item in self._nodes.items():
             totals = self._status_totals.get(node_id, {})
             statuses: list[dict] = []
+            monitor = self._monitor_states.get(node_id)
+            monitor_state = str(monitor.get("state") or "").upper() if isinstance(monitor, dict) else ""
+            monitor_color = _monitor_state_color(monitor_state)
+            if monitor_color:
+                detail = monitor_state
+                if monitor_state == "DEGRADED" and isinstance(monitor, dict):
+                    if bool(monitor.get("stuck", False)):
+                        detail = "DEGRADED (stuck span)"
+                    else:
+                        error_count = max(0, int(monitor.get("error_count", 0)))
+                        if error_count > 0:
+                            detail = f"DEGRADED ({error_count} error events)"
+                statuses.append(
+                    {
+                        "key": "monitor",
+                        "label": "Monitor state",
+                        "detail": detail,
+                        "color": monitor_color.name(),
+                        "active_count": 1,
+                        "total_count": 1,
+                    }
+                )
             if node_id in self._context_nodes:
                 statuses.append(
                     {
@@ -702,6 +860,69 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
     def _apply_span_tints(self) -> None:
         self._apply_tints()
+
+    def _apply_monitor_states(self) -> None:
+        if not self._nodes:
+            return
+        for node_id, item in self._nodes.items():
+            state = self._monitor_states.get(node_id, {})
+            monitor_state = str(state.get("state") or "").upper() if isinstance(state, dict) else ""
+            color = _monitor_state_color(monitor_state)
+            if color is None:
+                item.set_monitor(0.0, None)
+            else:
+                item.set_monitor(1.0, color)
+            item.set_monitor_border_px(self._monitor_border_px)
+
+    def _apply_trace_highlights(self) -> None:
+        self._trace_tints = {}
+        for node_id in self._trace_highlight_nodes:
+            self._trace_tints[node_id] = {"color": self._trace_highlight_color, "strength": 0.16}
+        for edge_item in self._edges:
+            src_id = edge_item.src.node.node_id
+            dst_id = edge_item.dst.node.node_id
+            direct = (src_id, dst_id)
+            reverse = (dst_id, src_id)
+            enabled = False
+            if direct in self._trace_highlight_edges:
+                enabled = True
+            elif reverse in self._trace_highlight_edges and reverse not in self._edge_index:
+                # Directed lookup fallback for curated graphs where reverse edge is absent.
+                enabled = True
+            edge_item.set_trace_highlight(enabled, self._trace_highlight_color)
+        self._apply_tints()
+
+    def _apply_trail_focus_overlay(self) -> None:
+        if not self._nodes and not self._edges:
+            return
+        if not self._trail_focus_enabled:
+            for item in self._nodes.values():
+                item.setOpacity(1.0)
+            for edge_item in self._edges:
+                edge_item.setOpacity(1.0)
+            return
+        for node_id, item in self._nodes.items():
+            opacity = self._trail_node_opacity.get(node_id)
+            if opacity is None:
+                opacity = 1.0 if node_id in self._trail_focus_nodes else self._inactive_node_opacity
+            item.setOpacity(opacity)
+        for edge_item in self._edges:
+            edge_key = (edge_item.src.node.node_id, edge_item.dst.node.node_id)
+            opacity = self._trail_edge_opacity.get(edge_key)
+            if opacity is None:
+                opacity = 1.0 if edge_key in self._trail_focus_edges else self._inactive_edge_opacity
+            edge_item.setOpacity(opacity)
+
+
+def _monitor_state_color(state: str) -> Optional[QtGui.QColor]:
+    normalized = str(state or "").strip().upper()
+    if normalized == "RUNNING":
+        return QtGui.QColor("#2f9e44")
+    if normalized == "DEGRADED":
+        return QtGui.QColor("#f59f00")
+    if normalized == "FATAL":
+        return QtGui.QColor("#e03131")
+    return None
 
 
 def _setting_value(settings, key: str, default):

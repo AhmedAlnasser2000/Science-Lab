@@ -177,6 +177,25 @@ Agents must follow these rules unless explicitly overridden:
    - Do not publish misleading PR metadata that mentions only one subset (for example only `chore`) when feature/fix commits are also included.
    - Validate title/summary against commit list before handoff.
 
+6.5) **PR conflict prevention + deterministic recovery**
+   - Before each push to an open PR branch:
+     - `git fetch origin --prune`
+     - check branch state vs `origin/main` (ahead/behind/diverged)
+   - If branch is behind main, integrate first:
+     - rebase on `origin/main` (preferred) unless merge is explicitly chosen
+     - resolve conflicts locally
+     - rerun required verification/tests for touched scope
+     - then push.
+   - If history was rewritten by rebase:
+     - only use `git push --force-with-lease`
+     - never use plain `--force`.
+   - Pre-push confirmation remains mandatory even during conflict recovery.
+   - If conflicts occur, write recovery evidence to:
+     - `.slice_tmp/<slice_id>/pr_conflict_recovery.md`
+     - include conflicted files, resolution basis, and verification evidence.
+   - If PR is already merged/closed:
+     - do not append unrelated new work to that branch
+     - start a new follow-up branch from updated `main`.
 6.5) **Wrong-branch recovery must be patch-first**
    - If edits are made on the wrong branch, stop further edits there immediately.
    - In the correct slice, create a recovery artifact:
@@ -217,6 +236,36 @@ Agents must follow these rules unless explicitly overridden:
    - **Naming for follow-up gates**:
      - `<gate_name>_followup_1`, `<gate_name>_followup_2`, ...
    - **Do not close a gate** with unresolved scope changes or partial evidence.
+
+8) **Discuss first, implement second (explicit approval required)**
+   - Before implementing any new idea/step/gate, discuss scope, approach, and tradeoffs first.
+   - Do not begin implementation edits until the user explicitly approves start (for example: "go", "proceed", "implement").
+   - Read-only recon is allowed before approval; write actions must wait for approval.
+
+9) **Policy updates require conflict-check first**
+   - Before adding/changing policy rules, audit current policy docs to avoid conflicts or duplicates.
+   - Minimum audit targets:
+     - `AGENTS.md`
+     - `docs/handbook/workflow_rules.md`
+   - Prefer merging into existing sections rather than adding parallel rules.
+
+10) **Gate completion output contract**
+   - Every completed gate or mid-gate must be labeled as `Frontend` or `Backend`.
+   - Classification:
+     - any UI/manual in-app validation needed -> `Frontend`
+     - pure logic/runtime/tests/docs with no UI behavior validation -> `Backend`
+   - For `Frontend` completions, always provide:
+     - manual verification checklist for the user (actions + expected results)
+     - accurate summary of completed gate changes
+     - exact next gate plan
+   - For `Backend` completions, provide:
+     - accurate summary only
+     - no manual verification checklist
+   - **App launch code handoff (mandatory):**
+     - After each completed task/gate/mid-gate, always provide a runnable app launch command block for the current environment.
+     - For `Frontend` completions, include launch command plus manual verification checklist.
+     - For `Backend` completions, include launch command only (no manual checklist unless requested).
+     - If launch is blocked in the current environment, state the blocker and provide the closest valid command.
 
 ---
 

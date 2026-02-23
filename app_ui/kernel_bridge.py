@@ -9,6 +9,7 @@
 
 # === [NAV-00] Imports / constants ============================================
 import ctypes
+import sys
 from pathlib import Path
 from typing import List, Tuple
 
@@ -62,6 +63,7 @@ def _resolve_symbols():
 
 
 _LIB = None
+_KERNEL_FALLBACK_LOGGED = False
 
 
 # === [NAV-30] Public bridge API ===============================================
@@ -91,6 +93,18 @@ def _fetch_error(lib: ctypes.CDLL) -> str:
         buf = ctypes.create_string_buffer(required + 1)
         lib.pl_last_error_message(buf, ctypes.sizeof(buf))
     return buf.value.decode("utf-8", errors="replace")
+
+
+def log_kernel_fallback_once(reason: Exception | str) -> None:
+    global _KERNEL_FALLBACK_LOGGED
+    if _KERNEL_FALLBACK_LOGGED:
+        return
+    _KERNEL_FALLBACK_LOGGED = True
+    message = str(reason).strip() or "Kernel backend unavailable."
+    try:
+        sys.stderr.write(f"Simulation fallback active (python backend): {message}\n")
+    except Exception:
+        pass
 
 
 class GravityKernelSession:

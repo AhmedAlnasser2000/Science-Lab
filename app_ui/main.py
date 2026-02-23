@@ -45,6 +45,7 @@ from app_ui.codesee.runtime.events import CodeSeeEvent, EVENT_APP_ACTIVITY, EVEN
 from app_ui.codesee.runtime.bus_bridge import BusBridge
 from app_ui.codesee.runtime.hooks import install_exception_hooks
 from app_ui.codesee.runtime.hub import CodeSeeRuntimeHub, get_global_hub, set_global_hub
+from app_ui.codesee import harness as codesee_harness
 from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.codesee.window import CodeSeeWindow
 from app_ui import ui_scale
@@ -2778,6 +2779,8 @@ class MainWindow(QtWidgets.QMainWindow):
             install_exception_hooks(self.codesee_hub)
         self.codesee_window: Optional[CodeSeeWindow] = None
         self._codesee_context: str = "Main Menu"
+        self._active_theme_latch_key: Optional[str] = None
+        self._active_lab_latch_key: Optional[str] = None
         self.codesee_bus_bridge: Optional[BusBridge] = None
 
         self.stacked = QtWidgets.QStackedWidget()
@@ -2846,6 +2849,7 @@ class MainWindow(QtWidgets.QMainWindow):
             cleanup_enabled=CORE_CENTER_AVAILABLE,
             bus=APP_BUS,
             workspace_selector_factory=selector_factory,
+            on_run_codesee_trail_self_test=self._run_codesee_trail_visual_self_test,
         )
         self.content_management = ContentManagementScreen(
             self.adapter,
@@ -2943,6 +2947,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stacked.addWidget(self.codesee)
         self.stacked.addWidget(self.component_host)
         self._refresh_workspace_selectors()
+        self._sync_theme_monitor_latch()
 
         if APP_BUS and BUS_WORKSPACE_ACTIVE_CHANGED:
             try:
@@ -3257,6 +3262,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _show_main_menu(self):
         self._dispose_lab_widget()
+        self._set_lab_monitor_latch(None)
         if self.codesee and self.stacked.currentWidget() == self.codesee:
             try:
                 self.codesee.save_layout()
@@ -3288,6 +3294,129 @@ class MainWindow(QtWidgets.QMainWindow):
             source="app_ui",
         )
         self.codesee_hub.publish(event)
+
+    def _publish_monitor_latch_event(
+        self,
+        *,
+        node_id: str,
+        latch_key: str,
+        active: bool,
+        message: str,
+    ) -> None:
+        if not self.codesee_hub:
+            return
+        target_node_id = str(node_id or "").strip() or "system:app_ui"
+        key_text = str(latch_key or "").strip()
+        if not key_text:
+            return
+        event = CodeSeeEvent(
+            ts=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            kind=EVENT_APP_ACTIVITY,
+            severity="info",
+            message=message,
+            node_ids=[target_node_id],
+            source="app_ui",
+            source_node_id="system:app_ui",
+            target_node_id=target_node_id,
+            payload={
+                "monitor_latch_key": key_text,
+                "monitor_latch_active": bool(active),
+                "topic": "app.monitor.latch",
+            },
+        )
+        self.codesee_hub.publish(event)
+
+    @staticmethod
+    def _theme_monitor_node_ids(pack_id: str) -> List[str]:
+        pack_text = str(pack_id or "").strip() or "default"
+        return [f"pack:ui:{pack_text}", "system:ui_system"]
+
+    @staticmethod
+    def _lab_monitor_node_ids(latch_key: str) -> List[str]:
+        key_text = str(latch_key or "").strip()
+        if not key_text:
+            return ["system:component_runtime"]
+        if ":" not in key_text:
+            return [f"block:{key_text}", "system:component_runtime"]
+        _, lab_id = key_text.split(":", 1)
+        lab_id = lab_id.strip()
+        if not lab_id:
+            return [f"block:{key_text}", "system:component_runtime"]
+        return [f"block:{key_text}", f"lab:{lab_id}", "system:component_runtime"]
+
+    @staticmethod
+    def _lab_id_from_component_id(component_id: Optional[str]) -> Optional[str]:
+        component_text = str(component_id or "").strip()
+        if not component_text.startswith("labhost:"):
+            return None
+        lab_id = component_text.split(":", 1)[-1].strip()
+        return lab_id or None
+
+    def _sync_lab_latch_for_component(self, component_id: Optional[str]) -> None:
+        self._set_lab_monitor_latch(self._lab_id_from_component_id(component_id))
+
+    def _publish_monitor_latch_to_nodes(
+        self,
+        *,
+        node_ids: List[str],
+        latch_key: str,
+        active: bool,
+        message: str,
+    ) -> None:
+        seen: set[str] = set()
+        for raw_node_id in node_ids:
+            node_id = str(raw_node_id or "").strip()
+            if not node_id or node_id in seen:
+                continue
+            seen.add(node_id)
+            self._publish_monitor_latch_event(
+                node_id=node_id,
+                latch_key=latch_key,
+                active=active,
+                message=message,
+            )
+
+    def _sync_theme_monitor_latch(self) -> None:
+        config = ui_config.load_ui_config()
+        pack_id = str(config.get("active_pack_id") or "default").strip() or "default"
+        next_key = f"theme:{pack_id}"
+        if self._active_theme_latch_key == next_key:
+            return
+        if self._active_theme_latch_key:
+            previous_pack_id = self._active_theme_latch_key.split(":", 1)[-1]
+            self._publish_monitor_latch_to_nodes(
+                node_ids=self._theme_monitor_node_ids(previous_pack_id),
+                latch_key=self._active_theme_latch_key,
+                active=False,
+                message=f"Theme inactive: {self._active_theme_latch_key.split(':', 1)[-1]}",
+            )
+        self._active_theme_latch_key = next_key
+        self._publish_monitor_latch_to_nodes(
+            node_ids=self._theme_monitor_node_ids(pack_id),
+            latch_key=next_key,
+            active=True,
+            message=f"Theme active: {pack_id}",
+        )
+
+    def _set_lab_monitor_latch(self, lab_id: Optional[str]) -> None:
+        next_key = f"labhost:{str(lab_id).strip()}" if lab_id else None
+        if self._active_lab_latch_key == next_key:
+            return
+        if self._active_lab_latch_key:
+            self._publish_monitor_latch_to_nodes(
+                node_ids=self._lab_monitor_node_ids(self._active_lab_latch_key),
+                latch_key=self._active_lab_latch_key,
+                active=False,
+                message=f"Lab inactive: {self._active_lab_latch_key.split(':', 1)[-1]}",
+            )
+        self._active_lab_latch_key = next_key
+        if next_key:
+            self._publish_monitor_latch_to_nodes(
+                node_ids=self._lab_monitor_node_ids(next_key),
+                latch_key=next_key,
+                active=True,
+                message=f"Lab active: {next_key.split(':', 1)[-1]}",
+            )
 
     def _on_workspace_changed(self, workspace: Dict[str, Any], *, notify_bus: bool = True) -> None:
         if self.codesee:
@@ -3390,6 +3519,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_content_browser(self, focus_part: Optional[str] = None) -> bool:
         self._dispose_lab_widget()
+        self._set_lab_monitor_latch(None)
         self.content_browser.set_profile(self.current_profile)
         self.content_browser.refresh_tree()
         selected = False
@@ -3401,6 +3531,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _show_content_browser(self):
         self._dispose_lab_widget()
+        self._set_lab_monitor_latch(None)
         self.stacked.setCurrentWidget(self.content_browser)
         self._publish_codesee_event("Content Browser", node_ids=["system:app_ui"])
 
@@ -3444,8 +3575,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_settings(self):
         dialog = SettingsDialog(self)
-        dialog.exec()
+        result = dialog.exec()
         self.current_profile = ui_config.load_experience_profile()
+        if result == int(QtWidgets.QDialog.DialogCode.Accepted):
+            self._sync_theme_monitor_latch()
         if self.main_menu:
             self.main_menu.set_profile(self.current_profile)
         if self.content_browser:
@@ -3542,6 +3675,65 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_codesee_window_closed(self) -> None:
         self.codesee_window = None
 
+    def _run_codesee_trail_visual_self_test(self) -> Dict[str, Any]:
+        if self.current_profile != "Explorer":
+            return {"ok": False, "summary": "CodeSee self-test unavailable outside Explorer profile."}
+        if getattr(self, "_codesee_disabled", False) or not self.codesee_hub:
+            return {"ok": False, "summary": "CodeSee self-test unavailable (CodeSee disabled)."}
+        self._open_code_see()
+        screen = getattr(self, "codesee", None)
+        if not isinstance(screen, CodeSeeScreen):
+            return {"ok": False, "summary": "CodeSee screen is unavailable."}
+        try:
+            screen.open_root()
+        except Exception:
+            pass
+        try:
+            atlas_source = "Atlas"
+            if screen.source_combo.currentText() != atlas_source:
+                screen.source_combo.setCurrentText(atlas_source)
+        except Exception:
+            pass
+        try:
+            for idx in range(screen.lens_combo.count()):
+                if screen.lens_combo.itemData(idx) == "atlas":
+                    if screen.lens_combo.currentIndex() != idx:
+                        screen.lens_combo.setCurrentIndex(idx)
+                    break
+        except Exception:
+            pass
+        try:
+            screen.monitor_toggle.setChecked(True)
+        except Exception:
+            pass
+        try:
+            if hasattr(screen, "_on_trail_focus_toggled"):
+                screen._on_trail_focus_toggled(True)
+        except Exception:
+            pass
+
+        logic = codesee_harness.evaluate_trail_visual_self_test_logic(
+            inactive_node_opacity=float(getattr(screen, "_inactive_node_opacity", 0.40)),
+            inactive_edge_opacity=float(getattr(screen, "_inactive_edge_opacity", 0.20)),
+            monitor_border_px=int(getattr(screen, "_monitor_border_px", 2)),
+        )
+        emitted = codesee_harness.emit_trail_visual_self_test(self.codesee_hub)
+        self.codesee_hub.flush_activity()
+        merged_checks = {}
+        merged_checks.update(logic.get("checks", {}) if isinstance(logic, dict) else {})
+        merged_checks.update(emitted.get("checks", {}) if isinstance(emitted, dict) else {})
+        ok = bool(logic.get("ok", False)) and bool(emitted.get("ok", False))
+        return {
+            "ok": ok,
+            "summary": (
+                f"Trail self-test {'PASS' if ok else 'FAIL'} "
+                f"(trace={str(emitted.get('trace_id', ''))[:8]})"
+            ),
+            "checks": merged_checks,
+            "logic": logic,
+            "emitted": emitted,
+        }
+
     def _open_component_by_id(self, component_id: str) -> None:
         self._dispose_lab_widget()
         if not COMPONENT_RUNTIME_AVAILABLE or self.component_host is None:
@@ -3557,6 +3749,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.component_host.open_component(component_id, context)
         self.stacked.setCurrentWidget(self.component_host)
+        self._sync_lab_latch_for_component(component_id)
 
     def _open_block_host_empty(self) -> None:
         self._dispose_lab_widget()
@@ -3580,6 +3773,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.block_host.add_block(component_id, activate=True)
         self.stacked.setCurrentWidget(self.block_host)
+        self._sync_lab_latch_for_component(component_id)
 
     def _start_block_template(self, template: Dict[str, Any]) -> None:
         self._dispose_lab_widget()
@@ -3588,6 +3782,11 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.block_host.start_template(template)
         self.stacked.setCurrentWidget(self.block_host)
+        open_first = template.get("open_first")
+        if isinstance(open_first, str) and open_first:
+            self._sync_lab_latch_for_component(open_first)
+        else:
+            self._set_lab_monitor_latch(None)
 
     def _open_block_picker(self, on_pick: Callable[[str], None]) -> None:
         dialog = QtWidgets.QDialog(self)
@@ -3627,6 +3826,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.component_host.open_component(component_id, context)
         self.stacked.setCurrentWidget(self.component_host)
+        self._sync_lab_latch_for_component(component_id)
 
     def _quit_app(self):
         app = QtWidgets.QApplication.instance()
@@ -3680,6 +3880,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _dispose_lab_widget(self):
+        had_lab_widget = self.lab_widget is not None or self.lab_host_widget is not None
         if self.lab_widget is not None:
             if hasattr(self.lab_widget, "stop_simulation"):
                 try:
@@ -3691,6 +3892,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.stacked.removeWidget(self.lab_host_widget)
             self.lab_host_widget.deleteLater()
             self.lab_host_widget = None
+        if had_lab_widget:
+            self._set_lab_monitor_latch(None)
 
     def _open_lab(self, lab_id: str, part_id: str, manifest: Dict, detail: Dict):
         plugin = lab_registry.get_lab(lab_id)
@@ -3736,6 +3939,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lab_host_widget = screen
         self.stacked.addWidget(screen)
         self.stacked.setCurrentWidget(screen)
+        self._set_lab_monitor_latch(lab_id)
         self._publish_codesee_event(f"Lab Opened: {title}", node_ids=["system:app_ui"])
 
 def _load_lab_guide_text(self, manifest: Dict, detail: Dict, profile: str) -> str:

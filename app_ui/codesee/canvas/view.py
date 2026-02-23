@@ -4,6 +4,8 @@ from typing import Callable, Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from .items import NodeItem
+
 
 class GraphView(QtWidgets.QGraphicsView):
     def __init__(
@@ -14,11 +16,13 @@ class GraphView(QtWidgets.QGraphicsView):
         on_set_facet_density: Optional[Callable[[str], None]] = None,
         on_set_facet_scope: Optional[Callable[[str], None]] = None,
         on_open_facet_settings: Optional[Callable[[], None]] = None,
+        on_drag_state_changed: Optional[Callable[[bool], None]] = None,
     ) -> None:
         super().__init__(scene, parent)
         self._on_set_facet_density = on_set_facet_density
         self._on_set_facet_scope = on_set_facet_scope
         self._on_open_facet_settings = on_open_facet_settings
+        self._on_drag_state_changed = on_drag_state_changed
         self.setRenderHints(
             QtGui.QPainter.RenderHint.Antialiasing
             | QtGui.QPainter.RenderHint.TextAntialiasing
@@ -32,6 +36,15 @@ class GraphView(QtWidgets.QGraphicsView):
         self._zoom = 1.0
         self._zoom_min = 0.25
         self._zoom_max = 2.5
+        self._node_drag_active = False
+
+    def _set_node_drag_active(self, active: bool) -> None:
+        next_active = bool(active)
+        if self._node_drag_active == next_active:
+            return
+        self._node_drag_active = next_active
+        if self._on_drag_state_changed:
+            self._on_drag_state_changed(next_active)
 
     # Pan uses middle-mouse drag to avoid colliding with selection or node dragging.
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -41,6 +54,11 @@ class GraphView(QtWidgets.QGraphicsView):
             self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            hit = self.itemAt(event.pos())
+            while hit is not None and not isinstance(hit, NodeItem):
+                hit = hit.parentItem()
+            self._set_node_drag_active(isinstance(hit, NodeItem))
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -59,6 +77,8 @@ class GraphView(QtWidgets.QGraphicsView):
             self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
             event.accept()
             return
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._set_node_drag_active(False)
         super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
