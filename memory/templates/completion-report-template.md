@@ -2,9 +2,13 @@
 
 ## Metadata
 - slice_id:
-- date:
+- date_local:
 - scope:
 - owner:
+- user_region:
+- user_timezone:
+- recorded_by_agent:
+- recorded_at_local:
 
 ## Intent and scope
 - goal:

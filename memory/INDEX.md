@@ -2,6 +2,7 @@
 
 ## Current state
 - `memory/current-state.md`
+- Canon baseline: `memory/world-canon.md`
 
 ## Latest checkpoint
 - Summary: `memory/sessions/checkpoints/app_summary_latest__SUMMARY.md`
@@ -19,6 +20,8 @@
 
 ## Decisions (ADR)
 - Folder: `memory/decisions/`
+- Latest: `memory/decisions/2026-02-24__memory-infrastructure-check.md`
+- Latest+1: `memory/decisions/2026-02-24__borrowed-memory-patterns.md`
 
 ## Issues
 - Folder: `memory/issues/`
@@ -28,6 +31,7 @@
 
 ## Discussions
 - Index: `memory/discussions/INDEX.md`
+- Active latest: `memory/discussions/active/2026-02-24__borrowed-memory-patterns.md`
 
 ## External inbox
 - Inbox folder: `memory/external/inbox/`

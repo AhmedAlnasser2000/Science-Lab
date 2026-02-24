@@ -1,11 +1,15 @@
 ﻿# Journal Template
 
 ## Metadata
-- date:
+- date_local:
 - slice_id:
 - author:
 - milestone:
 - related_session:
+- user_region:
+- user_timezone:
+- recorded_by_agent:
+- recorded_at_local:
 
 ## Narrative summary
 - what changed

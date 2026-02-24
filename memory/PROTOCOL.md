@@ -36,6 +36,22 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
 - `DISCUSSION ARCHIVE`
 - `DISCUSSION APPROVE`
 
+### Trigger aliases (input convenience)
+Canonical commands above remain source-of-truth. The following short aliases are accepted as input only:
+- `MC` => `MEMORY CAPTURE`
+- `MP` => `MEMORY PROMOTE`
+- `SP` => `SESSION PUBLISH`
+- `CU` => `CHECKPOINT UPDATE`
+- `IU` => `INDEX UPDATE`
+- `DS` => `DISCUSSION SAVE`
+- `DC` => `DISCUSSION ARCHIVE`
+- `DA` => `DISCUSSION APPROVE`
+
+Alias rules:
+- aliases are reserved and non-reusable (global within memory protocol),
+- alias matching is case-insensitive,
+- canonical command names are used in approvals/index/canonical records.
+
 ## 3.1) Git approval guardrail (strict)
 - Do not run `git commit` without explicit user approval.
 - Do not run `git push` without explicit user approval.
@@ -70,6 +86,9 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
 ### `DISCUSSION SAVE`
 - Create a discussion doc in `memory/discussions/active/` from template.
 - Update `memory/discussions/INDEX.md`.
+- Include provenance fields:
+  - `recorded_by_agent`
+  - `recorded_at_local`
 
 ### `DISCUSSION ARCHIVE`
 - Move discussion doc from active to archived.
@@ -79,7 +98,14 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
 - Create canonical extract in `memory/decisions/`, `memory/issues/`, or `memory/runbooks/`.
 - Link source discussion and approved extract.
 - Update `memory/INDEX.md`.
-- Mandatory append in `memory/approvals.md` with datetime, approver, source discussion, canonical targets, and commit hash once committed.
+- Mandatory append in `memory/approvals.md` with:
+  - `approved_at_local`
+  - `approver`
+  - `recorded_by_agent`
+  - `recorded_at_local`
+  - `source`
+  - `canonical_targets`
+  - `commit_hash` once committed.
 
 ## 5) Discussions lane policy (non-binding)
 - `memory/discussions/*` is context only.
@@ -105,6 +131,11 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
   - verification evidence
   - risks and rollback notes
 
+## 7.1) Current-state conventions
+- `memory/current-state.md` may include `Locked decisions` and `Next task`.
+- `Next task` is operational guidance only and never binding.
+- User can reject/replace/pause `Next task` at any time for fixes or changed objectives.
+
 ## 8) Snapshot policy
 - Snapshot banners must identify base commit hash explicitly:
 - `Snapshot generated during slice d9 from working tree based on HEAD <hash>.`
@@ -117,6 +148,17 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
 ## 9) Auditability
 - `memory/approvals.md` is append-only.
 - Canonical records must cross-link source artifacts and related approvals.
+- Distinguish:
+  - `approver` = human decision authority
+  - `recorded_by_agent` = assistant that wrote the memory record.
+
+## 9.1) Timestamp standard
+- Use user-local time fields by default:
+  - `*_at_local` format: `YYYY-MM-DD HH:MM:SS +/-HH:MM`
+- Include user locale context with:
+  - `user_region`
+  - `user_timezone`
+- UTC-only placeholders are not preferred for new records.
 
 ## 10) Trigger exactness guard
 - Trigger spellings must stay exactly identical across:
@@ -124,3 +166,4 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
   - `.agents/skills/physicslab_memory/SKILL.md`
   - `memory/README.md` (quick reference list)
 - Do not use underscore variants (for example `SESSION_PUBLISH`).
+- Alias table must also stay aligned across the same files.

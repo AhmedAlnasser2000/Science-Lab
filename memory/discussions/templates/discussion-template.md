@@ -2,9 +2,13 @@
 
 ## Metadata
 - discussion_id:
-- created_at:
+- created_at_local:
 - owner:
 - status: active | archived
+- user_region:
+- user_timezone:
+- recorded_by_agent:
+- recorded_at_local:
 
 ## Problem statement
 
@@ -23,4 +27,3 @@
 
 ## Approval Extract
 <!-- Intentionally empty by default. Fill only when explicitly approved via DISCUSSION APPROVE. -->
-

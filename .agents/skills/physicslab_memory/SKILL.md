@@ -24,6 +24,19 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `DISCUSSION SAVE`
      - `DISCUSSION ARCHIVE`
      - `DISCUSSION APPROVE`
+   - Accepted aliases (input-only):
+     - `MC` => `MEMORY CAPTURE`
+     - `MP` => `MEMORY PROMOTE`
+     - `SP` => `SESSION PUBLISH`
+     - `CU` => `CHECKPOINT UPDATE`
+     - `IU` => `INDEX UPDATE`
+     - `DS` => `DISCUSSION SAVE`
+     - `DC` => `DISCUSSION ARCHIVE`
+     - `DA` => `DISCUSSION APPROVE`
+   - Alias policy:
+     - aliases are reserved and unique,
+     - alias matching is case-insensitive,
+     - canonical command names are used for approvals/index/canonical records.
 
 2.1 Git approval gate:
    - Do not run `git commit` without explicit user approval.
@@ -36,11 +49,21 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
 
 4. Approval ledger policy:
    - `DISCUSSION APPROVE` must append a ledger line in `memory/approvals.md` with:
-     - datetime
+     - approved_at_local
      - approver
+     - recorded_by_agent
+     - recorded_at_local
      - source discussion
      - canonical targets
      - commit hash (once committed)
+   - Identity split is mandatory:
+     - `approver` = human authority
+     - `recorded_by_agent` = assistant that wrote the record
+
+4.1 Timestamp policy:
+   - Use local timestamp fields for memory records (`*_at_local`) with timezone offset.
+   - Include `user_region` and `user_timezone` in metadata for unambiguous context.
+   - Avoid UTC-only placeholder records for new entries.
 
 5. Session publishing policy:
    - `SESSION PUBLISH` exports from `.slice_tmp/<slice_id>/` into `memory/sessions/<slice_id>/`.
@@ -53,6 +76,7 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `.agents/skills/physicslab_memory/SKILL.md`
      - `memory/README.md`
    - Do not introduce underscore variants.
+   - Keep alias table identical across the same files.
 
 ## One-liners
 

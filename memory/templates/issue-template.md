@@ -2,9 +2,13 @@
 
 ## Metadata
 - id:
-- created_at:
+- created_at_local:
 - owner:
 - status:
+- user_region:
+- user_timezone:
+- recorded_by_agent:
+- recorded_at_local:
 
 ## Problem
 
