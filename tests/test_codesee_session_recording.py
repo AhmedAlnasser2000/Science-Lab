@@ -68,20 +68,22 @@ def test_session_recorder_writes_records_and_meta(tmp_path: Path) -> None:
     meta_path = session_store.meta_path(root)
     records_path = session_store.records_path(root)
     keyframe_path = session_store.keyframe_path(root, 1)
+    forced_keyframe_path = session_store.keyframe_path(root, 2)
 
     assert meta_path.exists()
     assert records_path.exists()
     assert keyframe_path.exists()
+    assert forced_keyframe_path.exists()
     assert session_store.lock_path(root).exists() is False
 
     stored_meta = session_store.read_json(meta_path)
     assert stored_meta is not None
     assert session_schema.validate_session_meta(stored_meta) is True
     assert stored_meta["status"] == session_schema.SESSION_STATUS_COMPLETE
-    assert stored_meta["counts"]["records"] == 3
+    assert stored_meta["counts"]["records"] == 4
     assert stored_meta["counts"]["events"] == 1
     assert stored_meta["counts"]["deltas"] == 1
-    assert stored_meta["counts"]["keyframes"] == 1
+    assert stored_meta["counts"]["keyframes"] == 2
 
     rows, corrupt = session_store.read_jsonl(records_path)
     assert corrupt == 0
@@ -89,8 +91,56 @@ def test_session_recorder_writes_records_and_meta(tmp_path: Path) -> None:
         session_schema.RECORD_EVENT,
         session_schema.RECORD_DELTA,
         session_schema.RECORD_KEYFRAME_REF,
+        session_schema.RECORD_KEYFRAME_REF,
     ]
-    assert [row["seq"] for row in rows] == [1, 2, 3]
+    assert [row["seq"] for row in rows] == [1, 2, 3, 4]
+
+
+def test_session_recorder_cadence_keyframes(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    clock = _Clock()
+
+    def _snapshot() -> dict:
+        return {
+            "graph_state_ref": "g-cadence",
+            "monitor_state": {
+                "system:app_ui": {
+                    "state": "RUNNING",
+                    "active": True,
+                    "stuck": False,
+                    "fatal": False,
+                }
+            },
+        }
+
+    recorder = SessionRecorder(
+        SessionRecorderConfig(workspace_id="default", keyframe_every_records=2),
+        now_provider=clock.now,
+        snapshot_provider=_snapshot,
+    )
+
+    recorder.start_session(session_id="cadence")
+    recorder.record_event(_event("bus.request"))
+    recorder.record_state_delta(
+        {
+            "delta_type": "monitor.state.transition",
+            "node_id": "system:app_ui",
+            "before_ref": "INACTIVE",
+            "after_ref": "RUNNING",
+            "metadata": {"after": {"state": "RUNNING", "active": True, "stuck": False, "fatal": False}},
+        }
+    )
+    recorder.record_event(_event("bus.reply"))
+    recorder.stop_session()
+
+    root = recorder.session_dir()
+    assert root is not None
+    rows, corrupt = session_store.read_jsonl(session_store.records_path(root))
+    assert corrupt == 0
+    keyframe_rows = [row for row in rows if row["type"] == session_schema.RECORD_KEYFRAME_REF]
+    assert len(keyframe_rows) == 3
+    reasons = [str((row.get("metadata") or {}).get("reason") or "") for row in keyframe_rows]
+    assert reasons == ["cadence", "cadence", "session.stop"]
 
 
 def test_session_store_prune_respects_active_session(tmp_path: Path) -> None:

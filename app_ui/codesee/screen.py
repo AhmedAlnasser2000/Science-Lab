@@ -3056,7 +3056,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return
         try:
             self._session_recorder = SessionRecorder(
-                SessionRecorderConfig(workspace_id=self._workspace_id())
+                SessionRecorderConfig(workspace_id=self._workspace_id()),
+                snapshot_provider=self._build_session_snapshot,
             )
             self._session_recorder.start_session(build_info=self._build_info)
         except Exception as exc:
@@ -3090,6 +3091,21 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self._session_recorder = None
             self._session_recording_enabled = False
             log_buffer.LOG_BUFFER.append(f"session recorder disabled (event failed): {exc}")
+
+    def _build_session_snapshot(self) -> Dict[str, Any]:
+        trace_edges, trace_nodes, active_trace_id = self._monitor.snapshot_trace()
+        return {
+            "graph_state_ref": str(self._render_graph_id or self._current_graph_id or ""),
+            "monitor_state": self._monitor.snapshot_states(),
+            "trace_state": {
+                "active_trace_id": active_trace_id,
+                "edges": [[src, dst] for src, dst in trace_edges],
+                "nodes": sorted(str(node_id) for node_id in trace_nodes),
+                "edge_count": len(trace_edges),
+                "node_count": len(trace_nodes),
+                "trace_pinned": bool(self._monitor_trace_pinned),
+            },
+        }
 
     def _record_monitor_trace_deltas(
         self,
