@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import session_schema
 from . import session_store
@@ -31,9 +31,25 @@ class ReplayTimeline:
     ended_at_ms_epoch: Optional[int]
     frames: List[ReplayFrame]
     keyframes: Dict[int, Dict[str, Any]]
+    keyframe_payload_by_record_seq: Dict[int, Dict[str, Any]]
+    seq_index: Dict[int, ReplayFrame]
+    ordered_seqs: List[int]
+    ts_index: List[Tuple[int, int]]
     corrupt_lines: int
     warnings: List[str]
     meta: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ReplaySeekResult:
+    requested_seq: int
+    resolved_seq: int
+    base_keyframe_seq: Optional[int]
+    base_keyframe_record_seq: int
+    applied_records: int
+    monitor_state: Dict[str, Dict[str, Any]]
+    trace_state: Dict[str, Any]
+    warnings: List[str]
 
 
 def load_replay_session(session_root: Path) -> ReplayTimeline:
@@ -47,17 +63,26 @@ def load_replay_session(session_root: Path) -> ReplayTimeline:
     )
 
     rows, corrupt_lines = session_store.read_jsonl(session_store.records_path(root))
-    frames: List[ReplayFrame] = []
+    frames_raw: List[ReplayFrame] = []
     for index, row in enumerate(rows):
         frame = _normalize_frame(row, index=index, warnings=warnings)
         if frame is None:
             continue
+        frames_raw.append(frame)
+
+    frames_sorted = sorted(frames_raw, key=lambda item: (int(item.seq), int(item.ts_ms_epoch)))
+
+    frames: List[ReplayFrame] = []
+    seq_index: Dict[int, ReplayFrame] = {}
+    for frame in frames_sorted:
+        if frame.seq in seq_index:
+            warnings.append(f"duplicate seq skipped: seq={frame.seq}")
+            continue
+        seq_index[frame.seq] = frame
         frames.append(frame)
 
-    # Replay contract baseline is deterministic seq order.
-    frames.sort(key=lambda item: (int(item.seq), int(item.ts_ms_epoch)))
-
     keyframes: Dict[int, Dict[str, Any]] = {}
+    keyframe_payload_by_record_seq: Dict[int, Dict[str, Any]] = {}
     for frame in frames:
         if frame.record_type != session_schema.RECORD_KEYFRAME_REF:
             continue
@@ -65,6 +90,7 @@ def load_replay_session(session_root: Path) -> ReplayTimeline:
         if payload is None or frame.keyframe_seq is None:
             continue
         keyframes[int(frame.keyframe_seq)] = payload
+        keyframe_payload_by_record_seq[int(frame.seq)] = payload
 
     if corrupt_lines > 0:
         warnings.append(f"records corrupt_lines={int(corrupt_lines)}")
@@ -72,6 +98,9 @@ def load_replay_session(session_root: Path) -> ReplayTimeline:
     counts = meta.get("counts") if isinstance(meta.get("counts"), dict) else session_schema.default_counts()
     counts["corrupt_lines"] = max(_safe_int(counts.get("corrupt_lines")), int(corrupt_lines))
     meta["counts"] = counts
+
+    ordered_seqs = [int(frame.seq) for frame in frames]
+    ts_index = sorted((int(frame.ts_ms_epoch), int(frame.seq)) for frame in frames)
 
     return ReplayTimeline(
         session_root=root,
@@ -83,9 +112,116 @@ def load_replay_session(session_root: Path) -> ReplayTimeline:
         ended_at_ms_epoch=_optional_int(meta.get("ended_at_ms_epoch")),
         frames=frames,
         keyframes=keyframes,
+        keyframe_payload_by_record_seq=keyframe_payload_by_record_seq,
+        seq_index=seq_index,
+        ordered_seqs=ordered_seqs,
+        ts_index=ts_index,
         corrupt_lines=int(corrupt_lines),
         warnings=warnings,
         meta=meta,
+    )
+
+
+def nearest_seq_for_timestamp(timeline: ReplayTimeline, ts_ms_epoch: int) -> Optional[int]:
+    if not timeline.ts_index:
+        return None
+    target = _safe_int(ts_ms_epoch)
+    ts_value, seq = min(
+        timeline.ts_index,
+        key=lambda item: (abs(int(item[0]) - target), int(item[1])),
+    )
+    del ts_value
+    return int(seq)
+
+
+def seek_to_seq(timeline: ReplayTimeline, target_seq: int) -> ReplaySeekResult:
+    requested = _safe_int(target_seq)
+    base_warnings = list(timeline.warnings)
+
+    if not timeline.ordered_seqs:
+        warnings = base_warnings + ["seek skipped: timeline is empty"]
+        return ReplaySeekResult(
+            requested_seq=requested,
+            resolved_seq=0,
+            base_keyframe_seq=None,
+            base_keyframe_record_seq=0,
+            applied_records=0,
+            monitor_state={},
+            trace_state=_empty_trace_state(),
+            warnings=warnings,
+        )
+
+    resolved = _resolve_target_seq(timeline.ordered_seqs, requested)
+
+    monitor_state: Dict[str, Dict[str, Any]] = {}
+    trace_state: Dict[str, Any] = _empty_trace_state()
+    warnings: List[str] = []
+    base_keyframe_seq: Optional[int] = None
+    base_keyframe_record_seq = 0
+
+    keyframe_record_candidates = [
+        seq for seq in timeline.ordered_seqs
+        if seq <= resolved and seq in timeline.keyframe_payload_by_record_seq
+    ]
+
+    for keyframe_record_seq in reversed(keyframe_record_candidates):
+        payload = timeline.keyframe_payload_by_record_seq.get(keyframe_record_seq)
+        if not isinstance(payload, dict):
+            warnings.append(f"keyframe payload missing for record_seq={keyframe_record_seq}")
+            continue
+        snapshot = payload.get("snapshot")
+        if not isinstance(snapshot, dict):
+            warnings.append(f"keyframe snapshot missing for record_seq={keyframe_record_seq}")
+            continue
+        monitor_state, trace_state = _state_from_snapshot(snapshot)
+        frame = timeline.seq_index.get(keyframe_record_seq)
+        base_keyframe_seq = frame.keyframe_seq if frame else None
+        base_keyframe_record_seq = int(keyframe_record_seq)
+        break
+
+    applied_records = 0
+    for seq in timeline.ordered_seqs:
+        if seq <= base_keyframe_record_seq or seq > resolved:
+            continue
+        frame = timeline.seq_index.get(seq)
+        if frame is None:
+            continue
+
+        applied_records += 1
+
+        if frame.record_type == session_schema.RECORD_KEYFRAME_REF:
+            payload = timeline.keyframe_payload_by_record_seq.get(seq)
+            if not isinstance(payload, dict):
+                warnings.append(
+                    f"keyframe load failed for seq={seq} file={str(frame.keyframe_file or '')}"
+                )
+                continue
+            snapshot = payload.get("snapshot")
+            if not isinstance(snapshot, dict):
+                warnings.append(f"keyframe snapshot missing for seq={seq}")
+                continue
+            monitor_state, trace_state = _state_from_snapshot(snapshot)
+            base_keyframe_record_seq = int(seq)
+            if frame.keyframe_seq is not None:
+                base_keyframe_seq = int(frame.keyframe_seq)
+            continue
+
+        if frame.record_type == session_schema.RECORD_DELTA:
+            _apply_delta(
+                frame.record,
+                monitor_state=monitor_state,
+                trace_state=trace_state,
+            )
+
+    return ReplaySeekResult(
+        requested_seq=requested,
+        resolved_seq=resolved,
+        base_keyframe_seq=base_keyframe_seq,
+        base_keyframe_record_seq=int(base_keyframe_record_seq),
+        applied_records=int(applied_records),
+        monitor_state=monitor_state,
+        trace_state=trace_state,
+        warnings=base_warnings + warnings,
     )
 
 
@@ -220,6 +356,205 @@ def _load_keyframe_payload(
     return None
 
 
+def _resolve_target_seq(ordered_seqs: List[int], requested_seq: int) -> int:
+    if not ordered_seqs:
+        return 0
+    requested = _safe_int(requested_seq)
+    if requested <= ordered_seqs[0]:
+        return int(ordered_seqs[0])
+    if requested >= ordered_seqs[-1]:
+        return int(ordered_seqs[-1])
+    for seq in reversed(ordered_seqs):
+        if int(seq) <= requested:
+            return int(seq)
+    return int(ordered_seqs[0])
+
+
+def _state_from_snapshot(snapshot: Dict[str, Any]) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+    monitor_state = _normalize_monitor_state(snapshot.get("monitor_state"))
+    trace_state = _normalize_trace_state(snapshot.get("trace_state"))
+    return monitor_state, trace_state
+
+
+def _normalize_monitor_state(raw: Any) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for node_id, item in raw.items():
+        key = str(node_id).strip()
+        if not key:
+            continue
+        if isinstance(item, dict):
+            out[key] = {
+                "state": str(item.get("state") or "INACTIVE"),
+                "active": bool(item.get("active", False)),
+                "stuck": bool(item.get("stuck", False)),
+                "fatal": bool(item.get("fatal", False)),
+                "error_count": _safe_int(item.get("error_count")),
+                "active_span_count": _safe_int(item.get("active_span_count")),
+                "latched_count": _safe_int(item.get("latched_count")),
+                "last_change_ts": _safe_float(item.get("last_change_ts")),
+            }
+            continue
+        out[key] = {
+            "state": str(item or "INACTIVE"),
+            "active": False,
+            "stuck": False,
+            "fatal": False,
+            "error_count": 0,
+            "active_span_count": 0,
+            "latched_count": 0,
+            "last_change_ts": 0.0,
+        }
+    return out
+
+
+def _normalize_trace_state(raw: Any) -> Dict[str, Any]:
+    out = _empty_trace_state()
+    if not isinstance(raw, dict):
+        return out
+    active_trace_id = raw.get("active_trace_id")
+    if active_trace_id not in (None, "", "none"):
+        out["active_trace_id"] = str(active_trace_id)
+    edges = _normalize_trace_edges(raw.get("edges"))
+    nodes = _normalize_trace_nodes(raw.get("nodes"))
+    if edges:
+        out["edges"] = edges
+    if nodes:
+        out["nodes"] = nodes
+    if edges:
+        out["edge_count"] = len(edges)
+    else:
+        out["edge_count"] = _safe_int(raw.get("edge_count"))
+    if nodes:
+        out["node_count"] = len(nodes)
+    else:
+        out["node_count"] = _safe_int(raw.get("node_count"))
+    return out
+
+
+def _apply_delta(
+    row: Dict[str, Any],
+    *,
+    monitor_state: Dict[str, Dict[str, Any]],
+    trace_state: Dict[str, Any],
+) -> None:
+    delta_type = str(row.get("delta_type") or "")
+    metadata = row.get("metadata")
+    metadata_dict = metadata if isinstance(metadata, dict) else {}
+
+    if delta_type == "monitor.state.transition":
+        node_id = str(row.get("node_id") or "").strip()
+        if not node_id:
+            return
+        state = dict(monitor_state.get(node_id) or _default_monitor_entry())
+        after = metadata_dict.get("after")
+        after_state = str(row.get("after_ref") or "").strip()
+        if isinstance(after, dict):
+            state["state"] = str(after.get("state") or after_state or state.get("state") or "INACTIVE")
+            if "active" in after:
+                state["active"] = bool(after.get("active"))
+            if "stuck" in after:
+                state["stuck"] = bool(after.get("stuck"))
+            if "fatal" in after:
+                state["fatal"] = bool(after.get("fatal"))
+            if "error_count" in after:
+                state["error_count"] = _safe_int(after.get("error_count"))
+            if "active_span_count" in after:
+                state["active_span_count"] = _safe_int(after.get("active_span_count"))
+            if "latched_count" in after:
+                state["latched_count"] = _safe_int(after.get("latched_count"))
+            if "last_change_ts" in after:
+                state["last_change_ts"] = _safe_float(after.get("last_change_ts"))
+        elif after_state:
+            state["state"] = after_state
+        monitor_state[node_id] = state
+        return
+
+    if delta_type == "trace.state.transition":
+        after = metadata_dict.get("after")
+        after_ref = str(row.get("after_ref") or "").strip()
+        if isinstance(after, dict):
+            trace_id = after.get("active_trace_id")
+            trace_state["active_trace_id"] = _normalize_trace_id(trace_id)
+            if "edge_count" in after:
+                trace_state["edge_count"] = _safe_int(after.get("edge_count"))
+            if "node_count" in after:
+                trace_state["node_count"] = _safe_int(after.get("node_count"))
+            edges = _normalize_trace_edges(after.get("edges"))
+            nodes = _normalize_trace_nodes(after.get("nodes"))
+            if edges:
+                trace_state["edges"] = edges
+                trace_state["edge_count"] = len(edges)
+            if nodes:
+                trace_state["nodes"] = nodes
+                trace_state["node_count"] = len(nodes)
+            return
+        trace_state["active_trace_id"] = _normalize_trace_id(after_ref)
+
+
+def _default_monitor_entry() -> Dict[str, Any]:
+    return {
+        "state": "INACTIVE",
+        "active": False,
+        "stuck": False,
+        "fatal": False,
+        "error_count": 0,
+        "active_span_count": 0,
+        "latched_count": 0,
+        "last_change_ts": 0.0,
+    }
+
+
+def _normalize_trace_id(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text in ("", "none", "None"):
+        return None
+    return text
+
+
+def _normalize_trace_edges(raw: Any) -> List[Tuple[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    out: List[Tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        src = str(item[0]).strip()
+        dst = str(item[1]).strip()
+        if not src or not dst:
+            continue
+        out.append((src, dst))
+    return out
+
+
+def _normalize_trace_nodes(raw: Any) -> List[str]:
+    if not isinstance(raw, list):
+        return []
+    out: List[str] = []
+    seen = set()
+    for item in raw:
+        node_id = str(item).strip()
+        if not node_id or node_id in seen:
+            continue
+        seen.add(node_id)
+        out.append(node_id)
+    out.sort()
+    return out
+
+
+def _empty_trace_state() -> Dict[str, Any]:
+    return {
+        "active_trace_id": None,
+        "edges": [],
+        "nodes": [],
+        "edge_count": 0,
+        "node_count": 0,
+    }
+
+
 def _normalize_counts(raw_counts: Any) -> Dict[str, int]:
     out = session_schema.default_counts()
     if not isinstance(raw_counts, dict):
@@ -245,6 +580,13 @@ def _safe_int(value: Any) -> int:
         return max(0, int(value))
     except Exception:
         return 0
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
 
 
 def _optional_int(value: Any) -> Optional[int]:
