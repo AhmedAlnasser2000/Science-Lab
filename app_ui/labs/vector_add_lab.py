@@ -58,6 +58,7 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         self.resolver = AssetResolver()
         self.cache = AssetCache()
         self._step_n = 0
+        self._step_in_progress = False
 
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(500)
@@ -193,10 +194,16 @@ class VectorAddLabWidget(QtWidgets.QWidget):
             self.result_label.setText(f"Error: {exc}")
 
     def _on_step(self) -> None:
+        if self._step_in_progress:
+            return
         try:
+            self._step_in_progress = True
             if not self.reduced_motion:
                 for spin in (self.a_ang, self.b_ang):
+                    # Prevent recursive valueChanged -> _on_step reentry.
+                    blocker = QtCore.QSignalBlocker(spin)
                     spin.setValue(spin.value() + random.uniform(-1.0, 1.0))
+                    del blocker
             self._step_n += 1
             result = self._step_once()
             self._set_result_text(result, prefix=f"Step {self._step_n}")
@@ -204,6 +211,8 @@ class VectorAddLabWidget(QtWidgets.QWidget):
         except Exception as exc:
             traceback.print_exc()
             self.result_label.setText(f"Error: {exc}")
+        finally:
+            self._step_in_progress = False
 
     def _step_once(self) -> Dict[str, float]:
         a_vec = self._components(self.a_mag.value(), self.a_ang.value())
