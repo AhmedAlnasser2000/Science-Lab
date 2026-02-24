@@ -881,3 +881,18 @@
 ```text
 [2026-02-24]. User built a repo-root `memory/` infrastructure plan for the PhysicsLab project (protocol + index + current-state, journals + sessions tied to gates/mid-gates, discussions lane with approval-only promotion, and external imports lane) and wants to rely on it in future work.
 ```
+
+## Entry 69
+- entry_id: 69
+- saved_at_local: 2026-02-24 07:10:54 +03:00
+- user_region: Kuwait/Riyadh
+- user_timezone: Arab Standard Time
+- recorded_by_agent: codex
+- source_type: chat
+- source_ref: in-session user approval (`save for them and CS`)
+- text_format: verbatim
+
+### text_verbatim
+```text
+[2026-02-24]. User clarified memory operations policy: canon remains explicit-triggered and important-only, while sessions/journal/runbooks/current-state provide detailed operational context. User required strict approval-first behavior even with WORKLOG AUTO: assistant must first state exactly what will be saved, wait for explicit approval, then save only approved items.
+```

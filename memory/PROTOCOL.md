@@ -212,6 +212,10 @@ Canon save note:
   - `memory/runbooks/` (when procedure-level changes exist)
 - Auto mode never writes canon directly and never auto-promotes decisions/issues.
 - If auto mode is enabled and a completed task has no runbook-grade procedure change, skip runbook updates.
+- Approval-first update cycle is mandatory even in auto mode:
+  - state exactly what will be written,
+  - wait for explicit user approval,
+  - then write only approved items.
 
 ## 8) Snapshot policy
 - Snapshot banners must identify base commit hash explicitly:

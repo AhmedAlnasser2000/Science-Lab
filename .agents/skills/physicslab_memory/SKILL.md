@@ -108,6 +108,10 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `memory/runbooks/` when procedure-level changes exist.
    - `WORKLOG AUTO OFF` disables this behavior.
    - Auto mode never writes canon directly and never auto-promotes decisions/issues.
+   - Approval-first cycle is mandatory:
+     - state what will be written,
+     - wait for explicit user approval,
+     - then write only approved items.
 
 6. Trigger exactness guard:
    - Keep the same trigger spellings in:

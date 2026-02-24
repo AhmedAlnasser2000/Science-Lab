@@ -55,6 +55,7 @@ Worklog auto mode (operational):
 - `WORKLOG AUTO ON`: after each completed task/gate/mid-gate, update current-state/sessions/journal and runbooks when procedure changes exist.
 - `WORKLOG AUTO OFF`: stop automatic operational updates and return to trigger-only writes.
 - This mode does not auto-write canon and does not auto-promote decisions/issues.
+- Approval-first even in worklog auto mode: state what will be written, wait for explicit approval, then write only approved items.
 
 ## Provenance and time format
 - Memory records should include:

@@ -11,8 +11,8 @@
 - Import type: one-time bootstrap baseline
 
 ## Counters
-- Latest entry id: 68
-- Next entry id: 69
+- Latest entry id: 69
+- Next entry id: 70
 
 ## Save command contract
 - Exact triggers: `CANON SAVE` and `CS`

@@ -8,8 +8,8 @@
 - Index: `memory/canon/INDEX.md`
 - Verbatim timeline: `memory/canon/verbatim_ledger.md`
 - Imports notes: `memory/canon/imports/README.md`
-- Latest entry id: 68
-- Next entry id: 69
+- Latest entry id: 69
+- Next entry id: 70
 
 ## Latest checkpoint
 - Summary: `memory/sessions/checkpoints/app_summary_latest__SUMMARY.md`
@@ -18,12 +18,12 @@
 ## Journals
 - Folder: `memory/journal/`
 - Recent entries (newest first):
-- pending
+- `memory/journal/2026-02-24__v5.5d9-memory-infra.md`
 
 ## Sessions
 - Folder: `memory/sessions/`
 - By slice/milestone:
-- `v5.5d9` (pending publish)
+- `memory/sessions/v5.5d9/2026-02-24__completion-report.md`
 
 ## Decisions (ADR)
 - Folder: `memory/decisions/`
@@ -35,6 +35,7 @@
 
 ## Runbooks
 - Folder: `memory/runbooks/`
+- Latest: `memory/runbooks/2026-02-24__memory-worklog-auto-mode.md`
 
 ## Discussions
 - Index: `memory/discussions/INDEX.md`
