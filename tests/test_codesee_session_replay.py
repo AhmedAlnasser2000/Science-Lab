@@ -3,8 +3,11 @@
 import os
 from pathlib import Path
 
+import pytest
+
 from app_ui.codesee.runtime import session_schema, session_store
 from app_ui.codesee.runtime.session_replay import (
+    ReplayController,
     load_replay_session,
     nearest_seq_for_timestamp,
     seek_to_seq,
@@ -28,6 +31,29 @@ def _write_meta(workspace_id: str, session_id: str, *, started_ms: int = 1) -> P
         },
     )
     return root
+
+
+def _write_linear_event_records(
+    root: Path,
+    *,
+    count: int,
+    start_ts_ms: int = 1000,
+    step_ms: int = 1000,
+) -> None:
+    lines = []
+    for index in range(int(count)):
+        seq = int(index + 1)
+        ts_ms = int(start_ts_ms + (index * step_ms))
+        second = int(seq % 60)
+        lines.append(
+            (
+                f'{{"seq":{seq},"type":"event","ts_ms_epoch":{ts_ms},'
+                f'"ts_utc":"2026-02-24T10:00:{second:02d}Z","tz_offset_minutes":180,'
+                f'"ts_local":"2026-02-24 13:00:{second:02d}",'
+                f'"kind":"e{seq}","severity":"info","message":"e{seq}"}}'
+            )
+        )
+    session_store.records_path(root).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def test_load_replay_session_sorts_by_seq_and_loads_keyframes(tmp_path: Path) -> None:
@@ -235,3 +261,52 @@ def test_seek_to_seq_falls_back_when_keyframe_missing(tmp_path: Path) -> None:
     assert result.applied_records == 2
     assert result.monitor_state["system:app_ui"]["state"] == "RUNNING"
     assert any("keyframe load failed" in item for item in result.warnings)
+
+
+def test_replay_controller_tick_is_deterministic_for_identical_inputs(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    root = _write_meta("default", "controller-determinism", started_ms=1)
+    _write_linear_event_records(root, count=8)
+
+    timeline = load_replay_session(root)
+    controller_a = ReplayController(timeline)
+    controller_b = ReplayController(timeline)
+
+    for controller in (controller_a, controller_b):
+        assert controller.set_speed(2.0) == 2.0
+        controller.play()
+
+    tick_inputs = [500, 500, 250, 750, 1000]
+    seqs_a = [controller_a.tick(ms).resolved_seq for ms in tick_inputs]
+    seqs_b = [controller_b.tick(ms).resolved_seq for ms in tick_inputs]
+
+    assert seqs_a == [2, 3, 3, 4, 6]
+    assert seqs_b == seqs_a
+
+    controller_a.pause()
+    assert controller_a.snapshot.is_playing is False
+    assert controller_a.tick(4000).resolved_seq == 6
+
+
+def test_replay_controller_scrub_jump_and_speed_presets(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    root = _write_meta("default", "controller-controls", started_ms=1)
+    _write_linear_event_records(root, count=12)
+
+    timeline = load_replay_session(root)
+    controller = ReplayController(timeline)
+
+    assert controller.speed_presets == (0.25, 0.5, 1.0, 1.5, 2.0, 4.0)
+
+    with pytest.raises(ValueError):
+        controller.set_speed(1.25)
+    assert controller.set_speed(1.5) == 1.5
+
+    assert controller.scrub_to_timestamp(7600).resolved_seq == 8
+    assert controller.scrub_to_seq(999).resolved_seq == 12
+    assert controller.scrub_to_seq(-3).resolved_seq == 1
+
+    assert controller.jump_forward().resolved_seq == 6
+    assert controller.jump_backward().resolved_seq == 1
+    assert controller.jump_seconds(5).resolved_seq == 6
+    assert controller.jump_seconds(-5).resolved_seq == 1

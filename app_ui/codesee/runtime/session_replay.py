@@ -52,6 +52,19 @@ class ReplaySeekResult:
     warnings: List[str]
 
 
+REPLAY_SPEED_PRESETS: Tuple[float, ...] = (0.25, 0.5, 1.0, 1.5, 2.0, 4.0)
+DEFAULT_REPLAY_JUMP_SECONDS = 5
+
+
+@dataclass(frozen=True)
+class ReplayControllerSnapshot:
+    is_playing: bool
+    speed_multiplier: float
+    current_seq: int
+    current_ts_ms_epoch: int
+    jump_seconds: int
+
+
 def load_replay_session(session_root: Path) -> ReplayTimeline:
     root = Path(session_root)
     warnings: List[str] = []
@@ -223,6 +236,124 @@ def seek_to_seq(timeline: ReplayTimeline, target_seq: int) -> ReplaySeekResult:
         trace_state=trace_state,
         warnings=base_warnings + warnings,
     )
+
+
+class ReplayController:
+    def __init__(
+        self,
+        timeline: ReplayTimeline,
+        *,
+        speed_multiplier: float = 1.0,
+        jump_seconds: int = DEFAULT_REPLAY_JUMP_SECONDS,
+    ) -> None:
+        self.timeline = timeline
+        self._speed_multiplier = _normalize_speed_preset(speed_multiplier)
+        self._jump_seconds = _normalize_jump_seconds(jump_seconds)
+        self._is_playing = False
+
+        if timeline.ordered_seqs:
+            initial_seq = int(timeline.ordered_seqs[0])
+            initial_frame = timeline.seq_index.get(initial_seq)
+            self._current_seq = initial_seq
+            if initial_frame is not None:
+                self._current_ts_ms_epoch = int(initial_frame.ts_ms_epoch)
+            else:
+                self._current_ts_ms_epoch = int(timeline.ts_index[0][0])
+        else:
+            self._current_seq = 0
+            self._current_ts_ms_epoch = 0
+
+        self._last_seek_result = seek_to_seq(self.timeline, self._current_seq)
+
+    @property
+    def speed_presets(self) -> Tuple[float, ...]:
+        return REPLAY_SPEED_PRESETS
+
+    @property
+    def snapshot(self) -> ReplayControllerSnapshot:
+        return ReplayControllerSnapshot(
+            is_playing=bool(self._is_playing),
+            speed_multiplier=float(self._speed_multiplier),
+            current_seq=int(self._current_seq),
+            current_ts_ms_epoch=int(self._current_ts_ms_epoch),
+            jump_seconds=int(self._jump_seconds),
+        )
+
+    @property
+    def current_seek_result(self) -> ReplaySeekResult:
+        return self._last_seek_result
+
+    def play(self) -> ReplaySeekResult:
+        self._is_playing = bool(self.timeline.ordered_seqs)
+        return self._last_seek_result
+
+    def pause(self) -> ReplaySeekResult:
+        self._is_playing = False
+        return self._last_seek_result
+
+    def set_speed(self, multiplier: float) -> float:
+        self._speed_multiplier = _normalize_speed_preset(multiplier)
+        return self._speed_multiplier
+
+    def set_jump_seconds(self, seconds: int) -> int:
+        self._jump_seconds = _normalize_jump_seconds(seconds)
+        return self._jump_seconds
+
+    def scrub_to_seq(self, target_seq: int) -> ReplaySeekResult:
+        result = seek_to_seq(self.timeline, target_seq)
+        self._last_seek_result = result
+        self._sync_playhead_from_seq(result.resolved_seq)
+        return result
+
+    def scrub_to_timestamp(self, ts_ms_epoch: int) -> ReplaySeekResult:
+        seq = nearest_seq_for_timestamp(self.timeline, ts_ms_epoch)
+        if seq is None:
+            return self.scrub_to_seq(0)
+        return self.scrub_to_seq(seq)
+
+    def jump_seconds(self, delta_seconds: int) -> ReplaySeekResult:
+        try:
+            delta = int(delta_seconds)
+        except Exception:
+            delta = 0
+        if delta == 0:
+            return self._last_seek_result
+        target_ts = int(self._current_ts_ms_epoch) + int(delta) * 1000
+        return self.scrub_to_timestamp(target_ts)
+
+    def jump_forward(self, seconds: Optional[int] = None) -> ReplaySeekResult:
+        step = self._jump_seconds if seconds is None else _normalize_jump_seconds(seconds)
+        return self.jump_seconds(step)
+
+    def jump_backward(self, seconds: Optional[int] = None) -> ReplaySeekResult:
+        step = self._jump_seconds if seconds is None else _normalize_jump_seconds(seconds)
+        return self.jump_seconds(-step)
+
+    def tick(self, elapsed_ms: int) -> ReplaySeekResult:
+        if not self._is_playing or not self.timeline.ordered_seqs:
+            return self._last_seek_result
+        elapsed = _safe_int(elapsed_ms)
+        if elapsed <= 0:
+            return self._last_seek_result
+        advance_ms = _scale_elapsed_ms(elapsed, self._speed_multiplier)
+        if advance_ms <= 0:
+            return self._last_seek_result
+        target_ts = int(self._current_ts_ms_epoch) + int(advance_ms)
+        result = self.scrub_to_timestamp(target_ts)
+        if result.resolved_seq >= int(self.timeline.ordered_seqs[-1]):
+            self._is_playing = False
+        return result
+
+    def _sync_playhead_from_seq(self, seq: int) -> None:
+        self._current_seq = int(seq)
+        frame = self.timeline.seq_index.get(self._current_seq)
+        if frame is not None:
+            self._current_ts_ms_epoch = int(frame.ts_ms_epoch)
+            return
+        if self.timeline.ts_index:
+            self._current_ts_ms_epoch = int(self.timeline.ts_index[-1][0])
+            return
+        self._current_ts_ms_epoch = 0
 
 
 def _normalize_meta(
@@ -587,6 +718,52 @@ def _safe_float(value: Any) -> float:
         return float(value)
     except Exception:
         return 0.0
+
+
+def _normalize_speed_preset(multiplier: float) -> float:
+    try:
+        value = float(multiplier)
+    except Exception as exc:
+        raise ValueError("speed multiplier must be numeric") from exc
+    for preset in REPLAY_SPEED_PRESETS:
+        if abs(float(preset) - value) < 1e-9:
+            return float(preset)
+    raise ValueError(f"unsupported replay speed: {multiplier}; expected one of {REPLAY_SPEED_PRESETS}")
+
+
+def _normalize_jump_seconds(seconds: int) -> int:
+    try:
+        parsed = int(seconds)
+    except Exception as exc:
+        raise ValueError("jump seconds must be an integer") from exc
+    if parsed <= 0:
+        raise ValueError("jump seconds must be > 0")
+    return parsed
+
+
+def _speed_ratio(multiplier: float) -> Tuple[int, int]:
+    speed = _normalize_speed_preset(multiplier)
+    if speed == 0.25:
+        return (1, 4)
+    if speed == 0.5:
+        return (1, 2)
+    if speed == 1.0:
+        return (1, 1)
+    if speed == 1.5:
+        return (3, 2)
+    if speed == 2.0:
+        return (2, 1)
+    if speed == 4.0:
+        return (4, 1)
+    return (1, 1)
+
+
+def _scale_elapsed_ms(elapsed_ms: int, multiplier: float) -> int:
+    elapsed = _safe_int(elapsed_ms)
+    if elapsed <= 0:
+        return 0
+    numerator, denominator = _speed_ratio(multiplier)
+    return int((int(elapsed) * int(numerator)) // int(denominator))
 
 
 def _optional_int(value: Any) -> Optional[int]:
