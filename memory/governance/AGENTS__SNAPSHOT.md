@@ -1,4 +1,6 @@
-﻿## Git Hygiene: Worktree-First
+﻿> Snapshot generated during slice d9 from working tree based on HEAD 55fbe3f80f21b0722c1d7ab46aa5ee467f8cb766.
+
+## Git Hygiene: Worktree-First
 
 This repository uses a worktree-first workflow for all new slices/milestones.
 
@@ -19,16 +21,6 @@ Quick start:
 - `powershell ./tools/dev/start_slice_worktree.ps1 -Branch work/v5.5d2`
 - `powershell ./tools/dev/list_worktrees.ps1`
 - `powershell ./tools/dev/remove_slice_worktree.ps1 -Branch work/v5.5d2 -DeleteBranch`
-
-## Memory Recall Bundle
-
-- `memory/` is the portable recall bundle for this repo.
-- When ambiguous:
-  - read `memory/INDEX.md` plus relevant canonical docs first
-  - then verify in code before asserting.
-- Do not write to `memory/` unless the user explicitly issues a memory trigger command.
-- Canon-first save command: `CS` (or `CANON SAVE`) appends verbatim memory to `memory/canon/verbatim_ledger.md` first.
-- Discussions are non-binding context; only approved extracts are promoted into decisions/issues/runbooks.
 
 ## Wrong-Branch Recovery Policy (Patch-First, No Guessing)
 
@@ -147,20 +139,6 @@ Commit naming policy (non-ambiguous):
   - `fix(V5.5d7): facet labels and glyph spacing (follow-up 2)`
 - In user status/final updates, always map each commit hash to a one-line summary.
 
-Pre-commit confirmation policy (mandatory, no exceptions):
-- Before any commit, print a commit plan and wait for explicit user approval.
-- Required commit-plan fields:
-  - active branch (`git rev-parse --abbrev-ref HEAD`)
-  - intended slice branch
-  - worktree branch proof (`.physicslab_worktree.json` branch when present)
-  - staged/unstaged file list
-  - mixed-slice risk check
-  - exact commit message
-  - exact commit command
-- If branch/slice mismatch exists, stop and ask; do not commit.
-- If mixed-slice files are present and not explicitly approved, stop and ask.
-- Default behavior if unclear: do not commit.
-
 Pre-push confirmation policy (mandatory, no exceptions):
 - At the end of gates, before any push, the agent must print a push plan and wait for explicit user approval.
 - Required push-plan fields:
@@ -177,12 +155,6 @@ Pre-push confirmation policy (mandatory, no exceptions):
   - pushed branch
   - resulting remote range (for example `abc1234..def5678`)
   - remaining local commits (if any).
-
-Approval shorthand aliases (workflow):
-- `AC` => explicit approval to run `git commit` (after commit plan is shown).
-- `AP` => explicit approval to run `git push` (after push plan is shown).
-- Aliases are case-insensitive.
-- These aliases are workflow approvals only, not memory trigger commands.
 
 Unpushed commits + main sync policy (mandatory):
 - Do not end a slice with unknown local-only commits.
@@ -289,3 +261,4 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
   - Avoid deep reference-chasing: prefer opening only files directly linked from `SKILL.md` unless you're blocked.
   - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
 - Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue.
+

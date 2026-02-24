@@ -128,6 +128,20 @@ Agents must follow these rules unless explicitly overridden:
      - `(follow-up 1)`, `(follow-up 2)`, etc.
    - In handoff updates, always map commit hash to a plain one-line description.
 
+6.0) **Pre-commit confirmation is mandatory**
+   - Before any commit, print a commit plan and wait for explicit user approval.
+   - Commit plan must include:
+     - active branch
+     - intended slice branch
+     - worktree branch proof (`.physicslab_worktree.json` branch when present)
+     - staged/unstaged file list
+     - mixed-slice risk check
+     - exact commit message
+     - exact commit command
+   - If branch/slice mismatch is detected, stop and ask (no commit).
+   - If mixed-slice files are present without explicit approval, stop and ask (no commit).
+   - If intent is ambiguous, default to no commit.
+
 6.1) **Pre-push confirmation is mandatory**
    - Before any push, print a push plan and wait for explicit user approval.
    - Push plan must include:
@@ -140,6 +154,12 @@ Agents must follow these rules unless explicitly overridden:
    - If upstream differs from intended slice branch, stop and ask.
    - If user asks "commit and push", still present the plan first, then push only after explicit confirmation.
    - If intent is ambiguous, default to local commit only (no push).
+
+6.1.1) **Approval shorthand aliases**
+   - `AC` means explicit approval to execute `git commit` after commit plan review.
+   - `AP` means explicit approval to execute `git push` after push plan review.
+   - Aliases are case-insensitive.
+   - These are workflow approvals only; they do not replace memory trigger commands.
 
 6.2) **Same-slice branch containment is mandatory**
    - Keep all slice-related changes on the same slice branch from first edit to final push.
