@@ -1,7 +1,15 @@
-﻿# Generated/imported canonical memory timeline (verbatim archive)
+# Generated/imported canonical memory timeline (verbatim archive)
 memory/canon/verbatim_ledger.md
+memory/canon/INDEX.md
+memory/canon/README.md
+memory/canon/imports/**/*.md
 
 # Memory policy docs where strict spacing style is intentionally relaxed
 memory/README.md
 memory/world-canon.md
 memory/canon/imports/README.md
+
+# Operational memory logs are append-heavy and intentionally template-driven
+memory/journal/**/*.md
+memory/sessions/**/*.md
+memory/runbooks/**/*.md
