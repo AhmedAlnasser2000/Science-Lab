@@ -11,9 +11,10 @@
 - Import type: one-time bootstrap baseline
 
 ## Counters
-- Latest entry id: 69
-- Next entry id: 70
+- Latest entry id: 70
+- Next entry id: 71
 
 ## Save command contract
 - Exact triggers: `CANON SAVE` and `CS`
 - Behavior: append verbatim canon entry only, then suggest optional promotions (no auto-promotion).
+

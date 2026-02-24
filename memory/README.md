@@ -1,4 +1,4 @@
-﻿# Memory Bundle (`memory/`)
+# Memory Bundle (`memory/`)
 
 This folder is the portable recall bundle for PhysicsLab. If copied alone, it should preserve protocol, current state, checkpoints, governance snapshots, dictionary snapshots, and publishing templates.
 
@@ -86,3 +86,15 @@ All planning/final responses for this memory slice start with:
 - reasoning effort (thinking level)
 - scope statement
 - short rationale for chosen level
+
+## Status lifecycle (borrowed pattern)
+Use consistent status labels across memory artifacts:
+- `draft`, `active`, `locked`, `superseded`, `rejected`, `completed`
+
+Supersession rule:
+- when a plan/task/decision is replaced, keep history and set `superseded` with a link to replacement (`superseded_by`) and reason.
+- do not silently overwrite prior approved records.
+
+Next-task rule:
+- `memory/current-state.md` next task is operational guidance only and can be rejected/replaced by user at any time.
+- session/journal task logs must capture that outcome explicitly.

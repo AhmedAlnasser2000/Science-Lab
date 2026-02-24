@@ -1,4 +1,4 @@
-﻿# Completion Report Template
+# Completion Report Template
 
 ## Metadata
 - slice_id:
@@ -19,6 +19,11 @@
 | gate | kind | completed | evidence |
 |---|---|---|---|
 | | | | |
+
+## Commit-task ledger
+| task_id | status | planned_commit_message | commit_hash | supersedes | superseded_by | supersession_reason |
+|---|---|---|---|---|---|---|
+| | draft|active|locked|superseded|rejected|completed | | | | | |
 
 ## Mid-gate amendments
 | trigger | decision | risk_class | files_touched | verification_delta | user_impact |

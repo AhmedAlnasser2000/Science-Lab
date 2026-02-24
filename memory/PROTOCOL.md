@@ -1,4 +1,4 @@
-﻿# Memory Protocol
+# Memory Protocol
 
 ## 0) Slice communication requirement (d9)
 - All planning/final responses for this slice start with a Runtime Header:
@@ -217,6 +217,26 @@ Canon save note:
   - wait for explicit user approval,
   - then write only approved items.
 
+
+## 7.3) Status and supersession model
+Use a shared status vocabulary across decisions/tasks/session logs:
+- `draft`: captured but not approved/active.
+- `active`: currently in execution.
+- `locked`: approved baseline decision/plan.
+- `superseded`: replaced by a newer approved item.
+- `rejected`: explicitly declined by user.
+- `completed`: execution finished and verified.
+
+Supersession fields (when applicable):
+- `supersedes`
+- `superseded_by`
+- `superseded_at_local`
+- `supersession_reason`
+
+Rules:
+- Do not delete prior records when superseded; mark status and link replacement.
+- `Next task` in `memory/current-state.md` must be tracked as `active`, `rejected`, `replaced`, or `completed` in session/journal logs.
+- Commit-task logging uses `active -> completed` by default; if replaced before commit, mark `superseded` or `rejected` with reason.
 ## 8) Snapshot policy
 - Snapshot banners must identify base commit hash explicitly:
 - `Snapshot generated during slice d9 from working tree based on HEAD <hash>.`
@@ -255,3 +275,5 @@ Canon save note:
 - Include alias-help command `H` / `h` exactly as a non-write helper.
 - Do not use underscore variants (for example `SESSION_PUBLISH`).
 - Alias table must also stay aligned across the same files.
+
+

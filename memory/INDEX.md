@@ -1,4 +1,4 @@
-﻿# Memory Index
+# Memory Index
 
 ## Current state
 - `memory/current-state.md`
@@ -8,8 +8,8 @@
 - Index: `memory/canon/INDEX.md`
 - Verbatim timeline: `memory/canon/verbatim_ledger.md`
 - Imports notes: `memory/canon/imports/README.md`
-- Latest entry id: 69
-- Next entry id: 70
+- Latest entry id: 70
+- Next entry id: 71
 
 ## Latest checkpoint
 - Summary: `memory/sessions/checkpoints/app_summary_latest__SUMMARY.md`
@@ -18,11 +18,13 @@
 ## Journals
 - Folder: `memory/journal/`
 - Recent entries (newest first):
+- `memory/journal/2026-02-24__v5.5e-commit-task-tracking.md`
 - `memory/journal/2026-02-24__v5.5d9-memory-infra.md`
 
 ## Sessions
 - Folder: `memory/sessions/`
 - By slice/milestone:
+- `memory/sessions/v5.5e/2026-02-24__commit-task-log.md`
 - `memory/sessions/v5.5d9/2026-02-24__completion-report.md`
 
 ## Decisions (ADR)

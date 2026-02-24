@@ -1,4 +1,4 @@
-﻿---
+---
 name: physicslab_memory
 description: Use the root memory bundle (`memory/`) for portable recall, trigger-gated writes, session publishing, and discussion approval flow.
 ---
@@ -121,6 +121,15 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
    - Do not introduce underscore variants.
    - Keep alias table identical across the same files.
 
+
+7.1 Status and supersession discipline:
+   - Use shared statuses in memory artifacts: `draft`, `active`, `locked`, `superseded`, `rejected`, `completed`.
+   - If a task/decision is replaced, mark it `superseded` and add:
+     - `superseded_by`
+     - `superseded_at_local`
+     - `supersession_reason`
+   - Do not delete old records when superseded.
+   - When user rejects/replaces next task, log the outcome explicitly in session+journal task logs.
 7. Canon-save behavior:
    - `CANON SAVE` / `CS` appends one verbatim record to `memory/canon/verbatim_ledger.md`.
    - Must include: `entry_id`, local timestamp, region/timezone, `recorded_by_agent`, source metadata.
@@ -142,3 +151,4 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
 - `WORKLOG AUTO ON`: enable automatic operational updates for current-state/sessions/journal/runbooks (when applicable).
 - `WORKLOG AUTO OFF`: disable automatic operational updates and return to trigger-only writes.
 - `H` / `h`: show current alias mappings and trigger list (no write).
+
