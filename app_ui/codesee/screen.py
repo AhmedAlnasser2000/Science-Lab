@@ -83,6 +83,8 @@ from .runtime.hub import CodeSeeRuntimeHub
 from .runtime.monitor_state import MonitorState
 from .runtime.session_deltas import monitor_transition_deltas, trace_transition_delta
 from .runtime.session_recording import SessionRecorder, SessionRecorderConfig
+from .runtime import session_store as replay_session_store
+from .runtime.session_replay import REPLAY_SPEED_PRESETS, ReplayController, ReplaySeekResult, load_replay_session
 from .runtime.trail_focus import (
     DEFAULT_INACTIVE_EDGE_OPACITY,
     DEFAULT_INACTIVE_NODE_OPACITY,
@@ -119,6 +121,7 @@ ICON_STYLE_LABELS = {
     icon_pack.ICON_STYLE_MONO: "Mono",
 }
 MONITOR_TRACE_COLOR = QtGui.QColor("#4c6ef5")
+REPLAY_TICK_MS = 250
 
 FACET_NODE_TYPE = "Facet"
 FACET_EDGE_KIND = "facet"
@@ -283,6 +286,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._status_timer.setInterval(1000)
         self._status_timer.timeout.connect(self._on_status_tick)
         self._last_span_pulse = 0.0
+        self._replay_mode_active = False
+        self._replay_controller: Optional[ReplayController] = None
+        self._replay_session_id: Optional[str] = None
+        self._replay_prev_live_enabled = self._live_enabled
+        self._replay_buffered_live_count = 0
+        self._replay_tick_timer = QtCore.QTimer(self)
+        self._replay_tick_timer.setInterval(REPLAY_TICK_MS)
+        self._replay_tick_timer.timeout.connect(self._on_replay_tick)
 
         self._dock_host_external = dock_host is not None
         if dock_host is not None:
@@ -441,6 +452,53 @@ class CodeSeeScreen(QtWidgets.QWidget):
         source_row.addStretch()
         layout.addLayout(source_row)
 
+        replay_row = QtWidgets.QHBoxLayout()
+        self.replay_mode_label = QtWidgets.QLabel("Replay:")
+        replay_row.addWidget(self.replay_mode_label)
+        self.replay_session_combo = QtWidgets.QComboBox()
+        self.replay_session_combo.currentIndexChanged.connect(self._on_replay_session_changed)
+        replay_row.addWidget(self.replay_session_combo)
+        self.replay_refresh_btn = QtWidgets.QToolButton()
+        self.replay_refresh_btn.setText("Refresh Sessions")
+        self.replay_refresh_btn.clicked.connect(self._refresh_replay_sessions)
+        replay_row.addWidget(self.replay_refresh_btn)
+        self.replay_enter_btn = QtWidgets.QToolButton()
+        self.replay_enter_btn.setText("Enter Replay")
+        self.replay_enter_btn.clicked.connect(self._on_enter_replay_clicked)
+        replay_row.addWidget(self.replay_enter_btn)
+        self.replay_exit_btn = QtWidgets.QToolButton()
+        self.replay_exit_btn.setText("Exit Replay")
+        self.replay_exit_btn.clicked.connect(self.exit_replay_mode)
+        replay_row.addWidget(self.replay_exit_btn)
+        self.replay_play_toggle = QtWidgets.QToolButton()
+        self.replay_play_toggle.setText("Play")
+        self.replay_play_toggle.setCheckable(True)
+        self.replay_play_toggle.toggled.connect(self._on_replay_play_toggled)
+        replay_row.addWidget(self.replay_play_toggle)
+        self.replay_speed_combo = QtWidgets.QComboBox()
+        for speed in REPLAY_SPEED_PRESETS:
+            self.replay_speed_combo.addItem(f"{speed:g}x", float(speed))
+        self.replay_speed_combo.currentIndexChanged.connect(self._on_replay_speed_changed)
+        replay_row.addWidget(self.replay_speed_combo)
+        self.replay_jump_back_btn = QtWidgets.QToolButton()
+        self.replay_jump_back_btn.setText("-5s")
+        self.replay_jump_back_btn.clicked.connect(self._on_replay_jump_back)
+        replay_row.addWidget(self.replay_jump_back_btn)
+        self.replay_jump_forward_btn = QtWidgets.QToolButton()
+        self.replay_jump_forward_btn.setText("+5s")
+        self.replay_jump_forward_btn.clicked.connect(self._on_replay_jump_forward)
+        replay_row.addWidget(self.replay_jump_forward_btn)
+        self.replay_seq_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.replay_seq_slider.setMinimum(0)
+        self.replay_seq_slider.setMaximum(0)
+        self.replay_seq_slider.setTracking(False)
+        self.replay_seq_slider.valueChanged.connect(self._on_replay_slider_changed)
+        replay_row.addWidget(self.replay_seq_slider, stretch=1)
+        self.replay_status_label = QtWidgets.QLabel("Replay: off")
+        self.replay_status_label.setStyleSheet("color: #555;")
+        replay_row.addWidget(self.replay_status_label)
+        layout.addLayout(replay_row)
+
         self._lens_palette_dock: Optional[QtWidgets.QDockWidget] = None
         self._dock_state_restored = False
         self._dock_syncing = False
@@ -558,6 +616,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._update_peek_controls()
         self._ensure_inspector_panel()
         self._update_action_state()
+        self._refresh_replay_sessions()
+        self._sync_replay_controls()
         self._set_active_graphs(self._demo_root, self._demo_subgraphs)
         if self._runtime_hub and not self._runtime_connected:
             self._runtime_hub.event_emitted.connect(self._on_runtime_event)
@@ -619,9 +679,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._overlay_checks.clear()
         self._facet_selection_by_id.clear()
         self._active_facet_selection = None
+        if self._replay_mode_active:
+            self.exit_replay_mode()
+        self._refresh_replay_sessions()
         if self._crash_view:
             self._load_crash_record()
         self._sync_view_controls()
+        self._sync_replay_controls()
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_node_theme(self._node_theme)
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
@@ -690,6 +754,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def cleanup(self) -> None:
         if self._status_timer and self._status_timer.isActive():
             self._status_timer.stop()
+        if self._replay_tick_timer and self._replay_tick_timer.isActive():
+            self._replay_tick_timer.stop()
         self._stop_session_recorder()
         if self._runtime_hub and self._runtime_connected:
             try:
@@ -704,6 +770,280 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._reduced_motion = bool(value)
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_reduced_motion(self._reduced_motion)
+
+    def enter_replay_mode(self, session_id: str) -> bool:
+        target_session = str(session_id or "").strip()
+        if not target_session:
+            return False
+        workspace_id = self._workspace_id()
+        session_root = replay_session_store.session_dir(workspace_id, target_session)
+        if not session_root.exists():
+            self._refresh_replay_sessions()
+            self.status_label.setText(f"Replay session not found: {target_session}")
+            return False
+        try:
+            timeline = load_replay_session(session_root)
+            controller = ReplayController(timeline)
+        except Exception as exc:
+            self.status_label.setText(f"Replay load failed: {exc}")
+            return False
+
+        self._replay_prev_live_enabled = bool(self._live_enabled)
+        self._replay_mode_active = True
+        self._replay_session_id = target_session
+        self._replay_controller = controller
+        self._replay_buffered_live_count = 0
+        self._live_enabled = False
+        self.live_toggle.blockSignals(True)
+        self.live_toggle.setChecked(False)
+        self.live_toggle.blockSignals(False)
+
+        combo_index = self.replay_session_combo.findData(target_session)
+        if combo_index >= 0:
+            self.replay_session_combo.blockSignals(True)
+            self.replay_session_combo.setCurrentIndex(combo_index)
+            self.replay_session_combo.blockSignals(False)
+
+        self._sync_replay_slider()
+        self._sync_replay_controls()
+        self._render_current_graph()
+        if controller.timeline.ordered_seqs:
+            self.set_replay_seq(controller.timeline.ordered_seqs[0])
+        else:
+            self._apply_replay_seek_result(controller.current_seek_result)
+        self.status_label.setText(f"Replay mode active: {target_session}")
+        return True
+
+    def exit_replay_mode(self) -> None:
+        if self._replay_tick_timer.isActive():
+            self._replay_tick_timer.stop()
+        self.replay_play_toggle.blockSignals(True)
+        self.replay_play_toggle.setChecked(False)
+        self.replay_play_toggle.blockSignals(False)
+        self.replay_play_toggle.setText("Play")
+
+        if not self._replay_mode_active:
+            self._sync_replay_controls()
+            self._update_replay_status_label()
+            return
+
+        self._replay_mode_active = False
+        self._replay_controller = None
+        self._replay_session_id = None
+        self._replay_buffered_live_count = 0
+        self._live_enabled = bool(self._replay_prev_live_enabled)
+        self.live_toggle.blockSignals(True)
+        self.live_toggle.setChecked(self._live_enabled)
+        self.live_toggle.blockSignals(False)
+        self._sync_replay_controls()
+        self._render_current_graph()
+        self.status_label.setText("Replay mode exited.")
+
+    def set_replay_seq(self, seq: int) -> ReplaySeekResult:
+        controller = self._replay_controller
+        if controller is None:
+            raise RuntimeError("Replay mode is not active")
+        result = controller.scrub_to_seq(seq)
+        self._render_current_graph()
+        self._apply_replay_seek_result(result)
+        self._sync_replay_slider()
+        return result
+
+    def set_replay_speed(self, multiplier: float) -> float:
+        controller = self._replay_controller
+        if controller is None:
+            raise RuntimeError("Replay mode is not active")
+        speed = controller.set_speed(multiplier)
+        speed_index = self.replay_speed_combo.findData(float(speed))
+        if speed_index >= 0:
+            self.replay_speed_combo.blockSignals(True)
+            self.replay_speed_combo.setCurrentIndex(speed_index)
+            self.replay_speed_combo.blockSignals(False)
+        self._update_replay_status_label()
+        return speed
+
+    def _selected_replay_session_id(self) -> str:
+        value = self.replay_session_combo.currentData()
+        if value:
+            return str(value)
+        return str(self.replay_session_combo.currentText() or "").strip()
+
+    def _refresh_replay_sessions(self) -> None:
+        current = self._selected_replay_session_id()
+        try:
+            entries = replay_session_store.list_sessions(self._workspace_id())
+        except Exception:
+            entries = []
+        self.replay_session_combo.blockSignals(True)
+        self.replay_session_combo.clear()
+        for entry in entries:
+            session_id = str(entry.get("session_id") or "").strip()
+            if not session_id:
+                continue
+            status = str(entry.get("status") or "")
+            records = int((entry.get("meta") or {}).get("counts", {}).get("records", 0))
+            label = f"{session_id} ({status}, {records} records)"
+            self.replay_session_combo.addItem(label, session_id)
+        if current:
+            idx = self.replay_session_combo.findData(current)
+            if idx >= 0:
+                self.replay_session_combo.setCurrentIndex(idx)
+        self.replay_session_combo.blockSignals(False)
+        self._sync_replay_controls()
+        self._update_replay_status_label()
+
+    def _sync_replay_slider(self) -> None:
+        controller = self._replay_controller
+        timeline = controller.timeline if controller is not None else None
+        ordered = list(timeline.ordered_seqs) if timeline is not None else []
+        self.replay_seq_slider.blockSignals(True)
+        if ordered:
+            self.replay_seq_slider.setMinimum(int(ordered[0]))
+            self.replay_seq_slider.setMaximum(int(ordered[-1]))
+            self.replay_seq_slider.setValue(int(controller.snapshot.current_seq))
+        else:
+            self.replay_seq_slider.setMinimum(0)
+            self.replay_seq_slider.setMaximum(0)
+            self.replay_seq_slider.setValue(0)
+        self.replay_seq_slider.blockSignals(False)
+
+    def _sync_replay_controls(self) -> None:
+        has_session = self.replay_session_combo.count() > 0
+        in_replay = bool(self._replay_mode_active and self._replay_controller is not None)
+        self.replay_enter_btn.setEnabled(has_session and not in_replay)
+        self.replay_exit_btn.setEnabled(in_replay)
+        self.replay_session_combo.setEnabled(not in_replay)
+        self.replay_play_toggle.setEnabled(in_replay)
+        self.replay_speed_combo.setEnabled(in_replay)
+        self.replay_jump_back_btn.setEnabled(in_replay)
+        self.replay_jump_forward_btn.setEnabled(in_replay)
+        self.replay_seq_slider.setEnabled(in_replay)
+        live_allowed = bool((not self._safe_mode) and self._runtime_hub and (not in_replay))
+        self.live_toggle.setEnabled(live_allowed)
+        self._update_replay_status_label()
+
+    def _update_replay_status_label(self) -> None:
+        controller = self._replay_controller
+        if not self._replay_mode_active or controller is None:
+            self.replay_status_label.setText("Replay: off")
+            return
+        snapshot = controller.snapshot
+        state = "playing" if snapshot.is_playing else "paused"
+        session_id = str(self._replay_session_id or "n/a")
+        text = (
+            f"Replay {state}: {session_id} | seq {snapshot.current_seq} "
+            f"| {snapshot.speed_multiplier:g}x"
+        )
+        if self._replay_buffered_live_count > 0:
+            text += f" | Live paused ({self._replay_buffered_live_count})"
+        self.replay_status_label.setText(text)
+
+    def _apply_replay_seek_result(self, result: ReplaySeekResult) -> None:
+        trace_state = result.trace_state if isinstance(result.trace_state, dict) else {}
+        edges_raw = trace_state.get("edges")
+        nodes_raw = trace_state.get("nodes")
+        trace_edges = []
+        if isinstance(edges_raw, list):
+            for item in edges_raw:
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    src = str(item[0]).strip()
+                    dst = str(item[1]).strip()
+                    if src and dst:
+                        trace_edges.append((src, dst))
+        trace_nodes = set()
+        if isinstance(nodes_raw, list):
+            for node_id in nodes_raw:
+                text = str(node_id).strip()
+                if text:
+                    trace_nodes.add(text)
+        self._monitor_active_trace_id = str(trace_state.get("active_trace_id") or "") or None
+        self._monitor_trace_pinned = False
+
+        if self._monitor_enabled:
+            self.scene.set_monitor_states(dict(result.monitor_state))
+            if self._monitor_show_edge_path:
+                self.scene.set_trace_highlight(trace_edges, trace_nodes, color=MONITOR_TRACE_COLOR)
+            else:
+                self.scene.set_trace_highlight([], set(), color=MONITOR_TRACE_COLOR)
+        else:
+            self.scene.set_monitor_states({})
+            self.scene.set_trace_highlight([], set(), color=MONITOR_TRACE_COLOR)
+        self._sync_replay_slider()
+        self._update_replay_status_label()
+        self._update_mode_status(0, 0)
+
+    def _on_enter_replay_clicked(self) -> None:
+        session_id = self._selected_replay_session_id()
+        self.enter_replay_mode(session_id)
+
+    def _on_replay_session_changed(self, _index: int) -> None:
+        self._sync_replay_controls()
+
+    def _on_replay_play_toggled(self, checked: bool) -> None:
+        controller = self._replay_controller
+        if controller is None or not self._replay_mode_active:
+            self.replay_play_toggle.blockSignals(True)
+            self.replay_play_toggle.setChecked(False)
+            self.replay_play_toggle.blockSignals(False)
+            self.replay_play_toggle.setText("Play")
+            return
+        if checked:
+            result = controller.play()
+            self.replay_play_toggle.setText("Pause")
+            if not self._replay_tick_timer.isActive():
+                self._replay_tick_timer.start()
+        else:
+            result = controller.pause()
+            self.replay_play_toggle.setText("Play")
+            if self._replay_tick_timer.isActive():
+                self._replay_tick_timer.stop()
+        self._apply_replay_seek_result(result)
+
+    def _on_replay_speed_changed(self, index: int) -> None:
+        if index < 0 or self._replay_controller is None or not self._replay_mode_active:
+            return
+        speed = self.replay_speed_combo.itemData(index)
+        if speed is None:
+            return
+        self.set_replay_speed(float(speed))
+
+    def _on_replay_jump_back(self) -> None:
+        controller = self._replay_controller
+        if controller is None or not self._replay_mode_active:
+            return
+        result = controller.jump_backward()
+        self._render_current_graph()
+        self._apply_replay_seek_result(result)
+
+    def _on_replay_jump_forward(self) -> None:
+        controller = self._replay_controller
+        if controller is None or not self._replay_mode_active:
+            return
+        result = controller.jump_forward()
+        self._render_current_graph()
+        self._apply_replay_seek_result(result)
+
+    def _on_replay_slider_changed(self, value: int) -> None:
+        if not self._replay_mode_active or self._replay_controller is None:
+            return
+        self.set_replay_seq(value)
+
+    def _on_replay_tick(self) -> None:
+        controller = self._replay_controller
+        if controller is None or not self._replay_mode_active:
+            if self._replay_tick_timer.isActive():
+                self._replay_tick_timer.stop()
+            return
+        result = controller.tick(REPLAY_TICK_MS)
+        self._render_current_graph()
+        self._apply_replay_seek_result(result)
+        if not controller.snapshot.is_playing:
+            if self._replay_tick_timer.isActive():
+                self._replay_tick_timer.stop()
+            self.replay_play_toggle.blockSignals(True)
+            self.replay_play_toggle.setChecked(False)
+            self.replay_play_toggle.blockSignals(False)
+            self.replay_play_toggle.setText("Play")
 
     def _handle_back(self) -> None:
         self._save_layout()
@@ -1092,7 +1432,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.scene.set_icon_style(self._resolved_icon_style())
         self.scene.set_badge_layers(self._view_config.show_badge_layers)
         self._update_span_tints(filtered)
-        self._apply_monitor_overlay(now=time.time())
+        if self._replay_mode_active and self._replay_controller is not None:
+            self._apply_replay_seek_result(self._replay_controller.current_seek_result)
+        else:
+            self._apply_monitor_overlay(now=time.time())
         self._update_debug_status()
         self._ensure_status_timer()
         self._update_peek_controls()
@@ -1374,6 +1717,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.compare_action.setVisible(diff_visible)
         self._sync_monitor_actions()
         self._sync_trail_focus_controls()
+        self._sync_replay_controls()
         self._update_mode_status(0, 0)
 
     def _build_view_menu(self) -> None:
@@ -2707,6 +3051,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
     # --- [NAV-70B] status tick
     def _on_status_tick(self) -> None:
         self._update_debug_status()
+        if self._replay_mode_active:
+            self._update_replay_status_label()
+            self._update_mode_status(0, 0)
+            self._flush_session_recorder()
+            active_signals = self.scene.signals_active_count() if self.scene else 0
+            active_spans = self._runtime_hub.active_span_count() if self._runtime_hub else 0
+            if not active_signals and not active_spans:
+                self._status_timer.stop()
+            return
         self._refresh_span_activity()
         before_states = self._monitor.snapshot_states()
         before_trace = self._monitor.snapshot_trace()
@@ -2859,6 +3212,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         return f"{int(age_s // 3600)}h"
 
     def _refresh_span_activity(self) -> None:
+        if self._replay_mode_active:
+            return
         if not self._runtime_hub:
             return
         active_spans = self._runtime_hub.list_active_spans()
@@ -2936,6 +3291,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._render_current_graph()
 
     def _on_live_toggled(self, checked: bool) -> None:
+        if self._replay_mode_active:
+            self._live_enabled = False
+            self.live_toggle.blockSignals(True)
+            self.live_toggle.setChecked(False)
+            self.live_toggle.blockSignals(False)
+            self._sync_replay_controls()
+            return
         if self._safe_mode:
             self._live_enabled = False
             self.live_toggle.blockSignals(True)
@@ -3150,6 +3512,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         before_states = self._monitor.snapshot_states()
         before_trace = self._monitor.snapshot_trace()
         self._record_runtime_event(event)
+        if self._replay_mode_active:
+            self._replay_buffered_live_count += 1
+            self._update_replay_status_label()
+            self._update_mode_status(0, 0)
+            self._update_debug_status()
+            self._ensure_status_timer()
+            return
         for node_id in event.node_ids or []:
             events = self._events_by_node.setdefault(node_id, [])
             events.append(event)
@@ -4003,6 +4372,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
             pin_state = " pinned" if self._monitor_trace_pinned else ""
             monitor_state = f"On ({trace_text}{pin_state})"
         trail_state = "On" if (self._trail_focus_enabled and self._trail_focus_available()) else "Off"
+        replay_state = None
+        if self._replay_mode_active and self._replay_controller is not None:
+            replay_snapshot = self._replay_controller.snapshot
+            replay_state = (
+                f"{self._replay_session_id or 'n/a'}@{replay_snapshot.current_seq} "
+                f"({replay_snapshot.speed_multiplier:g}x)"
+            )
         filter_count = len(view_config.build_active_filter_chips(self._view_config))
         filter_count += sum(1 for value in self._diff_filters.values() if value)
         diff_counts = None
@@ -4027,6 +4403,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             f"Lens: {lens_title}",
             screen_label,
             f"Live: {live_state}",
+            f"Replay: {replay_state}" if replay_state else None,
             f"Diff: {diff_state}",
             f"Monitor: {monitor_state}" if monitor_state else None,
             f"Trail: {trail_state}" if self._trail_focus_available() else None,
@@ -4038,6 +4415,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         ]
         if self._live_enabled:
             parts.insert(6, f"Active pulses: {active_pulses}")
+        if self._replay_mode_active and self._replay_buffered_live_count > 0:
+            parts.append(f"Live paused ({self._replay_buffered_live_count})")
         if total_nodes > 0:
             parts.append(f"Showing: {shown_nodes}/{total_nodes}")
         if self._crash_view:
