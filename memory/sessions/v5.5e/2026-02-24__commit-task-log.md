@@ -18,5 +18,6 @@
 ## Notes
 - This file tracks per-commit task execution for v5.5e.
 - Journal mirrors narrative context; this session file tracks commit-level execution state.
-| v5.5e-task-002 | e2 recorder core | active | `feat(V5.5e): add semantic session recorder core modules and deterministic tests` | TBD | none | none | n/a | n/a | `app_ui/codesee/runtime/session_schema.py`, `app_ui/codesee/runtime/session_store.py`, `app_ui/codesee/runtime/session_recording.py`, `tests/test_codesee_session_recording.py` | `compileall runtime`; `pytest test_codesee_session_recording`; `pytest test_codesee_monitoring_mode` |
+| v5.5e-task-002 | e2 recorder core | completed | `feat(V5.5e): add semantic session recorder core modules and deterministic tests` | be085b9 | none | none | n/a | n/a | `app_ui/codesee/runtime/session_schema.py`, `app_ui/codesee/runtime/session_store.py`, `app_ui/codesee/runtime/session_recording.py`, `tests/test_codesee_session_recording.py` | `compileall runtime`; `pytest test_codesee_session_recording`; `pytest test_codesee_monitoring_mode` |
+
 

@@ -15,7 +15,7 @@
 - Each commit is treated as a task and must be logged in session+journal artifacts.
 
 ## Next task
-- Current candidate: commit e2 backend recorder/schema/store foundation and deterministic tests for semantic session recording.
+- Current candidate: start e3 runtime ingestion wiring (record bus/span/monitor/trace transitions into recorder) with fail-soft behavior.
 - Status: active.
 - User override rule: this next task can be rejected, replaced, or paused at any time for fixes or new objectives.
 
@@ -37,4 +37,5 @@
 ## Branch lineage note
 - d9 history currently contains d8 commits due to initial branch base selection (work/v5.5d8 instead of main).
 - accepted by user for this slice after manual conflict resolution.
+
 
