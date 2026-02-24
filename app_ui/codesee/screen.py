@@ -81,6 +81,8 @@ from .runtime.events import (
 # --- [NAV-05] Stable re-exports for tests (lens palette + helpers)
 from .runtime.hub import CodeSeeRuntimeHub
 from .runtime.monitor_state import MonitorState
+from .runtime.session_deltas import monitor_transition_deltas, trace_transition_delta
+from .runtime.session_recording import SessionRecorder, SessionRecorderConfig
 from .runtime.trail_focus import (
     DEFAULT_INACTIVE_EDGE_OPACITY,
     DEFAULT_INACTIVE_NODE_OPACITY,
@@ -267,6 +269,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
             span_stuck_seconds=int(self._view_config.span_stuck_seconds),
             follow_last_trace=self._monitor_follow_last_trace,
         )
+        self._session_recording_enabled = True
+        self._session_recorder: Optional[SessionRecorder] = None
         self._monitor_active_trace_id: Optional[str] = None
         self._monitor_trace_pinned = False
         self._events_by_node: Dict[str, list[CodeSeeEvent]] = {}
@@ -558,6 +562,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if self._runtime_hub and not self._runtime_connected:
             self._runtime_hub.event_emitted.connect(self._on_runtime_event)
             self._runtime_connected = True
+        
+        self._start_session_recorder()
         if self._safe_mode:
             self.live_toggle.setChecked(False)
             self.live_toggle.setEnabled(False)
@@ -607,6 +613,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._diff_compare_graph = None
         self._diff_filters = {key: False for key in self._diff_filters}
         self._live_enabled = bool(self._view_config.live_enabled)
+        self._restart_session_recorder()
         self._events_by_node.clear()
         self._overlay_badges.clear()
         self._overlay_checks.clear()
@@ -683,6 +690,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def cleanup(self) -> None:
         if self._status_timer and self._status_timer.isActive():
             self._status_timer.stop()
+        self._stop_session_recorder()
         if self._runtime_hub and self._runtime_connected:
             try:
                 self._runtime_hub.event_emitted.disconnect(self._on_runtime_event)
@@ -2295,16 +2303,22 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._apply_trail_focus_overlay(now=current_now)
 
     def _clear_monitor_state(self) -> None:
+        before_states = self._monitor.snapshot_states()
+        before_trace = self._monitor.snapshot_trace()
         self._monitor.clear()
         self._monitor_trace_pinned = False
         self._monitor_active_trace_id = None
+        self._record_monitor_trace_deltas(before_states, before_trace, reason="monitor.clear")
         self._apply_monitor_overlay(now=time.time())
         self._update_mode_status(0, 0)
         self.status_label.setText("Monitoring state cleared.")
 
     def _on_monitor_follow_toggled(self, checked: bool) -> None:
+        before_states = self._monitor.snapshot_states()
+        before_trace = self._monitor.snapshot_trace()
         self._monitor_follow_last_trace = bool(checked)
         self._monitor.set_follow_last_trace(self._monitor_follow_last_trace)
+        self._record_monitor_trace_deltas(before_states, before_trace, reason="trace.follow.toggle")
         self._persist_view_config()
         self._apply_monitor_overlay(now=time.time())
         self._update_mode_status(0, 0)
@@ -2397,15 +2411,21 @@ class CodeSeeScreen(QtWidgets.QWidget):
         trace_id = str(self._monitor_active_trace_id or "").strip()
         if not trace_id:
             return
+        before_states = self._monitor.snapshot_states()
+        before_trace = self._monitor.snapshot_trace()
         self._monitor.pin_trace(trace_id)
         self._monitor_trace_pinned = True
+        self._record_monitor_trace_deltas(before_states, before_trace, reason="trace.pin")
         self._apply_monitor_overlay(now=time.time())
         self._update_mode_status(0, 0)
         self.status_label.setText(f"Pinned trace {trace_id[:8]}.")
 
     def _unpin_monitor_trace(self) -> None:
+        before_states = self._monitor.snapshot_states()
+        before_trace = self._monitor.snapshot_trace()
         self._monitor.unpin_trace()
         self._monitor_trace_pinned = False
+        self._record_monitor_trace_deltas(before_states, before_trace, reason="trace.unpin")
         self._apply_monitor_overlay(now=time.time())
         self._update_mode_status(0, 0)
         self.status_label.setText("Trace pin cleared.")
@@ -2688,12 +2708,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _on_status_tick(self) -> None:
         self._update_debug_status()
         self._refresh_span_activity()
+        before_states = self._monitor.snapshot_states()
+        before_trace = self._monitor.snapshot_trace()
         if self._monitor_enabled:
             self._apply_monitor_overlay(now=time.time())
             self._update_mode_status(0, 0)
         elif self._trail_focus_enabled:
             self._apply_trail_focus_overlay(now=time.time())
             self._update_mode_status(0, 0)
+        self._record_monitor_trace_deltas(before_states, before_trace, reason="status.tick")
+        self._flush_session_recorder()
         active_signals = self.scene.signals_active_count() if self.scene else 0
         active_spans = self._runtime_hub.active_span_count() if self._runtime_hub else 0
         if not active_signals and not active_spans:
@@ -2786,7 +2810,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             label = f"{label} ({_format_active_total(active_count, total_count)})"
             last_seen = status.get("last_seen")
             if isinstance(last_seen, (int, float)):
-                label = f"{label} â€” {self._format_age(float(last_seen))} ago"
+                label = f"{label} Ã¢â‚¬â€ {self._format_age(float(last_seen))} ago"
             action = QtGui.QAction(label, menu)
             icon = self._status_icon(status.get("color"))
             if icon:
@@ -3027,10 +3051,89 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         self.status_label.setText(summary)
         self._update_action_state()
+    def _start_session_recorder(self) -> None:
+        if not self._session_recording_enabled:
+            return
+        try:
+            self._session_recorder = SessionRecorder(
+                SessionRecorderConfig(workspace_id=self._workspace_id())
+            )
+            self._session_recorder.start_session(build_info=self._build_info)
+        except Exception as exc:
+            self._session_recorder = None
+            self._session_recording_enabled = False
+            log_buffer.LOG_BUFFER.append(f"session recorder disabled (start failed): {exc}")
+
+    def _stop_session_recorder(self) -> None:
+        recorder = self._session_recorder
+        if recorder is None:
+            return
+        self._session_recorder = None
+        try:
+            recorder.stop_session()
+        except Exception as exc:
+            log_buffer.LOG_BUFFER.append(f"session recorder stop failed: {exc}")
+
+    def _restart_session_recorder(self) -> None:
+        was_enabled = bool(self._session_recording_enabled)
+        self._stop_session_recorder()
+        if was_enabled:
+            self._start_session_recorder()
+
+    def _record_runtime_event(self, event: CodeSeeEvent) -> None:
+        recorder = self._session_recorder
+        if recorder is None:
+            return
+        try:
+            recorder.record_event(event)
+        except Exception as exc:
+            self._session_recorder = None
+            self._session_recording_enabled = False
+            log_buffer.LOG_BUFFER.append(f"session recorder disabled (event failed): {exc}")
+
+    def _record_monitor_trace_deltas(
+        self,
+        before_states: Dict[str, dict],
+        before_trace: tuple[list[tuple[str, str]], set[str], Optional[str]],
+        *,
+        reason: str,
+    ) -> None:
+        recorder = self._session_recorder
+        if recorder is None:
+            return
+        after_states = self._monitor.snapshot_states()
+        after_trace = self._monitor.snapshot_trace()
+        deltas = monitor_transition_deltas(before_states, after_states, reason=reason)
+        trace_delta = trace_transition_delta(before_trace, after_trace, reason=reason)
+        if trace_delta:
+            deltas.append(trace_delta)
+        if not deltas:
+            return
+        try:
+            for delta in deltas:
+                recorder.record_state_delta(delta)
+        except Exception as exc:
+            self._session_recorder = None
+            self._session_recording_enabled = False
+            log_buffer.LOG_BUFFER.append(f"session recorder disabled (delta failed): {exc}")
+
+    def _flush_session_recorder(self) -> None:
+        recorder = self._session_recorder
+        if recorder is None:
+            return
+        try:
+            recorder.flush()
+        except Exception as exc:
+            self._session_recorder = None
+            self._session_recording_enabled = False
+            log_buffer.LOG_BUFFER.append(f"session recorder disabled (flush failed): {exc}")
 
     # --- [NAV-70C] runtime event handler
     def _on_runtime_event(self, event: CodeSeeEvent) -> None:
         now = time.time()
+        before_states = self._monitor.snapshot_states()
+        before_trace = self._monitor.snapshot_trace()
+        self._record_runtime_event(event)
         for node_id in event.node_ids or []:
             events = self._events_by_node.setdefault(node_id, [])
             events.append(event)
@@ -3040,6 +3143,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 self._add_overlay_badge(node_id, event)
                 self._add_overlay_check(node_id, event)
         self._monitor.on_event(event)
+        self._record_monitor_trace_deltas(before_states, before_trace, reason=f"runtime.event:{event.kind}")
         if self._live_enabled:
             self._render_current_graph()
             self._emit_live_signal(event)
@@ -3890,7 +3994,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             diff_counts = (
                 f"+{len(self._diff_result.nodes_added)} "
                 f"-{len(self._diff_result.nodes_removed)} "
-                f"Î”{len(self._diff_result.nodes_changed)}"
+                f"ÃŽâ€{len(self._diff_result.nodes_changed)}"
             )
         screen_label = f"Screen: {self._screen_context}" if self._screen_context else None
         bus_state = "Disconnected"
