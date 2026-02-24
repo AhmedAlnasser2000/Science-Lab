@@ -10,11 +10,13 @@
 # [NAV-34] Segments/panels: Jobs
 # [NAV-35] Segments/panels: Pillars
 # [NAV-36] Segments/panels: Crashes
+# [NAV-37] Segments/panels: Sessions
 # [NAV-90] Small UI helpers / formatters
 # [NAV-99] End
 # =============================================================================
 
 # === [NAV-00] Imports / constants ============================================
+import json
 import sys
 import time
 from datetime import datetime
@@ -80,6 +82,11 @@ except Exception:  # pragma: no cover - defensive
     SpanStart = None
     SpanUpdate = None
     SpanEnd = None
+
+try:
+    from app_ui.codesee.runtime import session_store as codesee_session_store
+except Exception:  # pragma: no cover - defensive
+    codesee_session_store = None
 
 BUS_REPORT_REQUEST = (
     BUS_TOPICS.CORE_STORAGE_REPORT_REQUEST if BUS_TOPICS else "core.storage.report.request"
@@ -287,6 +294,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._pillars_report_path: Optional[Path] = None
         self._pillars_report: Optional[Dict[str, Any]] = None
         self._pillars_fail_only = False
+        self._session_rows: list[Dict[str, Any]] = []
+        self._sessions_workspace_id = "default"
         self._connect_ui_signals()
         self._bus_dispatch_bridge = _BusDispatchBridge(self)
 
@@ -318,7 +327,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._segment_modules_btn = _make_segment(f"{terms.TOPIC}s", 4)
         self._segment_content_btn = _make_segment("Content", 5)
         self._segment_jobs_btn = _make_segment("Jobs", 6)
-        self._segment_crashes_btn = _make_segment("Crashes", 7)
+        self._segment_sessions_btn = _make_segment("Sessions", 7)
+        self._segment_crashes_btn = _make_segment("Crashes", 8)
         for btn in self._segment_buttons:
             segment_row.addWidget(btn)
         segment_row.addStretch()
@@ -657,6 +667,80 @@ class SystemHealthScreen(QtWidgets.QWidget):
         page_jobs_layout.addStretch()
         self._stack.addWidget(page_jobs)
 
+        page_sessions = QtWidgets.QWidget()
+        page_sessions_layout = QtWidgets.QVBoxLayout(page_sessions)
+        page_sessions_layout.setContentsMargins(0, 0, 0, 0)
+
+        sessions_toolbar = QtWidgets.QHBoxLayout()
+        self.sessions_refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.sessions_refresh_btn.clicked.connect(self._refresh_sessions_panel)
+        sessions_toolbar.addWidget(self.sessions_refresh_btn)
+        self.sessions_open_btn = QtWidgets.QPushButton("Open selected folder")
+        self.sessions_open_btn.clicked.connect(self._open_selected_session_folder)
+        self.sessions_open_btn.setEnabled(False)
+        sessions_toolbar.addWidget(self.sessions_open_btn)
+        self.sessions_open_root_btn = QtWidgets.QPushButton("Open sessions root")
+        self.sessions_open_root_btn.clicked.connect(self._open_sessions_root_folder)
+        sessions_toolbar.addWidget(self.sessions_open_root_btn)
+        self.sessions_workspace_label = QtWidgets.QLabel(f"{terms.PROJECT}: default")
+        self.sessions_workspace_label.setStyleSheet("color: #444;")
+        sessions_toolbar.addWidget(self.sessions_workspace_label)
+        sessions_toolbar.addStretch()
+        page_sessions_layout.addLayout(sessions_toolbar)
+
+        self.sessions_status = QtWidgets.QLabel("No sessions loaded yet.")
+        self.sessions_status.setStyleSheet("color: #555;")
+        page_sessions_layout.addWidget(self.sessions_status)
+
+        self.sessions_table = QtWidgets.QTableWidget(0, 11)
+        self.sessions_table.setHorizontalHeaderLabels(
+            [
+                "Session",
+                "Status",
+                "Start",
+                "End",
+                "Records",
+                "Events",
+                "Deltas",
+                "Keyframes",
+                "Corrupt",
+                "Schema",
+                "Size",
+            ]
+        )
+        sessions_header = self.sessions_table.horizontalHeader()
+        sessions_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        sessions_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(7, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(8, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(9, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        sessions_header.setSectionResizeMode(10, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.sessions_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.sessions_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.sessions_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.sessions_table.currentCellChanged.connect(self._on_sessions_row_changed)
+        page_sessions_layout.addWidget(self.sessions_table, stretch=1)
+
+        self.sessions_detail = QtWidgets.QPlainTextEdit()
+        self.sessions_detail.setReadOnly(True)
+        self.sessions_detail.setPlaceholderText("Select a session to inspect summary metadata.")
+        self.sessions_detail.setMaximumHeight(180)
+        page_sessions_layout.addWidget(self.sessions_detail)
+
+        self._stack.addWidget(page_sessions)
+        self._sessions_page_index = self._stack.count() - 1
+
         page_crashes = QtWidgets.QWidget()
         page_crashes_layout = QtWidgets.QVBoxLayout(page_crashes)
         page_crashes_layout.setContentsMargins(0, 0, 0, 0)
@@ -679,6 +763,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._ensure_default_providers()
         self._render_providers()
         self._refresh_pillars_view()
+        self._refresh_sessions_panel()
 
     def prepare(self) -> None:
         if self.refresh_capability and self._pending_initial_refresh:
@@ -688,9 +773,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self._refresh_inventory()
         self._refresh_content_diagnostics()
         self._refresh_pillars_view()
+        self._refresh_sessions_panel()
 
     def _set_segment(self, index: int) -> None:
-        # --- [NAV-30..36] Segment switch and panel visibility
+        # --- [NAV-30..37] Segment switch and panel visibility
         if index < 0 or index >= self._stack.count():
             return
         self._stack.setCurrentIndex(index)
@@ -698,6 +784,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
             btn.setChecked(idx == index)
         if index == getattr(self, "_content_page_index", -1):
             self._refresh_content_diagnostics()
+        if index == getattr(self, "_sessions_page_index", -1):
+            self._refresh_sessions_panel()
         if index == 1:
             self._refresh_pillars_view()
 
@@ -729,6 +817,12 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.content_diag_refresh_btn.setEnabled(bool(enabled))
         if hasattr(self, "content_diag_copy_btn"):
             self.content_diag_copy_btn.setEnabled(bool(enabled))
+        if hasattr(self, "sessions_refresh_btn"):
+            self.sessions_refresh_btn.setEnabled(bool(enabled))
+        if hasattr(self, "sessions_open_root_btn"):
+            self.sessions_open_root_btn.setEnabled(bool(enabled))
+        if hasattr(self, "sessions_open_btn"):
+            self.sessions_open_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
         self._update_pillars_controls()
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
@@ -1199,6 +1293,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _update_runs_workspace_label(self) -> None:
         if not hasattr(self, "runs_workspace_label"):
             return
+        workspace_id = self._active_workspace_id()
+        self.runs_workspace_label.setText(f"{terms.PROJECT}: {workspace_id}")
+
+    def _active_workspace_id(self) -> str:
         workspace_id = "default"
         if self.bus and BUS_WORKSPACE_GET_ACTIVE_REQUEST:
             try:
@@ -1216,7 +1314,112 @@ class SystemHealthScreen(QtWidgets.QWidget):
                     workspace_id = workspace.get("id") or workspace_id
                 elif isinstance(response.get("id"), str):
                     workspace_id = response.get("id")
-        self.runs_workspace_label.setText(f"{terms.PROJECT}: {workspace_id}")
+        return str(workspace_id or "default")
+
+    def _refresh_sessions_panel(self) -> None:
+        if not hasattr(self, "sessions_table"):
+            return
+        workspace_id = self._active_workspace_id()
+        self._sessions_workspace_id = workspace_id
+        self.sessions_workspace_label.setText(f"{terms.PROJECT}: {workspace_id}")
+        self._session_rows = []
+        self.sessions_table.setRowCount(0)
+        self.sessions_open_btn.setEnabled(False)
+        self.sessions_detail.clear()
+
+        if codesee_session_store is None:
+            self.sessions_status.setText("Sessions panel unavailable: CodeSee runtime session store not importable.")
+            return
+
+        try:
+            entries = codesee_session_store.list_sessions(workspace_id)
+        except Exception as exc:
+            self.sessions_status.setText(f"Sessions load failed: {exc}")
+            return
+
+        for entry in entries:
+            self._session_rows.append(_session_summary_from_entry(entry))
+
+        self.sessions_table.setRowCount(len(self._session_rows))
+        for row_idx, row in enumerate(self._session_rows):
+            cells = [
+                QtWidgets.QTableWidgetItem(str(row.get("session_id") or "")),
+                QtWidgets.QTableWidgetItem(str(row.get("status") or "")),
+                QtWidgets.QTableWidgetItem(str(row.get("started") or "-")),
+                QtWidgets.QTableWidgetItem(str(row.get("ended") or "-")),
+                QtWidgets.QTableWidgetItem(str(row.get("records") or 0)),
+                QtWidgets.QTableWidgetItem(str(row.get("events") or 0)),
+                QtWidgets.QTableWidgetItem(str(row.get("deltas") or 0)),
+                QtWidgets.QTableWidgetItem(str(row.get("keyframes") or 0)),
+                QtWidgets.QTableWidgetItem(str(row.get("corrupt_lines") or 0)),
+                QtWidgets.QTableWidgetItem(str(row.get("schema_version") or "?")),
+                QtWidgets.QTableWidgetItem(str(row.get("size_text") or "0 B")),
+            ]
+            for col_idx, item in enumerate(cells):
+                self.sessions_table.setItem(row_idx, col_idx, item)
+            self.sessions_table.item(row_idx, 0).setData(QtCore.Qt.ItemDataRole.UserRole, row)
+
+        self.sessions_status.setText(
+            f"{len(self._session_rows)} session(s) found for {terms.PROJECT.lower()} '{workspace_id}'."
+        )
+        if self._session_rows:
+            self.sessions_table.selectRow(0)
+            self._render_selected_session_summary(0)
+        else:
+            self.sessions_detail.setPlainText("No CodeSee sessions found for this workspace.")
+
+    def _on_sessions_row_changed(
+        self,
+        current_row: int,
+        current_column: int,
+        previous_row: int,
+        previous_column: int,
+    ) -> None:
+        del current_column, previous_row, previous_column
+        self._render_selected_session_summary(current_row)
+
+    def _render_selected_session_summary(self, row_index: int) -> None:
+        if row_index < 0 or row_index >= len(self._session_rows):
+            self.sessions_open_btn.setEnabled(False)
+            self.sessions_detail.clear()
+            return
+        row = self._session_rows[row_index]
+        summary = {
+            "session_id": row.get("session_id"),
+            "workspace_id": self._sessions_workspace_id,
+            "status": row.get("status"),
+            "schema_version": row.get("schema_version"),
+            "started_at_local": row.get("started"),
+            "ended_at_local": row.get("ended"),
+            "size_bytes": row.get("size_bytes"),
+            "counts": {
+                "records": row.get("records"),
+                "events": row.get("events"),
+                "deltas": row.get("deltas"),
+                "keyframes": row.get("keyframes"),
+                "corrupt_lines": row.get("corrupt_lines"),
+            },
+            "path": row.get("path"),
+            "meta": row.get("meta"),
+        }
+        self.sessions_detail.setPlainText(json.dumps(summary, indent=2, ensure_ascii=False))
+        self.sessions_open_btn.setEnabled(bool(row.get("path")))
+
+    def _open_selected_session_folder(self) -> None:
+        row_index = self.sessions_table.currentRow() if hasattr(self, "sessions_table") else -1
+        if row_index < 0 or row_index >= len(self._session_rows):
+            return
+        path_text = str(self._session_rows[row_index].get("path") or "").strip()
+        if not path_text:
+            return
+        self._open_folder(Path(path_text))
+
+    def _open_sessions_root_folder(self) -> None:
+        workspace_id = self._active_workspace_id()
+        if codesee_session_store is None:
+            self._open_folder(Path("data") / "workspaces" / workspace_id / "codesee" / "sessions")
+            return
+        self._open_folder(codesee_session_store.workspace_sessions_root(workspace_id))
 
     def _on_runs_item_changed(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         if getattr(self, "_runs_syncing", False) or column != 0:
@@ -2149,23 +2352,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             if hasattr(self, "content_diag_tree"):
                 self.content_diag_tree.clear()
             return
-        workspace_id = "default"
-        if self.bus and BUS_WORKSPACE_GET_ACTIVE_REQUEST:
-            try:
-                response = self.bus.request(
-                    BUS_WORKSPACE_GET_ACTIVE_REQUEST,
-                    {},
-                    source="app_ui",
-                    timeout_ms=1000,
-                )
-            except Exception:
-                response = {"ok": False}
-            if response.get("ok"):
-                workspace = response.get("workspace")
-                if isinstance(workspace, dict):
-                    workspace_id = workspace.get("id") or workspace_id
-                elif isinstance(response.get("id"), str):
-                    workspace_id = response.get("id")
+        workspace_id = self._active_workspace_id()
         if force and callable(clear_validation_cache):
             clear_validation_cache()
             try:
@@ -2312,6 +2499,58 @@ class SystemHealthScreen(QtWidgets.QWidget):
                     f"[{item.get('schema_id') or 'no schema'}]"
                 )
         QtWidgets.QApplication.clipboard().setText("\n".join(lines))
+
+
+def _session_summary_from_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    meta = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
+    counts = meta.get("counts") if isinstance(meta.get("counts"), dict) else {}
+    started_ms = meta.get("started_at_ms_epoch")
+    if started_ms is None:
+        started_ms = entry.get("started_at_ms_epoch")
+    ended_ms = meta.get("ended_at_ms_epoch")
+    schema_version = meta.get("schema_version")
+    return {
+        "session_id": str(entry.get("session_id") or meta.get("session_id") or ""),
+        "status": str(meta.get("status") or entry.get("status") or "INCOMPLETE"),
+        "schema_version": str(schema_version if isinstance(schema_version, int) else "?"),
+        "started": _format_session_epoch_ms(started_ms),
+        "ended": _format_session_epoch_ms(ended_ms),
+        "records": _safe_int(counts.get("records")),
+        "events": _safe_int(counts.get("events")),
+        "deltas": _safe_int(counts.get("deltas")),
+        "keyframes": _safe_int(counts.get("keyframes")),
+        "corrupt_lines": _safe_int(counts.get("corrupt_lines")),
+        "size_bytes": _safe_int(entry.get("size_bytes")),
+        "size_text": _format_size_bytes(_safe_int(entry.get("size_bytes"))),
+        "path": str(entry.get("path") or ""),
+        "meta": meta,
+    }
+
+
+def _format_session_epoch_ms(value: Any) -> str:
+    epoch_ms = _safe_int(value)
+    if epoch_ms <= 0:
+        return "-"
+    try:
+        return datetime.fromtimestamp(epoch_ms / 1000.0).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return "-"
+
+
+def _format_size_bytes(value: int) -> str:
+    size = max(0, int(value))
+    if size >= 1024 * 1024:
+        return f"{size / (1024 * 1024):.2f} MB"
+    if size >= 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size} B"
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return 0
 
 
 # === [NAV-99] End =============================================================
