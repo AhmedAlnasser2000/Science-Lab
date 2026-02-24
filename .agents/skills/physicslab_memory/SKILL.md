@@ -27,6 +27,8 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `DISCUSSION APPROVE`
      - `CANON SAVE`
      - `CS`
+     - `WORKLOG AUTO ON`
+     - `WORKLOG AUTO OFF`
    - Accepted aliases (input-only):
      - `MC` => `MEMORY CAPTURE`
      - `MP` => `MEMORY PROMOTE`
@@ -41,9 +43,15 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - aliases are reserved and unique,
      - alias matching is case-insensitive,
      - canonical command names are used for approvals/index/canonical records.
+   - Alias help command:
+     - `H` / `h` prints current alias mappings and trigger list.
+     - This helper command does not write to `memory/`.
    - Canon-save exactness:
      - `CANON SAVE` and `CS` are both exact trigger phrases.
      - `CS` is not alias-only behavior.
+   - Worklog-auto exactness:
+     - `WORKLOG AUTO ON` and `WORKLOG AUTO OFF` are exact trigger phrases.
+     - No short aliases are defined for these commands yet.
 
 2.1 Git approval gate:
    - Do not run `git commit` without explicit user approval.
@@ -91,6 +99,16 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
    - Create/update a journal entry in `memory/journal/`.
    - Update `memory/INDEX.md` links.
 
+5.1 Operational auto mode policy:
+   - `WORKLOG AUTO ON` enables operational auto updates after each completed task/gate/mid-gate.
+   - Auto-update scope:
+     - `memory/current-state.md`
+     - `memory/sessions/`
+     - `memory/journal/`
+     - `memory/runbooks/` when procedure-level changes exist.
+   - `WORKLOG AUTO OFF` disables this behavior.
+   - Auto mode never writes canon directly and never auto-promotes decisions/issues.
+
 6. Trigger exactness guard:
    - Keep the same trigger spellings in:
      - `memory/PROTOCOL.md`
@@ -117,3 +135,6 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
 - `DISCUSSION ARCHIVE`: move discussion active -> archived and update discussion index.
 - `DISCUSSION APPROVE`: create canonical extract + update approvals ledger + update index.
 - `CANON SAVE` / `CS`: append verbatim canon entry and return optional promotion suggestions.
+- `WORKLOG AUTO ON`: enable automatic operational updates for current-state/sessions/journal/runbooks (when applicable).
+- `WORKLOG AUTO OFF`: disable automatic operational updates and return to trigger-only writes.
+- `H` / `h`: show current alias mappings and trigger list (no write).

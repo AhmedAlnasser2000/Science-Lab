@@ -30,6 +30,8 @@ No writes to `memory/` unless the user explicitly commands one of these exact tr
 - `DISCUSSION APPROVE`
 - `CANON SAVE`
 - `CS`
+- `WORKLOG AUTO ON`
+- `WORKLOG AUTO OFF`
 
 Accepted aliases (input-only; canonical commands above remain source-of-truth):
 - `MC` => `MEMORY CAPTURE`
@@ -45,6 +47,14 @@ Accepted aliases (input-only; canonical commands above remain source-of-truth):
 `CS` behavior (default):
 - Append one verbatim entry to canon ledger.
 - Then suggest optional promotion commands only (no auto-promotion).
+
+Alias help command:
+- `H` / `h`: show current trigger and alias mappings (helper only, no write).
+
+Worklog auto mode (operational):
+- `WORKLOG AUTO ON`: after each completed task/gate/mid-gate, update current-state/sessions/journal and runbooks when procedure changes exist.
+- `WORKLOG AUTO OFF`: stop automatic operational updates and return to trigger-only writes.
+- This mode does not auto-write canon and does not auto-promote decisions/issues.
 
 ## Provenance and time format
 - Memory records should include:

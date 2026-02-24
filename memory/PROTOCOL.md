@@ -40,6 +40,8 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
 - `DISCUSSION APPROVE`
 - `CANON SAVE`
 - `CS`
+- `WORKLOG AUTO ON`
+- `WORKLOG AUTO OFF`
 
 ### Trigger aliases (input convenience)
 Canonical commands above remain source-of-truth. The following short aliases are accepted as input only:
@@ -57,6 +59,14 @@ Alias rules:
 - aliases are reserved and non-reusable (global within memory protocol),
 - alias matching is case-insensitive,
 - canonical command names are used in approvals/index/canonical records.
+
+Alias help command:
+- `H` / `h` prints current alias mappings and trigger list.
+- This is a helper command only and does not write to `memory/`.
+
+Worklog auto note:
+- `WORKLOG AUTO ON` and `WORKLOG AUTO OFF` are exact trigger phrases.
+- No short aliases are defined for these commands yet.
 
 Canon save note:
 - `CANON SAVE` and `CS` are both exact trigger phrases.
@@ -109,8 +119,26 @@ Canon save note:
 ### `CHECKPOINT UPDATE`
 - Update `memory/current-state.md` and checkpoint summary/dossier pointers.
 
+### `WORKLOG AUTO ON`
+- Enable operational auto mode for this repo/workspace.
+- While enabled, after each completed task/gate/mid-gate:
+  - update `memory/current-state.md`,
+  - update/add session artifact under `memory/sessions/`,
+  - update/add journal entry under `memory/journal/`,
+  - update `memory/runbooks/` when a repeatable operational procedure was added or changed.
+- Canon remains explicit-only (`CS` / `CANON SAVE`).
+- Decisions/issues remain explicit promotion/approval only.
+
+### `WORKLOG AUTO OFF`
+- Disable operational auto mode.
+- After disable, writes return to trigger-only behavior.
+
 ### `INDEX UPDATE`
 - Update only `memory/INDEX.md`.
+
+### `H` / `h` (alias help)
+- Show current trigger list and alias mappings.
+- No writes are performed.
 
 ### `DISCUSSION SAVE`
 - Create a discussion doc in `memory/discussions/active/` from template.
@@ -144,23 +172,6 @@ Canon save note:
   - `canonical_targets`
   - `commit_hash` once committed.
 
-### `CANON SAVE` / `CS`
-- Append one verbatim entry to `memory/canon/verbatim_ledger.md` with:
-  - global `entry_id`
-  - `saved_at_local`
-  - `user_region`
-  - `user_timezone`
-  - `recorded_by_agent`
-  - `source_type`
-  - `source_ref` when applicable
-  - `text_verbatim`
-- Update `memory/canon/INDEX.md` (`latest_entry_id`, `next_entry_id`).
-- Do not auto-update `memory/current-state.md`, `memory/world-canon.md`, or canonical decisions/issues/runbooks.
-- After save, suggest optional follow-up commands only:
-  - `MEMORY PROMOTE`
-  - `CHECKPOINT UPDATE`
-  - `DISCUSSION APPROVE`
-
 ## 5) Discussions lane policy (non-binding)
 - `memory/discussions/*` is context only.
 - Discussions are not truth by default.
@@ -189,6 +200,18 @@ Canon save note:
 - `memory/current-state.md` may include `Locked decisions` and `Next task`.
 - `Next task` is operational guidance only and never binding.
 - User can reject/replace/pause `Next task` at any time for fixes or changed objectives.
+
+## 7.2) Operational auto mode
+- Auto mode is controlled only by explicit triggers:
+  - `WORKLOG AUTO ON`
+  - `WORKLOG AUTO OFF`
+- Auto mode updates operational artifacts only:
+  - `memory/current-state.md`
+  - `memory/sessions/`
+  - `memory/journal/`
+  - `memory/runbooks/` (when procedure-level changes exist)
+- Auto mode never writes canon directly and never auto-promotes decisions/issues.
+- If auto mode is enabled and a completed task has no runbook-grade procedure change, skip runbook updates.
 
 ## 8) Snapshot policy
 - Snapshot banners must identify base commit hash explicitly:
@@ -224,5 +247,7 @@ Canon save note:
   - `memory/PROTOCOL.md`
   - `.agents/skills/physicslab_memory/SKILL.md`
   - `memory/README.md` (quick reference list)
+- Include `WORKLOG AUTO ON` and `WORKLOG AUTO OFF` exactly (no underscore variants).
+- Include alias-help command `H` / `h` exactly as a non-write helper.
 - Do not use underscore variants (for example `SESSION_PUBLISH`).
 - Alias table must also stay aligned across the same files.
