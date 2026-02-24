@@ -1,4 +1,4 @@
-﻿# Current State
+# Current State
 
 - Repository: PhysicsLab
 - Snapshot generated during slice d9 from working tree based on HEAD 5b5a1d5.
@@ -30,3 +30,7 @@
 ## Notes
 - WORKLOG AUTO ON means completed task/gate updates should be reflected in current-state/sessions/journal (and runbooks when procedure-level changes exist).
 - Canonical truth is protocol + indexed canonical artifacts + code verification.
+
+## Branch lineage note
+- d9 history currently contains d8 commits due to initial branch base selection (work/v5.5d8 instead of main).
+- accepted by user for this slice after manual conflict resolution.

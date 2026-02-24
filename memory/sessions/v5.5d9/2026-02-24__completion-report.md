@@ -1,4 +1,4 @@
-﻿# Completion Report — V5.5d9 Memory Infrastructure (worklog update)
+# Completion Report � V5.5d9 Memory Infrastructure (worklog update)
 
 ## Metadata
 - slice_id: v5.5d9
@@ -49,6 +49,9 @@
 - residual risk:
   - memory docs depend on disciplined trigger usage; no runtime enforcement hooks yet
 
+## Branch lineage note
+- work/v5.5d9 was created from work/v5.5d8 instead of main, so d8 commits appear in d9 branch history.
+- user handled the small PR conflict set manually and chose to keep this lineage for current delivery.
 ## Unresolved items
 - none blocking current memory operation mode
 
@@ -61,3 +64,4 @@
 
 ## Canon references
 - `memory/canon/verbatim_ledger.md` entry: 69
+
