@@ -1,8 +1,8 @@
-# Current State
+﻿# Current State
 
 - Repository: PhysicsLab
-- Snapshot generated during slice v5.5e from working tree based on HEAD b9f2c03 (with pending e6 changes).
-- Active milestone: V5.5e (semantic session recording foundation).
+- Snapshot generated during slice v5.5f from working tree based on origin/main plus pending V5.5f docs changes.
+- Active milestone: V5.5f (CodeSee session replay player roadmap and contract lock).
 - Operational mode: WORKLOG AUTO ON
 - Worklog auto enabled_at_local: 2026-02-24 07:02:26 +03:00
 
@@ -15,15 +15,13 @@
 - Each commit is treated as a task and must be logged in session+journal artifacts.
 
 ## Progress snapshot
-- e1 complete: roadmap + contract doc/index entries.
-- e2 complete: recorder core (`session_schema`, `session_store`, `session_recording`) + deterministic tests.
-- e3 complete: runtime ingestion wiring (events + monitor/trace deltas, fail-soft) + deterministic tests.
-- e4 complete: keyframe cadence (`every K records`) + forced stop keyframe + deterministic reconstructability helper with corrupt-keyframe fallback tests.
-- e5 complete: System Health `Sessions` frontend panel (workspace session list + metadata, read-only summary payload, open selected/root folder actions).
-- e6 complete: retention + hardening (lock-aware prune protection, malformed-line `corrupt_lines` propagation, INCOMPLETE meta normalization) + backend hardening test matrix.
+- V5.5e complete: semantic recording foundation delivered (e1-e6).
+- V5.5f f1 complete: milestone roadmap doc added with decision-complete replay contracts.
+- V5.5f f1 complete: prompt index entry appended for the new milestone doc.
+- V5.5f scope lock includes: seq-driven replay, monitor+trace-first state replay, CodeSee-primary controls, per-session bookmarks sidecar, replay-exclusive rendering with live buffering rule.
 
 ## Next task
-- Current candidate: V5.5e finalization (memory completion + commit/push/PR handoff).
+- Current candidate: V5.5f f2 (replay loader + timeline model baseline).
 - Status: active.
 - User override rule: this next task can be rejected, replaced, or paused at any time for fixes or new objectives.
 
@@ -37,6 +35,8 @@
 - Dictionary snapshots: memory/dictionaries/
 - v5.5e commit task log: memory/sessions/v5.5e/2026-02-24__commit-task-log.md
 - v5.5e journal: memory/journal/2026-02-24__v5.5e-commit-task-tracking.md
+- v5.5f commit task log: memory/sessions/v5.5f/2026-02-24__commit-task-log.md
+- v5.5f journal: memory/journal/2026-02-24__v5.5f-commit-task-tracking.md
 
 ## Notes
 - WORKLOG AUTO ON means completed task/gate updates should be reflected in current-state/sessions/journal (and runbooks when procedure-level changes exist).
