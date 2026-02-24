@@ -51,6 +51,7 @@ Rules:
   - target correct branch
   - recovery artifact path
   - verification method used.
+
 ## Hot-Reload Gate Workflow: Permanent Policy
 
 Gate workflow is mandatory for slice work.

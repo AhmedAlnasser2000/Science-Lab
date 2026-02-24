@@ -54,6 +54,14 @@ Use this skill when the user asks to start a new slice/milestone branch or creat
    - still show pre-push plan and wait for approval before push
    - if conflicts occur, record decisions in `.slice_tmp/<slice_id>/pr_conflict_recovery.md`
    - if PR is already merged/closed, start a new follow-up branch from updated main instead of appending unrelated commits to the closed branch.
+9. If wrong-branch edits are discovered, run patch-first recovery:
+   - stop edits on wrong branch
+   - create `.slice_tmp/<slice_id>/wrong_branch_recovery.patch` in the correct slice
+   - export exact diff from wrong branch to that file
+   - reapply from patch artifact only (no memory retype)
+   - verify parity before commit (no missing/extra hunks)
+   - use commit message suffix `(recovered-from-wrong-branch)`
+   - report source branch, target branch, patch path, and verification method.
 
 ## One-liners
 
