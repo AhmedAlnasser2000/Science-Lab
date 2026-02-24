@@ -1,8 +1,8 @@
 ﻿# Current State
 
 - Repository: PhysicsLab
-- Snapshot generated during slice v5.5f from working tree based on origin/main plus pending V5.5f docs changes.
-- Active milestone: V5.5f (CodeSee session replay player roadmap and contract lock).
+- Snapshot generated during slice v5.5f from HEAD `6c175c9` with pending `f2` replay-loader changes.
+- Active milestone: V5.5f (CodeSee session replay player roadmap and implementation).
 - Operational mode: WORKLOG AUTO ON
 - Worklog auto enabled_at_local: 2026-02-24 07:02:26 +03:00
 
@@ -16,12 +16,11 @@
 
 ## Progress snapshot
 - V5.5e complete: semantic recording foundation delivered (e1-e6).
-- V5.5f f1 complete: milestone roadmap doc added with decision-complete replay contracts.
-- V5.5f f1 complete: prompt index entry appended for the new milestone doc.
-- V5.5f scope lock includes: seq-driven replay, monitor+trace-first state replay, CodeSee-primary controls, per-session bookmarks sidecar, replay-exclusive rendering with live buffering rule.
+- V5.5f f1 complete: milestone roadmap doc + prompt index row committed and pushed (`6c175c9`).
+- V5.5f f2 complete (pending commit): replay loader baseline (`ReplayTimeline`, `ReplayFrame`, `load_replay_session`) with deterministic seq ordering and fail-soft normalization tests.
 
 ## Next task
-- Current candidate: V5.5f f2 (replay loader + timeline model baseline).
+- Current candidate: commit V5.5f f2, then start V5.5f f3 (timeline index + keyframe seek engine).
 - Status: active.
 - User override rule: this next task can be rejected, replaced, or paused at any time for fixes or new objectives.
 
@@ -41,3 +40,4 @@
 ## Notes
 - WORKLOG AUTO ON means completed task/gate updates should be reflected in current-state/sessions/journal (and runbooks when procedure-level changes exist).
 - Canonical truth is protocol + indexed canonical artifacts + code verification.
+- [2026-02-24 14:02:13 +03:00] V5.5f f2_followup_1 complete (pending commit): policy enforcement added to AGENTS/workflow_rules requiring compulsory memory append at each task/gate/mid-gate.

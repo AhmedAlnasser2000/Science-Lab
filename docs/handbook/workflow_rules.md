@@ -1,4 +1,4 @@
-﻿# PhysicsLab Development Workflow Rules
+# PhysicsLab Development Workflow Rules
 _Last updated: 2025-12-26_
 
 This doc defines how we separate **functionality** work from **UX** work so we don’t constantly second-guess whether we’re “doing it in the right order,” especially when redefining foundation systems.
@@ -287,6 +287,13 @@ Agents must follow these rules unless explicitly overridden:
      - For `Backend` completions, include launch command only (no manual checklist unless requested).
      - If launch is blocked in the current environment, state the blocker and provide the closest valid command.
 
+10.1) **Memory appendment is compulsory at each gate/task boundary**
+- At the end of every completed task/gate/mid-gate, append operational memory updates before commit:
+  - `memory/current-state.md`
+  - `memory/sessions/<slice_id>/...`
+  - `memory/journal/...`
+- If one artifact has no substantive content change, write an explicit `no change` note in session/journal.
+- Completion output must list the memory files updated (or explicitly marked no-change).
 ---
 
 ## Example: Block Catalog
