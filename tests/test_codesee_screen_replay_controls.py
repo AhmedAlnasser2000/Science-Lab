@@ -7,7 +7,7 @@ from PyQt6 import QtWidgets, sip
 
 from app_ui.codesee.runtime import session_schema, session_store
 from app_ui.codesee.runtime.events import CodeSeeEvent, EVENT_APP_ERROR
-from app_ui.codesee.screen import CodeSeeScreen
+from app_ui.codesee.screen import CodeSeeScreen, LENS_ATLAS, SOURCE_DEMO
 
 
 _APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -55,6 +55,45 @@ def _write_linear_records(root: Path, *, count: int) -> None:
             )
         )
     session_store.records_path(root).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_replay_state_session(workspace_id: str, session_id: str) -> Path:
+    root = _write_meta(workspace_id, session_id)
+    session_store.write_json(
+        session_store.keyframe_path(root, 1),
+        {
+            "schema_version": session_schema.SCHEMA_VERSION,
+            "keyframe_seq": 1,
+            "snapshot": {
+                "monitor_state": {
+                    "system:app_ui": {
+                        "state": "RUNNING",
+                        "active": True,
+                        "stuck": False,
+                        "fatal": False,
+                    }
+                },
+                "trace_state": {
+                    "active_trace_id": "trace-replay",
+                    "edges": [["system:runtime_bus", "system:app_ui"]],
+                    "nodes": ["system:runtime_bus", "system:app_ui"],
+                    "edge_count": 1,
+                    "node_count": 2,
+                },
+            },
+        },
+    )
+    session_store.records_path(root).write_text(
+        "\n".join(
+            [
+                '{"seq":1,"type":"event","ts_ms_epoch":1000,"ts_utc":"2026-02-24T10:00:01Z","tz_offset_minutes":180,"ts_local":"2026-02-24 13:00:01","kind":"event.1","severity":"info","message":"e1"}',
+                '{"seq":2,"type":"keyframe_ref","ts_ms_epoch":2000,"ts_utc":"2026-02-24T10:00:02Z","tz_offset_minutes":180,"ts_local":"2026-02-24 13:00:02","keyframe_seq":1,"filename":"000001.json"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return root
 
 
 def test_replay_api_surface_enters_and_exits_mode(tmp_path: Path) -> None:
@@ -125,15 +164,42 @@ def test_replay_controls_support_speed_jump_and_slider(tmp_path: Path) -> None:
         screen.replay_speed_combo.setCurrentIndex(speed_index)
         assert screen._replay_controller is not None
         assert screen._replay_controller.snapshot.speed_multiplier == 4.0
+        screen.replay_jump_seconds_spin.setValue(2)
+        assert screen.replay_jump_back_btn.text() == "-2s"
+        assert screen.replay_jump_forward_btn.text() == "+2s"
 
         initial_seq = screen._replay_controller.snapshot.current_seq
         screen._on_replay_jump_forward()
         jumped_seq = screen._replay_controller.snapshot.current_seq
-        assert jumped_seq >= initial_seq
+        assert jumped_seq == min(initial_seq + 2, screen.replay_seq_slider.maximum())
+
+        screen._on_replay_jump_back()
+        assert screen._replay_controller.snapshot.current_seq == initial_seq
 
         target_seq = screen.replay_seq_slider.maximum()
         screen.replay_seq_slider.setValue(target_seq)
         assert screen._replay_controller.snapshot.current_seq == target_seq
+    finally:
+        if not sip.isdeleted(screen):
+            screen.cleanup()
+
+
+def test_replay_trail_focus_uses_replay_monitor_trace_state(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    _write_replay_state_session("default", "replay-trail")
+
+    screen = _make_screen()
+    try:
+        assert screen.enter_replay_mode("replay-trail") is True
+        screen._source = SOURCE_DEMO
+        screen._lens = LENS_ATLAS
+        screen._trail_focus_enabled = True
+        screen.set_replay_seq(2)
+        screen._apply_trail_focus_overlay(now=123.0)
+
+        assert "module.ui" in screen.scene._trail_focus_nodes
+        assert "module.runtime_bus" in screen.scene._trail_focus_nodes
+        assert screen.scene._trail_node_opacity.get("module.ui", 0.0) >= 0.85
     finally:
         if not sip.isdeleted(screen):
             screen.cleanup()

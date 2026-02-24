@@ -480,12 +480,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.replay_speed_combo.addItem(f"{speed:g}x", float(speed))
         self.replay_speed_combo.currentIndexChanged.connect(self._on_replay_speed_changed)
         replay_row.addWidget(self.replay_speed_combo)
+        self.replay_jump_seconds_spin = QtWidgets.QSpinBox()
+        self.replay_jump_seconds_spin.setRange(1, 600)
+        self.replay_jump_seconds_spin.setValue(5)
+        self.replay_jump_seconds_spin.setSuffix("s")
+        self.replay_jump_seconds_spin.valueChanged.connect(self._on_replay_jump_seconds_changed)
+        replay_row.addWidget(self.replay_jump_seconds_spin)
         self.replay_jump_back_btn = QtWidgets.QToolButton()
-        self.replay_jump_back_btn.setText("-5s")
         self.replay_jump_back_btn.clicked.connect(self._on_replay_jump_back)
         replay_row.addWidget(self.replay_jump_back_btn)
         self.replay_jump_forward_btn = QtWidgets.QToolButton()
-        self.replay_jump_forward_btn.setText("+5s")
         self.replay_jump_forward_btn.clicked.connect(self._on_replay_jump_forward)
         replay_row.addWidget(self.replay_jump_forward_btn)
         self.replay_seq_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
@@ -497,6 +501,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.replay_status_label = QtWidgets.QLabel("Replay: off")
         self.replay_status_label.setStyleSheet("color: #555;")
         replay_row.addWidget(self.replay_status_label)
+        self._sync_replay_jump_controls()
         layout.addLayout(replay_row)
 
         self._lens_palette_dock: Optional[QtWidgets.QDockWidget] = None
@@ -784,6 +789,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         try:
             timeline = load_replay_session(session_root)
             controller = ReplayController(timeline)
+            controller.set_jump_seconds(int(self.replay_jump_seconds_spin.value()))
         except Exception as exc:
             self.status_label.setText(f"Replay load failed: {exc}")
             return False
@@ -915,11 +921,13 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.replay_session_combo.setEnabled(not in_replay)
         self.replay_play_toggle.setEnabled(in_replay)
         self.replay_speed_combo.setEnabled(in_replay)
+        self.replay_jump_seconds_spin.setEnabled(has_session)
         self.replay_jump_back_btn.setEnabled(in_replay)
         self.replay_jump_forward_btn.setEnabled(in_replay)
         self.replay_seq_slider.setEnabled(in_replay)
         live_allowed = bool((not self._safe_mode) and self._runtime_hub and (not in_replay))
         self.live_toggle.setEnabled(live_allowed)
+        self._sync_replay_jump_controls()
         self._update_replay_status_label()
 
     def _update_replay_status_label(self) -> None:
@@ -938,11 +946,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
             text += f" | Live paused ({self._replay_buffered_live_count})"
         self.replay_status_label.setText(text)
 
-    def _apply_replay_seek_result(self, result: ReplaySeekResult) -> None:
-        trace_state = result.trace_state if isinstance(result.trace_state, dict) else {}
-        edges_raw = trace_state.get("edges")
-        nodes_raw = trace_state.get("nodes")
-        trace_edges = []
+    def _sync_replay_jump_controls(self) -> None:
+        step = int(self.replay_jump_seconds_spin.value())
+        self.replay_jump_back_btn.setText(f"-{step}s")
+        self.replay_jump_forward_btn.setText(f"+{step}s")
+
+    @staticmethod
+    def _trace_overlay_from_state(trace_state: Any) -> tuple[list[tuple[str, str]], set[str]]:
+        state = trace_state if isinstance(trace_state, dict) else {}
+        edges_raw = state.get("edges")
+        nodes_raw = state.get("nodes")
+        trace_edges: list[tuple[str, str]] = []
         if isinstance(edges_raw, list):
             for item in edges_raw:
                 if isinstance(item, (list, tuple)) and len(item) == 2:
@@ -950,12 +964,17 @@ class CodeSeeScreen(QtWidgets.QWidget):
                     dst = str(item[1]).strip()
                     if src and dst:
                         trace_edges.append((src, dst))
-        trace_nodes = set()
+        trace_nodes: set[str] = set()
         if isinstance(nodes_raw, list):
             for node_id in nodes_raw:
                 text = str(node_id).strip()
                 if text:
                     trace_nodes.add(text)
+        return trace_edges, trace_nodes
+
+    def _apply_replay_seek_result(self, result: ReplaySeekResult) -> None:
+        trace_state = result.trace_state if isinstance(result.trace_state, dict) else {}
+        trace_edges, trace_nodes = self._trace_overlay_from_state(trace_state)
         self._monitor_active_trace_id = str(trace_state.get("active_trace_id") or "") or None
         self._monitor_trace_pinned = False
 
@@ -968,6 +987,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         else:
             self.scene.set_monitor_states({})
             self.scene.set_trace_highlight([], set(), color=MONITOR_TRACE_COLOR)
+        self._apply_trail_focus_overlay(now=time.time())
         self._sync_replay_slider()
         self._update_replay_status_label()
         self._update_mode_status(0, 0)
@@ -1006,6 +1026,16 @@ class CodeSeeScreen(QtWidgets.QWidget):
         if speed is None:
             return
         self.set_replay_speed(float(speed))
+
+    def _on_replay_jump_seconds_changed(self, value: int) -> None:
+        self._sync_replay_jump_controls()
+        controller = self._replay_controller
+        if controller is None:
+            return
+        try:
+            controller.set_jump_seconds(int(value))
+        except ValueError:
+            return
 
     def _on_replay_jump_back(self) -> None:
         controller = self._replay_controller
@@ -2722,10 +2752,15 @@ class CodeSeeScreen(QtWidgets.QWidget):
             )
             return
         current_now = float(time.time() if now is None else now)
-        if self._trail_focus_enabled or self._monitor_enabled:
-            self._monitor.tick(current_now)
-        states = self._monitor.snapshot_states()
-        trace_edges, trace_nodes, _trace_id = self._monitor.snapshot_trace()
+        if self._replay_mode_active and self._replay_controller is not None:
+            replay_result = self._replay_controller.current_seek_result
+            states = dict(replay_result.monitor_state)
+            trace_edges, trace_nodes = self._trace_overlay_from_state(replay_result.trace_state)
+        else:
+            if self._trail_focus_enabled or self._monitor_enabled:
+                self._monitor.tick(current_now)
+            states = self._monitor.snapshot_states()
+            trace_edges, trace_nodes, _trace_id = self._monitor.snapshot_trace()
         selected_nodes = self._trail_focus_selected_node_ids()
         context_nodes = self._context_nodes_for(self._screen_context or "")
         result = compute_trail_focus(
