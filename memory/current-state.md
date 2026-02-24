@@ -1,7 +1,7 @@
 # Current State
 
 - Repository: PhysicsLab
-- Snapshot generated during slice v5.5e from working tree based on HEAD 9a69bd5 (with pending e5 changes).
+- Snapshot generated during slice v5.5e from working tree based on HEAD b9f2c03 (with pending e6 changes).
 - Active milestone: V5.5e (semantic session recording foundation).
 - Operational mode: WORKLOG AUTO ON
 - Worklog auto enabled_at_local: 2026-02-24 07:02:26 +03:00
@@ -20,9 +20,10 @@
 - e3 complete: runtime ingestion wiring (events + monitor/trace deltas, fail-soft) + deterministic tests.
 - e4 complete: keyframe cadence (`every K records`) + forced stop keyframe + deterministic reconstructability helper with corrupt-keyframe fallback tests.
 - e5 complete: System Health `Sessions` frontend panel (workspace session list + metadata, read-only summary payload, open selected/root folder actions).
+- e6 complete: retention + hardening (lock-aware prune protection, malformed-line `corrupt_lines` propagation, INCOMPLETE meta normalization) + backend hardening test matrix.
 
 ## Next task
-- Current candidate: e6 retention + hardening + milestone verification.
+- Current candidate: V5.5e finalization (memory completion + commit/push/PR handoff).
 - Status: active.
 - User override rule: this next task can be rejected, replaced, or paused at any time for fixes or new objectives.
 

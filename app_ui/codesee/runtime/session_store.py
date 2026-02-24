@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from .session_schema import SESSION_STATUS_COMPLETE
+from . import session_schema
 
 DEFAULT_MAX_SESSIONS_PER_WORKSPACE = 20
 DEFAULT_MAX_TOTAL_MB_PER_WORKSPACE = 1024
@@ -120,16 +120,24 @@ def list_sessions(workspace_id: str) -> List[Dict[str, Any]]:
     for child in root.iterdir():
         if not child.is_dir():
             continue
-        meta = read_json(meta_path(child)) or {}
+        raw_meta = read_json(meta_path(child))
+        meta = _normalized_session_meta(
+            raw_meta,
+            session_id=child.name,
+            workspace_id=workspace_id,
+            session_root=child,
+        )
         started = int(meta.get("started_at_ms_epoch") or 0)
+        has_lock = lock_path(child).exists()
         sessions.append(
             {
                 "session_id": child.name,
                 "path": child,
                 "meta": meta,
-                "status": str(meta.get("status") or "INCOMPLETE"),
+                "status": str(meta.get("status") or session_schema.SESSION_STATUS_INCOMPLETE),
                 "started_at_ms_epoch": started,
                 "size_bytes": session_size_bytes(child),
+                "has_lock": has_lock,
             }
         )
     sessions.sort(key=lambda item: item.get("started_at_ms_epoch", 0), reverse=True)
@@ -156,7 +164,9 @@ def prune_sessions(
         sid = str(entry.get("session_id") or "")
         if active_session_id and sid == active_session_id:
             return False
-        return str(entry.get("status") or "") == SESSION_STATUS_COMPLETE
+        if bool(entry.get("has_lock")):
+            return False
+        return str(entry.get("status") or "") == session_schema.SESSION_STATUS_COMPLETE
 
     total_bytes = sum(int(entry.get("size_bytes") or 0) for entry in sessions)
     current_count = len(sessions)
@@ -184,3 +194,62 @@ def prune_sessions(
         "remaining": max(0, current_count),
         "remaining_bytes": max(0, total_bytes),
     }
+
+
+def _normalized_session_meta(
+    raw_meta: Optional[Dict[str, Any]],
+    *,
+    session_id: str,
+    workspace_id: str,
+    session_root: Path,
+) -> Dict[str, Any]:
+    meta: Dict[str, Any] = dict(raw_meta or {})
+    counts = _normalized_counts(meta.get("counts"))
+    _, corrupt_lines = read_jsonl(records_path(session_root))
+    if corrupt_lines > counts.get("corrupt_lines", 0):
+        counts["corrupt_lines"] = int(corrupt_lines)
+
+    is_valid = session_schema.validate_session_meta(meta)
+    status = str(meta.get("status") or "")
+    if not is_valid:
+        status = session_schema.SESSION_STATUS_INCOMPLETE
+    elif status not in {
+        session_schema.SESSION_STATUS_ACTIVE,
+        session_schema.SESSION_STATUS_COMPLETE,
+        session_schema.SESSION_STATUS_INCOMPLETE,
+    }:
+        status = session_schema.SESSION_STATUS_INCOMPLETE
+
+    meta["session_id"] = str(meta.get("session_id") or session_id)
+    meta["workspace_id"] = str(meta.get("workspace_id") or sanitize_workspace_id(workspace_id))
+    meta["status"] = status
+    meta["counts"] = counts
+    try:
+        meta["started_at_ms_epoch"] = int(meta.get("started_at_ms_epoch") or 0)
+    except Exception:
+        meta["started_at_ms_epoch"] = 0
+
+    # Persist repaired counts/status when a metadata file exists.
+    if raw_meta is not None and raw_meta != meta:
+        try:
+            write_json(meta_path(session_root), meta)
+        except Exception:
+            pass
+
+    return meta
+
+
+def _normalized_counts(raw_counts: Any) -> Dict[str, int]:
+    out = session_schema.default_counts()
+    if not isinstance(raw_counts, dict):
+        return out
+    for key in out:
+        out[key] = _safe_int(raw_counts.get(key))
+    return out
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except Exception:
+        return 0
