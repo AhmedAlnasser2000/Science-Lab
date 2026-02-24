@@ -1,4 +1,4 @@
-# Current State
+﻿# Current State
 
 - Repository: PhysicsLab
 - Snapshot generated during slice v5.5e from working tree based on HEAD 472076b.
@@ -15,7 +15,7 @@
 - Each commit is treated as a task and must be logged in session+journal artifacts.
 
 ## Next task
-- Current candidate: finalize commit-task logging discipline and commit the V5.5d recap canon update (Entry 70).
+- Current candidate: commit e2 backend recorder/schema/store foundation and deterministic tests for semantic session recording.
 - Status: active.
 - User override rule: this next task can be rejected, replaced, or paused at any time for fixes or new objectives.
 
@@ -37,3 +37,4 @@
 ## Branch lineage note
 - d9 history currently contains d8 commits due to initial branch base selection (work/v5.5d8 instead of main).
 - accepted by user for this slice after manual conflict resolution.
+
