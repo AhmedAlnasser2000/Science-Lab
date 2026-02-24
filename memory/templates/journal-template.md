@@ -42,3 +42,4 @@
 - session artifacts:
 - commits:
 - canonical promotions:
+- canon_entry_refs:

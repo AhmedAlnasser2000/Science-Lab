@@ -24,6 +24,8 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `DISCUSSION SAVE`
      - `DISCUSSION ARCHIVE`
      - `DISCUSSION APPROVE`
+     - `CANON SAVE`
+     - `CS`
    - Accepted aliases (input-only):
      - `MC` => `MEMORY CAPTURE`
      - `MP` => `MEMORY PROMOTE`
@@ -33,10 +35,14 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `DS` => `DISCUSSION SAVE`
      - `DC` => `DISCUSSION ARCHIVE`
      - `DA` => `DISCUSSION APPROVE`
+     - `CS` => `CANON SAVE` (also accepted as explicit short trigger phrase)
    - Alias policy:
      - aliases are reserved and unique,
      - alias matching is case-insensitive,
      - canonical command names are used for approvals/index/canonical records.
+   - Canon-save exactness:
+     - `CANON SAVE` and `CS` are both exact trigger phrases.
+     - `CS` is not alias-only behavior.
 
 2.1 Git approval gate:
    - Do not run `git commit` without explicit user approval.
@@ -47,6 +53,15 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
      - `AP` => approve push
      - aliases are case-insensitive
    - `AC`/`AP` are workflow approvals only, not memory trigger commands.
+   - Pre-commit plan is mandatory and must include:
+     - active branch
+     - intended slice branch
+     - worktree branch proof (when available)
+     - staged/unstaged file list
+     - mixed-slice risk check
+     - exact commit message
+     - exact commit command
+   - If branch/scope mismatch appears, stop and ask; no commit.
 
 3. Discussion lane policy:
    - Discussions are non-binding context by default.
@@ -83,6 +98,13 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
    - Do not introduce underscore variants.
    - Keep alias table identical across the same files.
 
+7. Canon-save behavior:
+   - `CANON SAVE` / `CS` appends one verbatim record to `memory/canon/verbatim_ledger.md`.
+   - Must include: `entry_id`, local timestamp, region/timezone, `recorded_by_agent`, source metadata.
+   - Update `memory/canon/INDEX.md` latest/next IDs.
+   - Do not auto-promote to world-canon/current-state/decisions/issues/runbooks.
+   - After save, provide optional next commands only (`MEMORY PROMOTE`, `CHECKPOINT UPDATE`, `DISCUSSION APPROVE`).
+
 ## One-liners
 
 - `MEMORY CAPTURE`: store raw import + manifest + inbox/index pointer.
@@ -93,3 +115,4 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
 - `DISCUSSION SAVE`: create discussion in `memory/discussions/active/` from template.
 - `DISCUSSION ARCHIVE`: move discussion active -> archived and update discussion index.
 - `DISCUSSION APPROVE`: create canonical extract + update approvals ledger + update index.
+- `CANON SAVE` / `CS`: append verbatim canon entry and return optional promotion suggestions.

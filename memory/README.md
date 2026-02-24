@@ -7,9 +7,13 @@ This folder is the portable recall bundle for PhysicsLab. If copied alone, it sh
 - `memory/` is published recall state intended for portable context and durable references.
 
 ## Canonical vs non-canonical
-- Canonical: `current-state`, `sessions/checkpoints`, `decisions`, `issues`, `runbooks`, approved extracts, and protocol docs.
+- Canonical: `canon/verbatim_ledger`, `current-state`, `sessions/checkpoints`, `decisions`, `issues`, `runbooks`, approved extracts, and protocol docs.
 - Non-canonical: `discussions/*` and `external/inbox/*` until explicitly promoted.
 - Domain canon: `memory/world-canon.md` stores stable high-level truths.
+
+Canon relationship:
+- `memory/canon/verbatim_ledger.md` is the primary saved-memory timeline.
+- `memory/world-canon.md` is invariants only and is not auto-updated by `CS`.
 
 ## Write policy (trigger-only)
 No writes to `memory/` unless the user explicitly commands one of these exact triggers:
@@ -21,6 +25,8 @@ No writes to `memory/` unless the user explicitly commands one of these exact tr
 - `DISCUSSION SAVE`
 - `DISCUSSION ARCHIVE`
 - `DISCUSSION APPROVE`
+- `CANON SAVE`
+- `CS`
 
 Accepted aliases (input-only; canonical commands above remain source-of-truth):
 - `MC` => `MEMORY CAPTURE`
@@ -31,6 +37,11 @@ Accepted aliases (input-only; canonical commands above remain source-of-truth):
 - `DS` => `DISCUSSION SAVE`
 - `DC` => `DISCUSSION ARCHIVE`
 - `DA` => `DISCUSSION APPROVE`
+- `CS` => `CANON SAVE` (also accepted as explicit short trigger phrase)
+
+`CS` behavior (default):
+- Append one verbatim entry to canon ledger.
+- Then suggest optional promotion commands only (no auto-promotion).
 
 ## Provenance and time format
 - Memory records should include:
@@ -48,6 +59,8 @@ Accepted aliases (input-only; canonical commands above remain source-of-truth):
 - Protocol: `memory/PROTOCOL.md`
 - Index: `memory/INDEX.md`
 - Current state: `memory/current-state.md`
+- Canon index: `memory/canon/INDEX.md`
+- Canon ledger: `memory/canon/verbatim_ledger.md`
 - World canon: `memory/world-canon.md`
 - Discussions index: `memory/discussions/INDEX.md`
 - Latest checkpoint summary: `memory/sessions/checkpoints/app_summary_latest__SUMMARY.md`

@@ -27,6 +27,7 @@ Quick start:
   - read `memory/INDEX.md` plus relevant canonical docs first
   - then verify in code before asserting.
 - Do not write to `memory/` unless the user explicitly issues a memory trigger command.
+- Canon-first save command: `CS` (or `CANON SAVE`) appends verbatim memory to `memory/canon/verbatim_ledger.md` first.
 - Discussions are non-binding context; only approved extracts are promoted into decisions/issues/runbooks.
 
 ## Wrong-Branch Recovery Policy (Patch-First, No Guessing)
@@ -144,6 +145,20 @@ Commit naming policy (non-ambiguous):
   - `fix(V5.5d7): facet labels and glyph spacing (follow-up 1)`
   - `fix(V5.5d7): facet labels and glyph spacing (follow-up 2)`
 - In user status/final updates, always map each commit hash to a one-line summary.
+
+Pre-commit confirmation policy (mandatory, no exceptions):
+- Before any commit, print a commit plan and wait for explicit user approval.
+- Required commit-plan fields:
+  - active branch (`git rev-parse --abbrev-ref HEAD`)
+  - intended slice branch
+  - worktree branch proof (`.physicslab_worktree.json` branch when present)
+  - staged/unstaged file list
+  - mixed-slice risk check
+  - exact commit message
+  - exact commit command
+- If branch/slice mismatch exists, stop and ask; do not commit.
+- If mixed-slice files are present and not explicitly approved, stop and ask.
+- Default behavior if unclear: do not commit.
 
 Pre-push confirmation policy (mandatory, no exceptions):
 - At the end of gates, before any push, the agent must print a push plan and wait for explicit user approval.

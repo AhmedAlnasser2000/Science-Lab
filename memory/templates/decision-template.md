@@ -22,6 +22,7 @@
 ## Alternatives considered
 
 ## References
+- source_canon_entries:
 - source discussions:
 - source imports:
 - related issues/runbooks:

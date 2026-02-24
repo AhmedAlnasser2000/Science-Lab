@@ -17,6 +17,7 @@
 - decisions:
 - issues:
 - runbooks:
+- source_canon_entries:  # optional
 
 ## Commit linkage
 - commit_hash:

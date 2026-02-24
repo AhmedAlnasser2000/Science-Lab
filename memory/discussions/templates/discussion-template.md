@@ -24,6 +24,7 @@
 ## What would change my mind
 
 ## Notes and references
+- related_canon_entries:  # optional
 
 ## Approval Extract
 <!-- Intentionally empty by default. Fill only when explicitly approved via DISCUSSION APPROVE. -->

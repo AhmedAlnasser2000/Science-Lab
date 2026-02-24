@@ -14,3 +14,4 @@ Hold stable product/domain truths that should remain consistent across slices un
 
 ## Change rule
 - Major canon edits require explicit approval and a linked decision note.
+- `CS` / `CANON SAVE` do not auto-update this file; they append only to `memory/canon/verbatim_ledger.md`.

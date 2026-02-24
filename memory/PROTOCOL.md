@@ -35,6 +35,8 @@ Do not write to `memory/` unless user command includes one exact trigger phrase:
 - `DISCUSSION SAVE`
 - `DISCUSSION ARCHIVE`
 - `DISCUSSION APPROVE`
+- `CANON SAVE`
+- `CS`
 
 ### Trigger aliases (input convenience)
 Canonical commands above remain source-of-truth. The following short aliases are accepted as input only:
@@ -46,11 +48,16 @@ Canonical commands above remain source-of-truth. The following short aliases are
 - `DS` => `DISCUSSION SAVE`
 - `DC` => `DISCUSSION ARCHIVE`
 - `DA` => `DISCUSSION APPROVE`
+- `CS` => `CANON SAVE` (also accepted as explicit short trigger phrase)
 
 Alias rules:
 - aliases are reserved and non-reusable (global within memory protocol),
 - alias matching is case-insensitive,
 - canonical command names are used in approvals/index/canonical records.
+
+Canon save note:
+- `CANON SAVE` and `CS` are both exact trigger phrases.
+- `CS` is not alias-only behavior.
 
 ## 3.1) Git approval guardrail (strict)
 - Do not run `git commit` without explicit user approval.
@@ -61,6 +68,20 @@ Alias rules:
   - `AP` => explicit approval to run `git push` after plan.
   - aliases are case-insensitive.
 - `AC`/`AP` are workflow approvals only (not memory write triggers).
+
+## 3.2) Pre-commit plan contract
+- Before any commit, present a commit plan and wait for explicit approval (`AC` or equivalent).
+- Required plan fields:
+  - active branch
+  - intended slice branch
+  - worktree branch proof when available
+  - staged/unstaged file list
+  - mixed-slice risk check
+  - exact commit message
+  - exact commit command
+- Stop rules:
+  - branch mismatch => stop, ask, no commit
+  - mixed-slice scope without explicit approval => stop, ask, no commit
 
 ## 4) Trigger semantics
 ### `MEMORY CAPTURE`
@@ -95,6 +116,14 @@ Alias rules:
   - `recorded_by_agent`
   - `recorded_at_local`
 
+### `CANON SAVE` / `CS`
+- Append one verbatim entry to `memory/canon/verbatim_ledger.md`.
+- Do not auto-update `current-state`, `decisions`, `issues`, `runbooks`, or `world-canon`.
+- Immediately return suggested optional promotion commands (no auto-write), for example:
+  - `MEMORY PROMOTE`
+  - `CHECKPOINT UPDATE`
+  - `DISCUSSION APPROVE`
+
 ### `DISCUSSION ARCHIVE`
 - Move discussion doc from active to archived.
 - Update `memory/discussions/INDEX.md`.
@@ -111,6 +140,23 @@ Alias rules:
   - `source`
   - `canonical_targets`
   - `commit_hash` once committed.
+
+### `CANON SAVE` / `CS`
+- Append one verbatim entry to `memory/canon/verbatim_ledger.md` with:
+  - global `entry_id`
+  - `saved_at_local`
+  - `user_region`
+  - `user_timezone`
+  - `recorded_by_agent`
+  - `source_type`
+  - `source_ref` when applicable
+  - `text_verbatim`
+- Update `memory/canon/INDEX.md` (`latest_entry_id`, `next_entry_id`).
+- Do not auto-update `memory/current-state.md`, `memory/world-canon.md`, or canonical decisions/issues/runbooks.
+- After save, suggest optional follow-up commands only:
+  - `MEMORY PROMOTE`
+  - `CHECKPOINT UPDATE`
+  - `DISCUSSION APPROVE`
 
 ## 5) Discussions lane policy (non-binding)
 - `memory/discussions/*` is context only.
@@ -164,6 +210,11 @@ Alias rules:
   - `user_region`
   - `user_timezone`
 - UTC-only placeholders are not preferred for new records.
+
+## 9.2) Canon vs world-canon
+- `memory/canon/verbatim_ledger.md` is the chronological saved-memory timeline.
+- `memory/world-canon.md` stores durable invariants only.
+- `CS` writes to canonical timeline only and never mutates `world-canon` automatically.
 
 ## 10) Trigger exactness guard
 - Trigger spellings must stay exactly identical across:

@@ -21,6 +21,7 @@
 ## Chosen next step
 
 ## Links
+- source_canon_entries:
 - decisions:
 - discussions:
 - sessions:

@@ -4,6 +4,13 @@
 - `memory/current-state.md`
 - Canon baseline: `memory/world-canon.md`
 
+## Canon ledger
+- Index: `memory/canon/INDEX.md`
+- Verbatim timeline: `memory/canon/verbatim_ledger.md`
+- Imports notes: `memory/canon/imports/README.md`
+- Latest entry id: 68
+- Next entry id: 69
+
 ## Latest checkpoint
 - Summary: `memory/sessions/checkpoints/app_summary_latest__SUMMARY.md`
 - Dossier: `memory/sessions/checkpoints/app_summary_latest__DOSSIER.md`
