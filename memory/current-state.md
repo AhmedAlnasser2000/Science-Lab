@@ -1,8 +1,8 @@
-﻿# Current State
+# Current State
 
 - Repository: PhysicsLab
-- Snapshot generated during slice v5.5e from working tree based on HEAD 472076b.
-- Active milestone: V5.5e (post-V5.5d completion, execution kickoff).
+- Snapshot generated during slice v5.5e from working tree based on HEAD ca53901.
+- Active milestone: V5.5e (semantic session recording foundation).
 - Operational mode: WORKLOG AUTO ON
 - Worklog auto enabled_at_local: 2026-02-24 07:02:26 +03:00
 
@@ -14,8 +14,13 @@
 - App-state/development recall starts from memory/canon/verbatim_ledger.md, then canonical summaries, then code verification.
 - Each commit is treated as a task and must be logged in session+journal artifacts.
 
+## Progress snapshot
+- e1 complete: roadmap + contract doc/index entries.
+- e2 complete: recorder core (`session_schema`, `session_store`, `session_recording`) + deterministic tests.
+- e3 complete: runtime ingestion wiring (events + monitor/trace deltas, fail-soft) + deterministic tests.
+
 ## Next task
-- Current candidate: start e3 runtime ingestion wiring (record bus/span/monitor/trace transitions into recorder) with fail-soft behavior.
+- Current candidate: e4 keyframe cadence + reconstructability helper.
 - Status: active.
 - User override rule: this next task can be rejected, replaced, or paused at any time for fixes or new objectives.
 
@@ -33,9 +38,3 @@
 ## Notes
 - WORKLOG AUTO ON means completed task/gate updates should be reflected in current-state/sessions/journal (and runbooks when procedure-level changes exist).
 - Canonical truth is protocol + indexed canonical artifacts + code verification.
-
-## Branch lineage note
-- d9 history currently contains d8 commits due to initial branch base selection (work/v5.5d8 instead of main).
-- accepted by user for this slice after manual conflict resolution.
-
-
