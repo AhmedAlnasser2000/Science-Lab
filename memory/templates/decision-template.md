@@ -1,4 +1,4 @@
-﻿# ADR Template
+# ADR Template
 
 ## Title
 
@@ -11,7 +11,11 @@
 - recorded_at_local:
 
 ## Status
-- proposed | accepted | superseded
+- draft | active | locked | superseded | rejected
+- supersedes:
+- superseded_by:
+- superseded_at_local:
+- supersession_reason:
 
 ## Context
 
