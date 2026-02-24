@@ -10,7 +10,8 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
 ## Behavior
 
 1. Recall order when ambiguous:
-   - Read `memory/INDEX.md` and canonical memory docs first.
+   - For app-state/development recall ("did you remember", "from what we did", "last time"), read `memory/canon/verbatim_ledger.md` first.
+   - Then read `memory/INDEX.md` and other canonical memory docs.
    - Verify claims in code/repo before asserting truth.
    - Consult `memory/discussions/*` only when explicitly referenced or needed.
 

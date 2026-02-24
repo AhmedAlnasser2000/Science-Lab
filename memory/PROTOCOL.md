@@ -16,14 +16,17 @@
 If a conflict exists, Tier-0 wins.
 
 ## 2) Read order when ambiguous
-1. Read `memory/INDEX.md` and canonical memory artifacts:
+1. For app-state/development recall (for example: "did you remember", "from what we did", "last time"), read canon ledger first:
+- `memory/canon/verbatim_ledger.md`
+2. Then read canonical memory pointers and summaries:
+- `memory/INDEX.md`
 - `memory/current-state.md`
 - `memory/sessions/checkpoints/*`
 - `memory/decisions/*`
 - `memory/issues/*`
 - `memory/runbooks/*`
-2. Verify claims in code/repo.
-3. Consult `memory/discussions/*` only when explicitly referenced or needed for unresolved context.
+3. Verify claims in code/repo.
+4. Consult `memory/discussions/*` only when explicitly referenced or needed for unresolved context.
 
 ## 3) Write guardrail (strict)
 Do not write to `memory/` unless user command includes one exact trigger phrase:

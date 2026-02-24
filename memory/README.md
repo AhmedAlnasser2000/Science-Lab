@@ -15,6 +15,9 @@ Canon relationship:
 - `memory/canon/verbatim_ledger.md` is the primary saved-memory timeline.
 - `memory/world-canon.md` is invariants only and is not auto-updated by `CS`.
 
+Recall usage rule:
+- When the user asks for past work/state recall ("did you remember", "from what we did", "last time"), read canon ledger first, then canonical summaries, then verify in code.
+
 ## Write policy (trigger-only)
 No writes to `memory/` unless the user explicitly commands one of these exact triggers:
 - `MEMORY CAPTURE`
