@@ -162,6 +162,12 @@ Pre-push confirmation policy (mandatory, no exceptions):
   - resulting remote range (for example `abc1234..def5678`)
   - remaining local commits (if any).
 
+Approval shorthand aliases (workflow):
+- `AC` => explicit approval to run `git commit` (after commit plan is shown).
+- `AP` => explicit approval to run `git push` (after push plan is shown).
+- Aliases are case-insensitive.
+- These aliases are workflow approvals only, not memory trigger commands.
+
 Unpushed commits + main sync policy (mandatory):
 - Do not end a slice with unknown local-only commits.
 - At slice handoff (or before moving to another slice), always run and report:

@@ -42,6 +42,11 @@ Use this skill when the user asks to capture/promote memory artifacts, publish s
    - Do not run `git commit` without explicit user approval.
    - Do not run `git push` without explicit user approval.
    - Always show a short commit/push plan and wait for approval.
+   - Workflow aliases:
+     - `AC` => approve commit
+     - `AP` => approve push
+     - aliases are case-insensitive
+   - `AC`/`AP` are workflow approvals only, not memory trigger commands.
 
 3. Discussion lane policy:
    - Discussions are non-binding context by default.

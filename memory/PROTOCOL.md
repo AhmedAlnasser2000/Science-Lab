@@ -56,6 +56,11 @@ Alias rules:
 - Do not run `git commit` without explicit user approval.
 - Do not run `git push` without explicit user approval.
 - Before commit/push, present a short plan and wait for approval.
+- Workflow approval aliases:
+  - `AC` => explicit approval to run `git commit` after plan.
+  - `AP` => explicit approval to run `git push` after plan.
+  - aliases are case-insensitive.
+- `AC`/`AP` are workflow approvals only (not memory write triggers).
 
 ## 4) Trigger semantics
 ### `MEMORY CAPTURE`

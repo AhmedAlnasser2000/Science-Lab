@@ -141,6 +141,12 @@ Agents must follow these rules unless explicitly overridden:
    - If user asks "commit and push", still present the plan first, then push only after explicit confirmation.
    - If intent is ambiguous, default to local commit only (no push).
 
+6.1.1) **Approval shorthand aliases**
+   - `AC` means explicit approval to execute `git commit` after commit plan review.
+   - `AP` means explicit approval to execute `git push` after push plan review.
+   - Aliases are case-insensitive.
+   - These are workflow approvals only; they do not replace memory trigger commands.
+
 6.2) **Same-slice branch containment is mandatory**
    - Keep all slice-related changes on the same slice branch from first edit to final push.
    - Include all change categories:
