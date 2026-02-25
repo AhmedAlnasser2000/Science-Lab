@@ -147,6 +147,21 @@ def nearest_seq_for_timestamp(timeline: ReplayTimeline, ts_ms_epoch: int) -> Opt
     return int(seq)
 
 
+def floor_seq_for_timestamp(timeline: ReplayTimeline, ts_ms_epoch: int) -> Optional[int]:
+    if not timeline.ts_index:
+        return None
+    target = _safe_int(ts_ms_epoch)
+    first_ts, first_seq = timeline.ts_index[0]
+    if target <= int(first_ts):
+        return int(first_seq)
+    candidate_seq = int(first_seq)
+    for ts_value, seq in timeline.ts_index:
+        if int(ts_value) > target:
+            break
+        candidate_seq = int(seq)
+    return candidate_seq
+
+
 def seek_to_seq(timeline: ReplayTimeline, target_seq: int) -> ReplaySeekResult:
     requested = _safe_int(target_seq)
     base_warnings = list(timeline.warnings)
@@ -262,6 +277,7 @@ class ReplayController:
         else:
             self._current_seq = 0
             self._current_ts_ms_epoch = 0
+        self._playhead_ts_ms_epoch = int(self._current_ts_ms_epoch)
 
         self._last_seek_result = seek_to_seq(self.timeline, self._current_seq)
 
@@ -284,7 +300,14 @@ class ReplayController:
         return self._last_seek_result
 
     def play(self) -> ReplaySeekResult:
-        self._is_playing = bool(self.timeline.ordered_seqs)
+        if not self.timeline.ordered_seqs:
+            self._is_playing = False
+            return self._last_seek_result
+        first_seq = int(self.timeline.ordered_seqs[0])
+        last_seq = int(self.timeline.ordered_seqs[-1])
+        if self._current_seq >= last_seq:
+            self.scrub_to_seq(first_seq)
+        self._is_playing = True
         return self._last_seek_result
 
     def pause(self) -> ReplaySeekResult:
@@ -338,8 +361,16 @@ class ReplayController:
         advance_ms = _scale_elapsed_ms(elapsed, self._speed_multiplier)
         if advance_ms <= 0:
             return self._last_seek_result
-        target_ts = int(self._current_ts_ms_epoch) + int(advance_ms)
-        result = self.scrub_to_timestamp(target_ts)
+        last_ts = int(self.timeline.ts_index[-1][0]) if self.timeline.ts_index else int(self._playhead_ts_ms_epoch)
+        target_ts = min(last_ts, int(self._playhead_ts_ms_epoch) + int(advance_ms))
+        seq = floor_seq_for_timestamp(self.timeline, target_ts)
+        if seq is None:
+            return self._last_seek_result
+        result = seek_to_seq(self.timeline, seq)
+        self._last_seek_result = result
+        self._current_seq = int(result.resolved_seq)
+        self._playhead_ts_ms_epoch = int(target_ts)
+        self._current_ts_ms_epoch = int(target_ts)
         if result.resolved_seq >= int(self.timeline.ordered_seqs[-1]):
             self._is_playing = False
         return result
@@ -349,11 +380,14 @@ class ReplayController:
         frame = self.timeline.seq_index.get(self._current_seq)
         if frame is not None:
             self._current_ts_ms_epoch = int(frame.ts_ms_epoch)
+            self._playhead_ts_ms_epoch = int(self._current_ts_ms_epoch)
             return
         if self.timeline.ts_index:
             self._current_ts_ms_epoch = int(self.timeline.ts_index[-1][0])
+            self._playhead_ts_ms_epoch = int(self._current_ts_ms_epoch)
             return
         self._current_ts_ms_epoch = 0
+        self._playhead_ts_ms_epoch = 0
 
 
 def _normalize_meta(

@@ -8,6 +8,7 @@ import pytest
 from app_ui.codesee.runtime import session_schema, session_store
 from app_ui.codesee.runtime.session_replay import (
     ReplayController,
+    floor_seq_for_timestamp,
     load_replay_session,
     nearest_seq_for_timestamp,
     seek_to_seq,
@@ -148,6 +149,10 @@ def test_timeline_indexes_and_nearest_seq_for_timestamp(tmp_path: Path) -> None:
     assert nearest_seq_for_timestamp(timeline, 500) == 1
     assert nearest_seq_for_timestamp(timeline, 2600) == 2
     assert nearest_seq_for_timestamp(timeline, 6400) == 5
+    assert floor_seq_for_timestamp(timeline, 500) == 1
+    assert floor_seq_for_timestamp(timeline, 2600) == 2
+    assert floor_seq_for_timestamp(timeline, 6400) == 2
+    assert floor_seq_for_timestamp(timeline, 9000) == 5
 
 
 def test_seek_to_seq_uses_nearest_prior_keyframe_then_applies_deltas(tmp_path: Path) -> None:
@@ -280,12 +285,12 @@ def test_replay_controller_tick_is_deterministic_for_identical_inputs(tmp_path: 
     seqs_a = [controller_a.tick(ms).resolved_seq for ms in tick_inputs]
     seqs_b = [controller_b.tick(ms).resolved_seq for ms in tick_inputs]
 
-    assert seqs_a == [2, 3, 3, 4, 6]
+    assert seqs_a == [2, 3, 3, 5, 7]
     assert seqs_b == seqs_a
 
     controller_a.pause()
     assert controller_a.snapshot.is_playing is False
-    assert controller_a.tick(4000).resolved_seq == 6
+    assert controller_a.tick(4000).resolved_seq == 7
 
 
 def test_replay_controller_scrub_jump_and_speed_presets(tmp_path: Path) -> None:
@@ -310,3 +315,33 @@ def test_replay_controller_scrub_jump_and_speed_presets(tmp_path: Path) -> None:
     assert controller.jump_backward().resolved_seq == 1
     assert controller.jump_seconds(5).resolved_seq == 6
     assert controller.jump_seconds(-5).resolved_seq == 1
+
+
+def test_replay_controller_tick_accumulates_playhead_across_sparse_timestamps(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    root = _write_meta("default", "controller-sparse-gap", started_ms=1)
+    _write_linear_event_records(root, count=2, start_ts_ms=1000, step_ms=1000)
+    timeline = load_replay_session(root)
+    controller = ReplayController(timeline, speed_multiplier=0.25)
+
+    controller.play()
+    for _ in range(16):
+        controller.tick(250)
+    assert controller.snapshot.current_seq == 1
+
+    controller.tick(250)
+    assert controller.snapshot.current_seq == 2
+
+
+def test_replay_controller_play_rewinds_when_started_from_timeline_tail(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    root = _write_meta("default", "controller-tail-rewind", started_ms=1)
+    _write_linear_event_records(root, count=5)
+    timeline = load_replay_session(root)
+    controller = ReplayController(timeline)
+
+    assert controller.scrub_to_seq(999).resolved_seq == 5
+    rewind = controller.play()
+    assert rewind.resolved_seq == 1
+    assert controller.snapshot.current_seq == 1
+    assert controller.snapshot.is_playing is True
