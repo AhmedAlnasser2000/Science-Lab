@@ -23,7 +23,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -96,6 +96,7 @@ from .runtime.trail_focus import (
     clamp_monitor_border_px,
 )
 from .storage import layout_store, snapshot_index, snapshot_io
+from .storage import session_store as replay_bookmark_store
 from .dialogs.inspector import _span_is_stuck
 from .dialogs.facet_settings import open_facet_settings
 from .dialogs.pulse_settings import open_pulse_settings
@@ -294,6 +295,8 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._replay_prev_live_enabled = self._live_enabled
         self._replay_prev_recording_paused = False
         self._replay_buffered_live_count = 0
+        self._replay_bookmarks: List[Dict[str, Any]] = []
+        self._replay_bookmark_session_id: Optional[str] = None
         self._replay_tick_timer = QtCore.QTimer(self)
         self._replay_tick_timer.setInterval(REPLAY_TICK_MS)
         self._replay_tick_timer.timeout.connect(self._on_replay_tick)
@@ -520,6 +523,29 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.replay_jump_forward_btn = QtWidgets.QToolButton()
         self.replay_jump_forward_btn.clicked.connect(self._on_replay_jump_forward)
         replay_row.addWidget(self.replay_jump_forward_btn)
+        self.replay_bookmark_combo = QtWidgets.QComboBox()
+        self.replay_bookmark_combo.setMinimumContentsLength(10)
+        self.replay_bookmark_combo.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.replay_bookmark_combo.currentIndexChanged.connect(self._on_replay_bookmark_changed)
+        replay_row.addWidget(self.replay_bookmark_combo)
+        self.replay_bookmark_add_btn = QtWidgets.QToolButton()
+        self.replay_bookmark_add_btn.setText("+Mark")
+        self.replay_bookmark_add_btn.clicked.connect(self._on_replay_add_bookmark_clicked)
+        replay_row.addWidget(self.replay_bookmark_add_btn)
+        self.replay_bookmark_update_btn = QtWidgets.QToolButton()
+        self.replay_bookmark_update_btn.setText("Update Mark")
+        self.replay_bookmark_update_btn.clicked.connect(self._on_replay_update_bookmark_clicked)
+        replay_row.addWidget(self.replay_bookmark_update_btn)
+        self.replay_bookmark_jump_btn = QtWidgets.QToolButton()
+        self.replay_bookmark_jump_btn.setText("Jump Mark")
+        self.replay_bookmark_jump_btn.clicked.connect(self._on_replay_jump_bookmark_clicked)
+        replay_row.addWidget(self.replay_bookmark_jump_btn)
+        self.replay_bookmark_delete_btn = QtWidgets.QToolButton()
+        self.replay_bookmark_delete_btn.setText("Delete Mark")
+        self.replay_bookmark_delete_btn.clicked.connect(self._on_replay_delete_bookmark_clicked)
+        replay_row.addWidget(self.replay_bookmark_delete_btn)
         self.replay_seq_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.replay_seq_slider.setMinimum(0)
         self.replay_seq_slider.setMaximum(0)
@@ -846,6 +872,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             self.replay_session_combo.setCurrentIndex(combo_index)
             self.replay_session_combo.blockSignals(False)
 
+        self._load_replay_bookmarks(target_session)
         self._sync_replay_slider()
         self._sync_replay_controls()
         self._render_current_graph()
@@ -881,6 +908,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)
+        self._load_replay_bookmarks(self._selected_replay_session_id())
         self._sync_replay_controls()
         self._render_current_graph()
         self.status_label.setText("Replay mode exited.")
@@ -937,6 +965,88 @@ class CodeSeeScreen(QtWidgets.QWidget):
         except Exception:
             return "-"
 
+    def _replay_session_root(self, session_id: str) -> Optional[Path]:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        root = replay_session_store.session_dir(self._workspace_id(), sid)
+        if not root.exists():
+            return None
+        return root
+
+    def _selected_replay_bookmark_id(self) -> str:
+        value = self.replay_bookmark_combo.currentData()
+        if value:
+            return str(value)
+        return str(self.replay_bookmark_combo.currentText() or "").strip()
+
+    def _selected_replay_bookmark(self) -> Optional[Dict[str, Any]]:
+        bookmark_id = self._selected_replay_bookmark_id()
+        if not bookmark_id:
+            return None
+        for entry in self._replay_bookmarks:
+            if str(entry.get("bookmark_id") or "") == bookmark_id:
+                return dict(entry)
+        return None
+
+    def _load_replay_bookmarks(self, session_id: str) -> None:
+        sid = str(session_id or "").strip()
+        self._replay_bookmark_session_id = sid or None
+        self._replay_bookmarks = []
+        session_root = self._replay_session_root(sid)
+        if session_root is None:
+            self._refresh_replay_bookmark_combo()
+            return
+        payload = replay_bookmark_store.read_bookmarks(
+            session_root,
+            session_id=sid,
+            workspace_id=self._workspace_id(),
+        )
+        bookmarks = payload.get("bookmarks")
+        if isinstance(bookmarks, list):
+            self._replay_bookmarks = [dict(item) for item in bookmarks if isinstance(item, dict)]
+        self._refresh_replay_bookmark_combo()
+
+    def _save_replay_bookmarks(self) -> bool:
+        sid = str(self._replay_bookmark_session_id or "").strip()
+        session_root = self._replay_session_root(sid)
+        if session_root is None:
+            return False
+        replay_bookmark_store.write_bookmarks(
+            session_root,
+            {
+                "schema_version": replay_bookmark_store.BOOKMARKS_SCHEMA_VERSION,
+                "session_id": sid,
+                "workspace_id": self._workspace_id(),
+                "bookmarks": list(self._replay_bookmarks),
+            },
+            session_id=sid,
+            workspace_id=self._workspace_id(),
+        )
+        return True
+
+    def _refresh_replay_bookmark_combo(self) -> None:
+        current = self._selected_replay_bookmark_id()
+        self.replay_bookmark_combo.blockSignals(True)
+        self.replay_bookmark_combo.clear()
+        for entry in self._replay_bookmarks:
+            bookmark_id = str(entry.get("bookmark_id") or "").strip()
+            if not bookmark_id:
+                continue
+            label = str(entry.get("label") or "").strip() or bookmark_id
+            seq = int(entry.get("seq") or 0)
+            self.replay_bookmark_combo.addItem(f"{label} (seq {seq})", bookmark_id)
+        if current:
+            idx = self.replay_bookmark_combo.findData(current)
+            if idx >= 0:
+                self.replay_bookmark_combo.setCurrentIndex(idx)
+        self.replay_bookmark_combo.blockSignals(False)
+
+    def _sort_replay_bookmarks(self) -> None:
+        self._replay_bookmarks.sort(
+            key=lambda item: (int(item.get("seq") or 0), str(item.get("bookmark_id") or ""))
+        )
+
     def _refresh_replay_sessions(self) -> None:
         current = self._selected_replay_session_id()
         recording_session_id = self._current_recording_session_id()
@@ -962,6 +1072,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             if idx >= 0:
                 self.replay_session_combo.setCurrentIndex(idx)
         self.replay_session_combo.blockSignals(False)
+        self._load_replay_bookmarks(self._selected_replay_session_id())
         self._sync_replay_controls()
         self._update_replay_status_label()
 
@@ -1005,6 +1116,12 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.recording_pause_btn.setText("Resume Recording" if self._session_recording_paused else "Pause Recording")
         self.recording_pause_btn.setEnabled(recording_active and not in_replay)
         self.recording_stop_btn.setEnabled(recording_active and not in_replay)
+        has_bookmark = bool(self._selected_replay_bookmark())
+        self.replay_bookmark_combo.setEnabled(bool(has_session))
+        self.replay_bookmark_add_btn.setEnabled(in_replay)
+        self.replay_bookmark_update_btn.setEnabled(in_replay and has_bookmark)
+        self.replay_bookmark_jump_btn.setEnabled(in_replay and has_bookmark)
+        self.replay_bookmark_delete_btn.setEnabled(in_replay and has_bookmark)
         self._sync_replay_jump_controls()
         self._update_replay_status_label()
 
@@ -1085,6 +1202,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.enter_replay_mode(session_id)
 
     def _on_replay_session_changed(self, _index: int) -> None:
+        self._load_replay_bookmarks(self._selected_replay_session_id())
+        self._sync_replay_controls()
+
+    def _on_replay_bookmark_changed(self, _index: int) -> None:
         self._sync_replay_controls()
 
     def _on_recording_start_clicked(self) -> None:
@@ -1173,6 +1294,123 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.status_label.setText(f"Deleted session: {session_id}")
         self._refresh_replay_sessions()
         self._sync_replay_controls()
+
+    def _on_replay_add_bookmark_clicked(self) -> None:
+        controller = self._replay_controller
+        if controller is None or not self._replay_mode_active:
+            self.status_label.setText("Enter replay mode to add bookmarks.")
+            return
+        snapshot = controller.snapshot
+        default_label = f"Seq {int(snapshot.current_seq)}"
+        label, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Add Bookmark",
+            "Bookmark label:",
+            QtWidgets.QLineEdit.EchoMode.Normal,
+            default_label,
+        )
+        if not ok:
+            return
+        text = str(label or "").strip() or default_label
+        now_ms = int(round(time.time() * 1000.0))
+        bookmark_id = f"bookmark_{now_ms}_{int(snapshot.current_seq)}"
+        self._replay_bookmarks.append(
+            {
+                "bookmark_id": bookmark_id,
+                "label": text,
+                "seq": int(snapshot.current_seq),
+                "ts_ms_epoch": int(snapshot.current_ts_ms_epoch),
+                "created_at_ms_epoch": now_ms,
+            }
+        )
+        self._sort_replay_bookmarks()
+        if not self._save_replay_bookmarks():
+            self.status_label.setText("Failed to save bookmark.")
+            return
+        self._refresh_replay_bookmark_combo()
+        idx = self.replay_bookmark_combo.findData(bookmark_id)
+        if idx >= 0:
+            self.replay_bookmark_combo.setCurrentIndex(idx)
+        self._sync_replay_controls()
+        self.status_label.setText(f"Bookmark added: {text}")
+
+    def _on_replay_update_bookmark_clicked(self) -> None:
+        controller = self._replay_controller
+        selected = self._selected_replay_bookmark()
+        if controller is None or not self._replay_mode_active:
+            self.status_label.setText("Enter replay mode to update bookmarks.")
+            return
+        if selected is None:
+            self.status_label.setText("Select a bookmark to update.")
+            return
+        default_label = str(selected.get("label") or "").strip() or f"Seq {int(controller.snapshot.current_seq)}"
+        label, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Update Bookmark",
+            "Bookmark label:",
+            QtWidgets.QLineEdit.EchoMode.Normal,
+            default_label,
+        )
+        if not ok:
+            return
+        bookmark_id = str(selected.get("bookmark_id") or "").strip()
+        if not bookmark_id:
+            self.status_label.setText("Bookmark id is invalid.")
+            return
+        snapshot = controller.snapshot
+        text = str(label or "").strip() or default_label
+        for entry in self._replay_bookmarks:
+            if str(entry.get("bookmark_id") or "") != bookmark_id:
+                continue
+            entry["label"] = text
+            entry["seq"] = int(snapshot.current_seq)
+            entry["ts_ms_epoch"] = int(snapshot.current_ts_ms_epoch)
+            break
+        self._sort_replay_bookmarks()
+        if not self._save_replay_bookmarks():
+            self.status_label.setText("Failed to update bookmark.")
+            return
+        self._refresh_replay_bookmark_combo()
+        idx = self.replay_bookmark_combo.findData(bookmark_id)
+        if idx >= 0:
+            self.replay_bookmark_combo.setCurrentIndex(idx)
+        self._sync_replay_controls()
+        self.status_label.setText(f"Bookmark updated: {text}")
+
+    def _on_replay_jump_bookmark_clicked(self) -> None:
+        selected = self._selected_replay_bookmark()
+        if selected is None:
+            self.status_label.setText("Select a bookmark to jump.")
+            return
+        controller = self._replay_controller
+        if controller is None or not self._replay_mode_active:
+            self.status_label.setText("Enter replay mode to jump to bookmarks.")
+            return
+        seq = int(selected.get("seq") or 0)
+        if seq <= 0:
+            self.status_label.setText("Bookmark target is invalid.")
+            return
+        self.set_replay_seq(seq)
+        self.status_label.setText(f"Jumped to bookmark: {str(selected.get('label') or seq)}")
+
+    def _on_replay_delete_bookmark_clicked(self) -> None:
+        selected = self._selected_replay_bookmark()
+        if selected is None:
+            self.status_label.setText("Select a bookmark to delete.")
+            return
+        bookmark_id = str(selected.get("bookmark_id") or "").strip()
+        if not bookmark_id:
+            self.status_label.setText("Bookmark id is invalid.")
+            return
+        self._replay_bookmarks = [
+            item for item in self._replay_bookmarks if str(item.get("bookmark_id") or "") != bookmark_id
+        ]
+        if not self._save_replay_bookmarks():
+            self.status_label.setText("Failed to delete bookmark.")
+            return
+        self._refresh_replay_bookmark_combo()
+        self._sync_replay_controls()
+        self.status_label.setText("Bookmark deleted.")
 
     def _on_replay_play_toggled(self, checked: bool) -> None:
         controller = self._replay_controller

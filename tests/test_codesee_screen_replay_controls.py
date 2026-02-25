@@ -8,6 +8,7 @@ from PyQt6 import QtWidgets, sip
 from app_ui.codesee.runtime import session_schema, session_store
 from app_ui.codesee.runtime.events import CodeSeeEvent, EVENT_APP_ERROR
 from app_ui.codesee.screen import CodeSeeScreen, LENS_ATLAS, SOURCE_DEMO
+from app_ui.codesee.storage import session_store as bookmark_store
 
 
 _APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -255,6 +256,50 @@ def test_replay_delete_session_button_removes_selected(tmp_path: Path, monkeypat
         screen.replay_session_combo.setCurrentIndex(idx)
         screen._on_delete_replay_session_clicked()
         assert session_store.session_dir("default", "delete-me").exists() is False
+    finally:
+        if not sip.isdeleted(screen):
+            screen.cleanup()
+
+
+def test_replay_bookmark_crud_and_jump(tmp_path: Path, monkeypatch) -> None:
+    os.chdir(tmp_path)
+    root = _write_meta("default", "bookmark-ui")
+    _write_linear_records(root, count=8)
+
+    prompts = [("Alpha", True), ("Alpha-updated", True)]
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *args, **kwargs: prompts.pop(0),
+    )
+
+    screen = _make_screen()
+    try:
+        assert screen.enter_replay_mode("bookmark-ui") is True
+        screen.set_replay_seq(4)
+        screen._on_replay_add_bookmark_clicked()
+        assert len(screen._replay_bookmarks) == 1
+        saved = bookmark_store.read_bookmarks(root)
+        assert len(saved["bookmarks"]) == 1
+        assert saved["bookmarks"][0]["label"] == "Alpha"
+        assert saved["bookmarks"][0]["seq"] == 4
+
+        screen.set_replay_seq(8)
+        screen.replay_bookmark_combo.setCurrentIndex(0)
+        screen._on_replay_jump_bookmark_clicked()
+        assert screen._replay_controller is not None
+        assert screen._replay_controller.snapshot.current_seq == 4
+
+        screen.set_replay_seq(6)
+        screen._on_replay_update_bookmark_clicked()
+        updated = bookmark_store.read_bookmarks(root)
+        assert len(updated["bookmarks"]) == 1
+        assert updated["bookmarks"][0]["label"] == "Alpha-updated"
+        assert updated["bookmarks"][0]["seq"] == 6
+
+        screen._on_replay_delete_bookmark_clicked()
+        after_delete = bookmark_store.read_bookmarks(root)
+        assert after_delete["bookmarks"] == []
     finally:
         if not sip.isdeleted(screen):
             screen.cleanup()
