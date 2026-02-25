@@ -433,7 +433,12 @@ class MainMenuScreen(QtWidgets.QWidget):
 
     def _add_button(self, label: str, callback) -> None:
         button = QtWidgets.QPushButton(label)
-        button.setFixedWidth(220)
+        button.setMinimumWidth(220)
+        button.setMaximumWidth(480)
+        button.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
         button.clicked.connect(callback)
         self.buttons_layout.addWidget(button)
 
@@ -754,7 +759,13 @@ class SettingsDialog(QtWidgets.QDialog):
 
         layout.addWidget(QtWidgets.QLabel("UI Scale"))
         self.scale_combo = QtWidgets.QComboBox()
-        self.scale_combo.addItems(["80%", "90%", "100%", "110%", "125%", "150%"])
+        self.scale_combo.addItems(
+            ["50%", "60%", "70%", "80%", "90%", "100%", "110%", "125%", "150%", "175%", "200%", "250%"]
+        )
+        self.scale_combo.setEditable(True)
+        editor = self.scale_combo.lineEdit()
+        if editor is not None:
+            editor.setValidator(QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"\d{2,3}%?"), editor))
         layout.addWidget(self.scale_combo)
 
         layout.addWidget(QtWidgets.QLabel("Density"))
@@ -820,7 +831,7 @@ class SettingsDialog(QtWidgets.QDialog):
             profile = self.profile_combo.currentText()
             ui_config.save_experience_profile(profile)
 
-            scale_percent = int(self.scale_combo.currentText().replace("%", ""))
+            scale_percent = ui_scale.clamp_scale_percent(self.scale_combo.currentText())
             density = "compact" if self.density_combo.currentText().lower().startswith("compact") else "comfortable"
             scale_cfg = ui_scale.UiScaleConfig(scale_percent=scale_percent, density=density)
             ui_scale.save_config(scale_cfg)
@@ -2911,6 +2922,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 runtime_hub=self.codesee_hub,
                 on_open_window=self._open_code_see_window,
             )
+            self.codesee.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Ignored,
+                QtWidgets.QSizePolicy.Policy.Ignored,
+            )
+            self.codesee.setMinimumSize(0, 0)
             try:
                 self.codesee.set_screen_context(self._codesee_context)
             except Exception:

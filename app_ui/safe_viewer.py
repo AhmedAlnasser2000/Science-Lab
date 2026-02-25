@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from PyQt6 import QtCore, QtWidgets
 
 from app_ui.codesee import crash_io
+from app_ui import ui_scale
 from app_ui import versioning
 from app_ui.codesee.screen import CodeSeeScreen
 from app_ui.widgets.workspace_selector import WorkspaceSelector
@@ -84,7 +85,7 @@ class CodeSeeViewerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("Code See (Safe Viewer)")
         self.resize(1100, 720)
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(720, 480)
         self._on_close = on_close
         self.screen = CodeSeeScreen(
             on_back=self.close,
@@ -96,6 +97,8 @@ class CodeSeeViewerWindow(QtWidgets.QMainWindow):
             crash_view=crash_view,
         )
         self.setCentralWidget(self.screen)
+        self._apply_ui_scale_geometry(ui_scale.get_config())
+        ui_scale.register_listener(self._on_ui_scale_changed)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._on_close:
@@ -104,6 +107,17 @@ class CodeSeeViewerWindow(QtWidgets.QMainWindow):
             except Exception:
                 pass
         super().closeEvent(event)
+
+    def _on_ui_scale_changed(self, cfg: ui_scale.UiScaleConfig) -> None:
+        self._apply_ui_scale_geometry(cfg)
+
+    def _apply_ui_scale_geometry(self, cfg: ui_scale.UiScaleConfig) -> None:
+        del cfg
+        min_w = int(ui_scale.scale_px(720))
+        min_h = int(ui_scale.scale_px(480))
+        self.setMinimumSize(min_w, min_h)
+        if self.width() < min_w or self.height() < min_h:
+            self.resize(max(self.width(), min_w), max(self.height(), min_h))
 
 
 class SafeViewerWindow(QtWidgets.QMainWindow):
@@ -114,6 +128,7 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
             f"PhysicsLab Safe Viewer - {build.get('app_version', 'unknown')} ({build.get('build_id', 'unknown')})"
         )
         self.resize(640, 360)
+        self.setMinimumSize(520, 320)
         self._active_workspace_id = "default"
         self._workspace_map: Dict[str, Dict[str, Any]] = {}
         self._codesee_window: Optional[CodeSeeViewerWindow] = None
@@ -173,6 +188,8 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
 
         layout.addStretch()
         self.setCentralWidget(central)
+        self._apply_ui_scale_geometry(ui_scale.get_config())
+        ui_scale.register_listener(self._on_ui_scale_changed)
         self._refresh_workspace_path()
         self._refresh_crash_state()
 
@@ -271,6 +288,17 @@ class SafeViewerWindow(QtWidgets.QMainWindow):
         self._refresh_crash_state()
         if self._codesee_window:
             self._codesee_window.screen.set_crash_view(True)
+
+    def _on_ui_scale_changed(self, cfg: ui_scale.UiScaleConfig) -> None:
+        self._apply_ui_scale_geometry(cfg)
+
+    def _apply_ui_scale_geometry(self, cfg: ui_scale.UiScaleConfig) -> None:
+        del cfg
+        min_w = int(ui_scale.scale_px(520))
+        min_h = int(ui_scale.scale_px(320))
+        self.setMinimumSize(min_w, min_h)
+        if self.width() < min_w or self.height() < min_h:
+            self.resize(max(self.width(), min_w), max(self.height(), min_h))
 
 
 def _format_crash_timestamp(ts: object) -> str:

@@ -83,6 +83,7 @@ from .runtime.hub import CodeSeeRuntimeHub
 from .runtime.monitor_state import MonitorState
 from .runtime.session_deltas import monitor_transition_deltas, trace_transition_delta
 from .runtime.session_recording import SessionRecorder, SessionRecorderConfig
+from .runtime import session_schema
 from .runtime import session_store as replay_session_store
 from .runtime.session_replay import REPLAY_SPEED_PRESETS, ReplayController, ReplaySeekResult, load_replay_session
 from .runtime.trail_focus import (
@@ -273,6 +274,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
             follow_last_trace=self._monitor_follow_last_trace,
         )
         self._session_recording_enabled = True
+        self._session_recording_paused = False
         self._session_recorder: Optional[SessionRecorder] = None
         self._monitor_active_trace_id: Optional[str] = None
         self._monitor_trace_pinned = False
@@ -290,6 +292,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._replay_controller: Optional[ReplayController] = None
         self._replay_session_id: Optional[str] = None
         self._replay_prev_live_enabled = self._live_enabled
+        self._replay_prev_recording_paused = False
         self._replay_buffered_live_count = 0
         self._replay_tick_timer = QtCore.QTimer(self)
         self._replay_tick_timer.setInterval(REPLAY_TICK_MS)
@@ -456,16 +459,41 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.replay_mode_label = QtWidgets.QLabel("Replay:")
         replay_row.addWidget(self.replay_mode_label)
         self.replay_session_combo = QtWidgets.QComboBox()
+        self.replay_session_combo.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.replay_session_combo.setMinimumContentsLength(18)
+        self.replay_session_combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
         self.replay_session_combo.currentIndexChanged.connect(self._on_replay_session_changed)
         replay_row.addWidget(self.replay_session_combo)
         self.replay_refresh_btn = QtWidgets.QToolButton()
         self.replay_refresh_btn.setText("Refresh Sessions")
         self.replay_refresh_btn.clicked.connect(self._refresh_replay_sessions)
         replay_row.addWidget(self.replay_refresh_btn)
+        self.recording_start_btn = QtWidgets.QToolButton()
+        self.recording_start_btn.setText("Start Recording")
+        self.recording_start_btn.clicked.connect(self._on_recording_start_clicked)
+        replay_row.addWidget(self.recording_start_btn)
+        self.recording_pause_btn = QtWidgets.QToolButton()
+        self.recording_pause_btn.setText("Pause Recording")
+        self.recording_pause_btn.setCheckable(True)
+        self.recording_pause_btn.toggled.connect(self._on_recording_pause_toggled)
+        replay_row.addWidget(self.recording_pause_btn)
+        self.recording_stop_btn = QtWidgets.QToolButton()
+        self.recording_stop_btn.setText("Stop Recording")
+        self.recording_stop_btn.clicked.connect(self._on_recording_stop_clicked)
+        replay_row.addWidget(self.recording_stop_btn)
         self.replay_enter_btn = QtWidgets.QToolButton()
-        self.replay_enter_btn.setText("Enter Replay")
+        self.replay_enter_btn.setText("Review Session")
         self.replay_enter_btn.clicked.connect(self._on_enter_replay_clicked)
         replay_row.addWidget(self.replay_enter_btn)
+        self.replay_delete_btn = QtWidgets.QToolButton()
+        self.replay_delete_btn.setText("Delete Session")
+        self.replay_delete_btn.clicked.connect(self._on_delete_replay_session_clicked)
+        replay_row.addWidget(self.replay_delete_btn)
         self.replay_exit_btn = QtWidgets.QToolButton()
         self.replay_exit_btn.setText("Exit Replay")
         self.replay_exit_btn.clicked.connect(self.exit_replay_mode)
@@ -500,6 +528,11 @@ class CodeSeeScreen(QtWidgets.QWidget):
         replay_row.addWidget(self.replay_seq_slider, stretch=1)
         self.replay_status_label = QtWidgets.QLabel("Replay: off")
         self.replay_status_label.setStyleSheet("color: #555;")
+        self.replay_status_label.setMinimumWidth(0)
+        self.replay_status_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Ignored,
+            QtWidgets.QSizePolicy.Policy.Preferred,
+        )
         replay_row.addWidget(self.replay_status_label)
         self._sync_replay_jump_controls()
         layout.addLayout(replay_row)
@@ -795,6 +828,9 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return False
 
         self._replay_prev_live_enabled = bool(self._live_enabled)
+        self._replay_prev_recording_paused = bool(self._session_recording_paused)
+        if self._session_recorder is not None and self._session_recorder.is_active():
+            self._session_recording_paused = True
         self._replay_mode_active = True
         self._replay_session_id = target_session
         self._replay_controller = controller
@@ -838,6 +874,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self._replay_session_id = None
         self._replay_buffered_live_count = 0
         self._live_enabled = bool(self._replay_prev_live_enabled)
+        if self._session_recorder is not None and self._session_recorder.is_active():
+            self._session_recording_paused = bool(self._replay_prev_recording_paused)
+        else:
+            self._session_recording_paused = False
         self.live_toggle.blockSignals(True)
         self.live_toggle.setChecked(self._live_enabled)
         self.live_toggle.blockSignals(False)
@@ -874,8 +914,32 @@ class CodeSeeScreen(QtWidgets.QWidget):
             return str(value)
         return str(self.replay_session_combo.currentText() or "").strip()
 
+    def _current_recording_session_id(self) -> Optional[str]:
+        recorder = self._session_recorder
+        if recorder is None or not recorder.is_active():
+            return None
+        root = recorder.session_dir()
+        if not root:
+            return None
+        text = str(root.name).strip()
+        return text or None
+
+    @staticmethod
+    def _format_replay_started_label(started_at_ms_epoch: Any) -> str:
+        try:
+            value = int(started_at_ms_epoch)
+        except Exception:
+            value = 0
+        if value <= 0:
+            return "-"
+        try:
+            return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(value / 1000.0))
+        except Exception:
+            return "-"
+
     def _refresh_replay_sessions(self) -> None:
         current = self._selected_replay_session_id()
+        recording_session_id = self._current_recording_session_id()
         try:
             entries = replay_session_store.list_sessions(self._workspace_id())
         except Exception:
@@ -888,7 +952,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 continue
             status = str(entry.get("status") or "")
             records = int((entry.get("meta") or {}).get("counts", {}).get("records", 0))
-            label = f"{session_id} ({status}, {records} records)"
+            started = self._format_replay_started_label(entry.get("started_at_ms_epoch"))
+            label = f"{session_id} [{status}] {started} | {records} records"
+            if recording_session_id and session_id == recording_session_id:
+                label += " | recording"
             self.replay_session_combo.addItem(label, session_id)
         if current:
             idx = self.replay_session_combo.findData(current)
@@ -916,7 +983,10 @@ class CodeSeeScreen(QtWidgets.QWidget):
     def _sync_replay_controls(self) -> None:
         has_session = self.replay_session_combo.count() > 0
         in_replay = bool(self._replay_mode_active and self._replay_controller is not None)
+        recording_active = bool(self._current_recording_session_id())
+        can_delete = has_session and not in_replay
         self.replay_enter_btn.setEnabled(has_session and not in_replay)
+        self.replay_delete_btn.setEnabled(can_delete)
         self.replay_exit_btn.setEnabled(in_replay)
         self.replay_session_combo.setEnabled(not in_replay)
         self.replay_play_toggle.setEnabled(in_replay)
@@ -927,13 +997,30 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.replay_seq_slider.setEnabled(in_replay)
         live_allowed = bool((not self._safe_mode) and self._runtime_hub and (not in_replay))
         self.live_toggle.setEnabled(live_allowed)
+        self.recording_start_btn.setEnabled(not in_replay)
+        self.recording_start_btn.setText("Start New Recording" if recording_active else "Start Recording")
+        self.recording_pause_btn.blockSignals(True)
+        self.recording_pause_btn.setChecked(bool(self._session_recording_paused))
+        self.recording_pause_btn.blockSignals(False)
+        self.recording_pause_btn.setText("Resume Recording" if self._session_recording_paused else "Pause Recording")
+        self.recording_pause_btn.setEnabled(recording_active and not in_replay)
+        self.recording_stop_btn.setEnabled(recording_active and not in_replay)
         self._sync_replay_jump_controls()
         self._update_replay_status_label()
 
     def _update_replay_status_label(self) -> None:
+        recording_session = self._current_recording_session_id()
+        if recording_session:
+            recording_text = (
+                f"Recording paused: {recording_session}"
+                if self._session_recording_paused
+                else f"Recording active: {recording_session}"
+            )
+        else:
+            recording_text = "Recording stopped"
         controller = self._replay_controller
         if not self._replay_mode_active or controller is None:
-            self.replay_status_label.setText("Replay: off")
+            self.replay_status_label.setText(f"Replay: off | {recording_text}")
             return
         snapshot = controller.snapshot
         state = "playing" if snapshot.is_playing else "paused"
@@ -944,6 +1031,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         if self._replay_buffered_live_count > 0:
             text += f" | Live paused ({self._replay_buffered_live_count})"
+        text += f" | {recording_text}"
         self.replay_status_label.setText(text)
 
     def _sync_replay_jump_controls(self) -> None:
@@ -997,6 +1085,93 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.enter_replay_mode(session_id)
 
     def _on_replay_session_changed(self, _index: int) -> None:
+        self._sync_replay_controls()
+
+    def _on_recording_start_clicked(self) -> None:
+        if self._replay_mode_active:
+            return
+        if self._session_recorder is not None and self._session_recorder.is_active():
+            self._stop_session_recorder(status=session_schema.SESSION_STATUS_COMPLETE)
+        self._session_recording_enabled = True
+        self._session_recording_paused = False
+        self._start_session_recorder()
+        session_id = self._current_recording_session_id()
+        self.status_label.setText(
+            f"Recording session started: {session_id}"
+            if session_id
+            else "Recording session started."
+        )
+        self._refresh_replay_sessions()
+        self._sync_replay_controls()
+
+    def _on_recording_pause_toggled(self, checked: bool) -> None:
+        if self._session_recorder is None or not self._session_recorder.is_active():
+            self.recording_pause_btn.blockSignals(True)
+            self.recording_pause_btn.setChecked(False)
+            self.recording_pause_btn.blockSignals(False)
+            self._session_recording_paused = False
+            self._sync_replay_controls()
+            return
+        self._session_recording_paused = bool(checked)
+        session_id = self._current_recording_session_id() or "n/a"
+        self.status_label.setText(
+            f"Recording session paused: {session_id}"
+            if checked
+            else f"Recording session resumed: {session_id}"
+        )
+        self._sync_replay_controls()
+
+    def _on_recording_stop_clicked(self) -> None:
+        if self._session_recorder is None or not self._session_recorder.is_active():
+            self.status_label.setText("Recording already stopped.")
+            self._sync_replay_controls()
+            return
+        stopped_session = self._current_recording_session_id() or "n/a"
+        self._stop_session_recorder(status=session_schema.SESSION_STATUS_COMPLETE)
+        self._session_recording_paused = False
+        self.status_label.setText(f"Recording session stopped: {stopped_session}")
+        self._refresh_replay_sessions()
+        self._sync_replay_controls()
+
+    def _on_delete_replay_session_clicked(self) -> None:
+        session_id = self._selected_replay_session_id()
+        if not session_id:
+            self.status_label.setText("No session selected for deletion.")
+            return
+        active_session_id = self._current_recording_session_id()
+        if active_session_id and session_id == active_session_id:
+            self.status_label.setText("Cannot delete the active recording session.")
+            return
+        if self._replay_mode_active and session_id == str(self._replay_session_id or ""):
+            self.status_label.setText("Exit replay mode before deleting the reviewed session.")
+            return
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Session",
+            f"Delete session '{session_id}'?\nThis cannot be undone.",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        result = replay_session_store.delete_session(
+            self._workspace_id(),
+            session_id,
+            active_session_id=active_session_id,
+        )
+        if not bool(result.get("ok")):
+            reason = str(result.get("reason") or "delete_failed")
+            if reason == "locked":
+                self.status_label.setText(f"Delete blocked for {session_id}: session is locked.")
+            elif reason == "active":
+                self.status_label.setText(f"Delete blocked for {session_id}: session is active.")
+            elif reason == "missing":
+                self.status_label.setText(f"Delete skipped for {session_id}: session not found.")
+            else:
+                self.status_label.setText(f"Delete failed for {session_id}: {reason}")
+            return
+        self.status_label.setText(f"Deleted session: {session_id}")
+        self._refresh_replay_sessions()
         self._sync_replay_controls()
 
     def _on_replay_play_toggled(self, checked: bool) -> None:
@@ -3457,20 +3632,27 @@ class CodeSeeScreen(QtWidgets.QWidget):
                 snapshot_provider=self._build_session_snapshot,
             )
             self._session_recorder.start_session(build_info=self._build_info)
+            self._session_recording_paused = False
+            if hasattr(self, "replay_session_combo"):
+                self._refresh_replay_sessions()
         except Exception as exc:
             self._session_recorder = None
             self._session_recording_enabled = False
             log_buffer.LOG_BUFFER.append(f"session recorder disabled (start failed): {exc}")
+            self._session_recording_paused = False
 
-    def _stop_session_recorder(self) -> None:
+    def _stop_session_recorder(self, *, status: str = session_schema.SESSION_STATUS_COMPLETE) -> None:
         recorder = self._session_recorder
         if recorder is None:
             return
         self._session_recorder = None
         try:
-            recorder.stop_session()
+            recorder.stop_session(status=status)
         except Exception as exc:
             log_buffer.LOG_BUFFER.append(f"session recorder stop failed: {exc}")
+        self._session_recording_paused = False
+        if hasattr(self, "replay_session_combo"):
+            self._refresh_replay_sessions()
 
     def _restart_session_recorder(self) -> None:
         was_enabled = bool(self._session_recording_enabled)
@@ -3480,13 +3662,14 @@ class CodeSeeScreen(QtWidgets.QWidget):
 
     def _record_runtime_event(self, event: CodeSeeEvent) -> None:
         recorder = self._session_recorder
-        if recorder is None:
+        if recorder is None or self._session_recording_paused:
             return
         try:
             recorder.record_event(event)
         except Exception as exc:
             self._session_recorder = None
             self._session_recording_enabled = False
+            self._session_recording_paused = False
             log_buffer.LOG_BUFFER.append(f"session recorder disabled (event failed): {exc}")
 
     def _build_session_snapshot(self) -> Dict[str, Any]:
@@ -3512,7 +3695,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         reason: str,
     ) -> None:
         recorder = self._session_recorder
-        if recorder is None:
+        if recorder is None or self._session_recording_paused:
             return
         after_states = self._monitor.snapshot_states()
         after_trace = self._monitor.snapshot_trace()
@@ -3528,17 +3711,19 @@ class CodeSeeScreen(QtWidgets.QWidget):
         except Exception as exc:
             self._session_recorder = None
             self._session_recording_enabled = False
+            self._session_recording_paused = False
             log_buffer.LOG_BUFFER.append(f"session recorder disabled (delta failed): {exc}")
 
     def _flush_session_recorder(self) -> None:
         recorder = self._session_recorder
-        if recorder is None:
+        if recorder is None or self._session_recording_paused:
             return
         try:
             recorder.flush()
         except Exception as exc:
             self._session_recorder = None
             self._session_recording_enabled = False
+            self._session_recording_paused = False
             log_buffer.LOG_BUFFER.append(f"session recorder disabled (flush failed): {exc}")
 
     # --- [NAV-70C] runtime event handler

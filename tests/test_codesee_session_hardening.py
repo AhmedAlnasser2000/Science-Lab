@@ -150,3 +150,47 @@ def test_list_sessions_marks_missing_or_partial_meta_incomplete(tmp_path: Path) 
     assert sessions["partial"]["status"] == session_schema.SESSION_STATUS_INCOMPLETE
     assert sessions["partial"]["meta"]["counts"]["records"] == 0
     assert sessions["partial"]["meta"]["counts"]["corrupt_lines"] == 0
+
+
+def test_list_sessions_marks_active_without_lock_incomplete(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    workspace = "default"
+    root = _write_meta(
+        workspace,
+        "active-no-lock",
+        started_ms=10,
+        status=session_schema.SESSION_STATUS_ACTIVE,
+    )
+
+    sessions = {entry["session_id"]: entry for entry in session_store.list_sessions(workspace)}
+    assert sessions["active-no-lock"]["status"] == session_schema.SESSION_STATUS_INCOMPLETE
+    stored_meta = session_store.read_json(session_store.meta_path(root))
+    assert stored_meta is not None
+    assert stored_meta["status"] == session_schema.SESSION_STATUS_INCOMPLETE
+
+
+def test_delete_session_respects_lock_and_active_guards(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+    workspace = "default"
+    root = _write_meta(workspace, "s1", started_ms=1)
+    session_store.append_jsonl(session_store.records_path(root), {"seq": 1, "type": "event"})
+
+    session_store.write_json(
+        session_store.lock_path(root),
+        {"pid": 999, "started_at_ms_epoch": 1, "session_id": "s1"},
+    )
+    locked = session_store.delete_session(workspace, "s1")
+    assert locked["ok"] is False
+    assert locked["reason"] == "locked"
+    assert root.exists() is True
+
+    session_store.lock_path(root).unlink()
+    active = session_store.delete_session(workspace, "s1", active_session_id="s1")
+    assert active["ok"] is False
+    assert active["reason"] == "active"
+    assert root.exists() is True
+
+    deleted = session_store.delete_session(workspace, "s1")
+    assert deleted["ok"] is True
+    assert deleted["reason"] == "deleted"
+    assert root.exists() is False

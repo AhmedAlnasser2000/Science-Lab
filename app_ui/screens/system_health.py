@@ -679,6 +679,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.sessions_open_btn.clicked.connect(self._open_selected_session_folder)
         self.sessions_open_btn.setEnabled(False)
         sessions_toolbar.addWidget(self.sessions_open_btn)
+        self.sessions_delete_btn = QtWidgets.QPushButton("Delete selected")
+        self.sessions_delete_btn.clicked.connect(self._delete_selected_session)
+        self.sessions_delete_btn.setEnabled(False)
+        sessions_toolbar.addWidget(self.sessions_delete_btn)
         self.sessions_open_root_btn = QtWidgets.QPushButton("Open sessions root")
         self.sessions_open_root_btn.clicked.connect(self._open_sessions_root_folder)
         sessions_toolbar.addWidget(self.sessions_open_root_btn)
@@ -823,6 +827,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.sessions_open_root_btn.setEnabled(bool(enabled))
         if hasattr(self, "sessions_open_btn"):
             self.sessions_open_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
+        if hasattr(self, "sessions_delete_btn"):
+            self.sessions_delete_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
         self._update_pillars_controls()
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
@@ -1325,6 +1331,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._session_rows = []
         self.sessions_table.setRowCount(0)
         self.sessions_open_btn.setEnabled(False)
+        if hasattr(self, "sessions_delete_btn"):
+            self.sessions_delete_btn.setEnabled(False)
         self.sessions_detail.clear()
 
         if codesee_session_store is None:
@@ -1381,6 +1389,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _render_selected_session_summary(self, row_index: int) -> None:
         if row_index < 0 or row_index >= len(self._session_rows):
             self.sessions_open_btn.setEnabled(False)
+            if hasattr(self, "sessions_delete_btn"):
+                self.sessions_delete_btn.setEnabled(False)
             self.sessions_detail.clear()
             return
         row = self._session_rows[row_index]
@@ -1404,6 +1414,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         }
         self.sessions_detail.setPlainText(json.dumps(summary, indent=2, ensure_ascii=False))
         self.sessions_open_btn.setEnabled(bool(row.get("path")))
+        if hasattr(self, "sessions_delete_btn"):
+            self.sessions_delete_btn.setEnabled(bool(row.get("session_id")))
 
     def _open_selected_session_folder(self) -> None:
         row_index = self.sessions_table.currentRow() if hasattr(self, "sessions_table") else -1
@@ -1420,6 +1432,41 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self._open_folder(Path("data") / "workspaces" / workspace_id / "codesee" / "sessions")
             return
         self._open_folder(codesee_session_store.workspace_sessions_root(workspace_id))
+
+    def _delete_selected_session(self) -> None:
+        if codesee_session_store is None:
+            self.sessions_status.setText("Delete unavailable: CodeSee session store not importable.")
+            return
+        row_index = self.sessions_table.currentRow() if hasattr(self, "sessions_table") else -1
+        if row_index < 0 or row_index >= len(self._session_rows):
+            return
+        row = self._session_rows[row_index]
+        session_id = str(row.get("session_id") or "").strip()
+        if not session_id:
+            return
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Session",
+            f"Delete session '{session_id}'?\nThis cannot be undone.",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        result = codesee_session_store.delete_session(self._sessions_workspace_id, session_id)
+        if not bool(result.get("ok")):
+            reason = str(result.get("reason") or "delete_failed")
+            if reason == "locked":
+                self.sessions_status.setText(f"Delete blocked for {session_id}: session is locked.")
+            elif reason == "active":
+                self.sessions_status.setText(f"Delete blocked for {session_id}: session is active.")
+            elif reason == "missing":
+                self.sessions_status.setText(f"Delete skipped for {session_id}: session not found.")
+            else:
+                self.sessions_status.setText(f"Delete failed for {session_id}: {reason}")
+            return
+        self.sessions_status.setText(f"Deleted session {session_id}.")
+        self._refresh_sessions_panel()
 
     def _on_runs_item_changed(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         if getattr(self, "_runs_syncing", False) or column != 0:

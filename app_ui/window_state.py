@@ -55,8 +55,28 @@ class WindowStateStore:
             data = QtCore.QByteArray.fromBase64(encoded.encode("ascii"))
             if data:
                 window.restoreGeometry(data)
+                self._clamp_to_available_screen(window)
         except Exception:
             return
+
+    def _clamp_to_available_screen(self, window: QtWidgets.QWidget) -> None:
+        screen = window.screen() or QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        frame = window.frameGeometry()
+        width = min(max(window.minimumWidth(), frame.width()), max(100, available.width()))
+        height = min(max(window.minimumHeight(), frame.height()), max(100, available.height()))
+        if width != frame.width() or height != frame.height():
+            window.resize(width, height)
+            frame = window.frameGeometry()
+        min_x = available.left()
+        min_y = available.top()
+        max_x = available.right() - frame.width() + 1
+        max_y = available.bottom() - frame.height() + 1
+        x = min(max(frame.x(), min_x), max_x)
+        y = min(max(frame.y(), min_y), max_y)
+        window.move(x, y)
 
 
 _STORE = WindowStateStore()

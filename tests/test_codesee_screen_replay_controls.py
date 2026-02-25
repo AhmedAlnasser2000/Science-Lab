@@ -114,7 +114,7 @@ def test_replay_api_surface_enters_and_exits_mode(tmp_path: Path) -> None:
 
         screen.exit_replay_mode()
         assert screen._replay_mode_active is False
-        assert screen.replay_status_label.text() == "Replay: off"
+        assert "Replay: off" in screen.replay_status_label.text()
     finally:
         if not sip.isdeleted(screen):
             screen.cleanup()
@@ -200,6 +200,61 @@ def test_replay_trail_focus_uses_replay_monitor_trace_state(tmp_path: Path) -> N
         assert "module.ui" in screen.scene._trail_focus_nodes
         assert "module.runtime_bus" in screen.scene._trail_focus_nodes
         assert screen.scene._trail_node_opacity.get("module.ui", 0.0) >= 0.85
+    finally:
+        if not sip.isdeleted(screen):
+            screen.cleanup()
+
+
+def test_recording_controls_start_pause_stop(tmp_path: Path) -> None:
+    os.chdir(tmp_path)
+
+    screen = _make_screen()
+    try:
+        assert screen.replay_enter_btn.text() == "Review Session"
+        first_session = screen._current_recording_session_id()
+        assert first_session
+        assert screen._session_recording_paused is False
+
+        screen.recording_pause_btn.setChecked(True)
+        assert screen._session_recording_paused is True
+        assert "paused" in screen.replay_status_label.text().lower()
+
+        screen.recording_pause_btn.setChecked(False)
+        assert screen._session_recording_paused is False
+
+        screen._on_recording_stop_clicked()
+        assert screen._current_recording_session_id() is None
+        assert "Recording stopped" in screen.replay_status_label.text()
+
+        screen._on_recording_start_clicked()
+        second_session = screen._current_recording_session_id()
+        assert second_session
+        assert second_session != first_session
+        assert "Recording active" in screen.replay_status_label.text()
+    finally:
+        if not sip.isdeleted(screen):
+            screen.cleanup()
+
+
+def test_replay_delete_session_button_removes_selected(tmp_path: Path, monkeypatch) -> None:
+    os.chdir(tmp_path)
+    root = _write_meta("default", "delete-me")
+    _write_linear_records(root, count=2)
+
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "question",
+        lambda *args, **kwargs: QtWidgets.QMessageBox.StandardButton.Yes,
+    )
+
+    screen = _make_screen()
+    try:
+        screen._refresh_replay_sessions()
+        idx = screen.replay_session_combo.findData("delete-me")
+        assert idx >= 0
+        screen.replay_session_combo.setCurrentIndex(idx)
+        screen._on_delete_replay_session_clicked()
+        assert session_store.session_dir("default", "delete-me").exists() is False
     finally:
         if not sip.isdeleted(screen):
             screen.cleanup()
