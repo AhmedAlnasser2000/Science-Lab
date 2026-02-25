@@ -2861,6 +2861,7 @@ class MainWindow(QtWidgets.QMainWindow):
             bus=APP_BUS,
             workspace_selector_factory=selector_factory,
             on_run_codesee_trail_self_test=self._run_codesee_trail_visual_self_test,
+            on_open_codesee_replay_session=self._open_codesee_replay_session_from_system_health,
         )
         self.content_management = ContentManagementScreen(
             self.adapter,
@@ -3659,6 +3660,27 @@ class MainWindow(QtWidgets.QMainWindow):
                     sys.stderr.write("[codesee] disabled; open_root unavailable\n")
                 except Exception:
                     pass
+
+    def _open_codesee_replay_session_from_system_health(self, session_id: str) -> Dict[str, Any]:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return {"ok": False, "summary": "Replay launch failed: invalid session id."}
+        if self.current_profile != "Explorer":
+            return {"ok": False, "summary": "Replay launch unavailable outside Explorer profile."}
+        if getattr(self, "_codesee_disabled", False):
+            return {"ok": False, "summary": "Replay launch unavailable (CodeSee disabled)."}
+        screen = getattr(self, "codesee", None)
+        if not isinstance(screen, CodeSeeScreen):
+            return {"ok": False, "summary": "Replay launch unavailable: CodeSee screen missing."}
+        self._open_code_see()
+        try:
+            screen._refresh_replay_sessions()
+            if not bool(screen.enter_replay_mode(sid)):
+                return {"ok": False, "summary": f"Replay launch failed for {sid}."}
+        except Exception as exc:
+            return {"ok": False, "summary": f"Replay launch failed for {sid}: {exc}"}
+        self._publish_codesee_event("Code See Replay", node_ids=["system:app_ui"])
+        return {"ok": True, "summary": f"Replay opened for {sid}."}
 
     def _open_code_see_window(self) -> None:
         if self.current_profile != "Explorer":

@@ -78,12 +78,13 @@ def test_read_bookmarks_normalizes_invalid_entries(tmp_path: Path) -> None:
             "session_id": "bookmark-normalize",
             "workspace_id": "default",
             "updated_at_ms_epoch": "bad",
+            "future_root_field": {"flag": True},
             "bookmarks": [
                 {"bookmark_id": "ok", "label": "ok", "seq": 5, "ts_ms_epoch": 5000},
                 {"bookmark_id": "bad-seq", "label": "bad", "seq": 0},
                 {"bookmark_id": "ok", "label": "duplicate", "seq": 7},
                 "not-an-object",
-                {"label": "", "seq": 2, "ts_ms_epoch": 2000},
+                {"label": "", "seq": 2, "ts_ms_epoch": 2000, "future_item_field": [1, 2, 3]},
             ],
         },
     )
@@ -95,3 +96,5 @@ def test_read_bookmarks_normalizes_invalid_entries(tmp_path: Path) -> None:
     assert len(payload["bookmarks"]) == 2
     assert [item["bookmark_id"] for item in payload["bookmarks"]] == ["bookmark_5", "ok"]
     assert payload["bookmarks"][0]["seq"] == 2
+    assert "future_root_field" not in payload
+    assert "future_item_field" not in payload["bookmarks"][0]

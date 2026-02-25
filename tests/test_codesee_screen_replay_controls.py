@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -95,6 +96,10 @@ def _write_replay_state_session(workspace_id: str, session_id: str) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_replay_api_surface_enters_and_exits_mode(tmp_path: Path) -> None:
@@ -303,3 +308,44 @@ def test_replay_bookmark_crud_and_jump(tmp_path: Path, monkeypatch) -> None:
     finally:
         if not sip.isdeleted(screen):
             screen.cleanup()
+
+
+def test_replay_actions_only_mutate_bookmarks_sidecar(tmp_path: Path, monkeypatch) -> None:
+    os.chdir(tmp_path)
+    root = _write_replay_state_session("default", "mutation-boundary")
+    meta_path = session_store.meta_path(root)
+    records_path = session_store.records_path(root)
+    keyframe = session_store.keyframe_path(root, 1)
+
+    before_meta = _sha256(meta_path)
+    before_records = _sha256(records_path)
+    before_keyframe = _sha256(keyframe)
+
+    prompts = [("Boundary Mark", True), ("Boundary Mark Updated", True)]
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *args, **kwargs: prompts.pop(0),
+    )
+
+    screen = _make_screen()
+    try:
+        assert screen.enter_replay_mode("mutation-boundary") is True
+        screen.set_replay_seq(2)
+        screen._on_replay_play_toggled(True)
+        screen._on_replay_tick()
+        screen._on_replay_play_toggled(False)
+        screen._on_replay_jump_forward()
+        screen._on_replay_jump_back()
+        screen._on_replay_add_bookmark_clicked()
+        screen._on_replay_update_bookmark_clicked()
+        screen._on_replay_delete_bookmark_clicked()
+    finally:
+        if not sip.isdeleted(screen):
+            screen.cleanup()
+
+    assert _sha256(meta_path) == before_meta
+    assert _sha256(records_path) == before_records
+    assert _sha256(keyframe) == before_keyframe
+    bookmarks = bookmark_store.read_bookmarks(root)
+    assert isinstance(bookmarks.get("bookmarks"), list)

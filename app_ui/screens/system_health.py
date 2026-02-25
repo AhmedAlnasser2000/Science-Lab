@@ -261,11 +261,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
         bus=None,
         workspace_selector_factory: Optional[Callable[[], "WorkspaceSelector"]] = None,
         on_run_codesee_trail_self_test: Optional[Callable[[], Dict[str, Any]]] = None,
+        on_open_codesee_replay_session: Optional[Callable[[str], Dict[str, Any]]] = None,
     ):
         super().__init__()
         self.on_back = on_back
         self.bus = bus
         self._on_run_codesee_trail_self_test = on_run_codesee_trail_self_test
+        self._on_open_codesee_replay_session = on_open_codesee_replay_session
         self.direct_available = bool(cleanup_enabled)
         self.refresh_capability = bool(self.bus or self.direct_available)
         self._task_thread: Optional[QtCore.QThread] = None
@@ -683,6 +685,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.sessions_delete_btn.clicked.connect(self._delete_selected_session)
         self.sessions_delete_btn.setEnabled(False)
         sessions_toolbar.addWidget(self.sessions_delete_btn)
+        self.sessions_review_btn = QtWidgets.QPushButton("Review in CodeSee")
+        self.sessions_review_btn.clicked.connect(self._review_selected_session)
+        self.sessions_review_btn.setEnabled(False)
+        sessions_toolbar.addWidget(self.sessions_review_btn)
         self.sessions_open_root_btn = QtWidgets.QPushButton("Open sessions root")
         self.sessions_open_root_btn.clicked.connect(self._open_sessions_root_folder)
         sessions_toolbar.addWidget(self.sessions_open_root_btn)
@@ -829,6 +835,14 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.sessions_open_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
         if hasattr(self, "sessions_delete_btn"):
             self.sessions_delete_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
+        if hasattr(self, "sessions_review_btn"):
+            row_index = self.sessions_table.currentRow() if hasattr(self, "sessions_table") else -1
+            review_enabled = False
+            if row_index >= 0 and row_index < len(self._session_rows):
+                review_enabled = bool(self._session_rows[row_index].get("reviewable"))
+            self.sessions_review_btn.setEnabled(
+                bool(enabled and review_enabled and callable(self._on_open_codesee_replay_session))
+            )
         self._update_pillars_controls()
         module_enabled = bool(
             enabled and self.bus and self._is_explorer and not self._module_job_running
@@ -1333,6 +1347,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.sessions_open_btn.setEnabled(False)
         if hasattr(self, "sessions_delete_btn"):
             self.sessions_delete_btn.setEnabled(False)
+        if hasattr(self, "sessions_review_btn"):
+            self.sessions_review_btn.setEnabled(False)
         self.sessions_detail.clear()
 
         if codesee_session_store is None:
@@ -1391,6 +1407,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.sessions_open_btn.setEnabled(False)
             if hasattr(self, "sessions_delete_btn"):
                 self.sessions_delete_btn.setEnabled(False)
+            if hasattr(self, "sessions_review_btn"):
+                self.sessions_review_btn.setEnabled(False)
             self.sessions_detail.clear()
             return
         row = self._session_rows[row_index]
@@ -1416,6 +1434,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.sessions_open_btn.setEnabled(bool(row.get("path")))
         if hasattr(self, "sessions_delete_btn"):
             self.sessions_delete_btn.setEnabled(bool(row.get("session_id")))
+        if hasattr(self, "sessions_review_btn"):
+            self.sessions_review_btn.setEnabled(
+                bool(row.get("reviewable") and callable(self._on_open_codesee_replay_session))
+            )
 
     def _open_selected_session_folder(self) -> None:
         row_index = self.sessions_table.currentRow() if hasattr(self, "sessions_table") else -1
@@ -1467,6 +1489,36 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         self.sessions_status.setText(f"Deleted session {session_id}.")
         self._refresh_sessions_panel()
+
+    def _review_selected_session(self) -> None:
+        if not callable(self._on_open_codesee_replay_session):
+            self.sessions_status.setText("Replay launch unavailable in this mode.")
+            return
+        row_index = self.sessions_table.currentRow() if hasattr(self, "sessions_table") else -1
+        if row_index < 0 or row_index >= len(self._session_rows):
+            return
+        row = self._session_rows[row_index]
+        session_id = str(row.get("session_id") or "").strip()
+        if not session_id:
+            self.sessions_status.setText("Replay launch failed: invalid session id.")
+            return
+        if not bool(row.get("reviewable")):
+            self.sessions_status.setText(f"Replay launch unavailable for session {session_id}.")
+            return
+        try:
+            result = self._on_open_codesee_replay_session(session_id)
+        except Exception as exc:
+            self.sessions_status.setText(f"Replay launch failed for {session_id}: {exc}")
+            return
+        if not isinstance(result, dict):
+            self.sessions_status.setText(f"Replay launch issued for {session_id}.")
+            return
+        if bool(result.get("ok")):
+            self.sessions_status.setText(str(result.get("summary") or f"Replay opened for {session_id}."))
+            return
+        self.sessions_status.setText(
+            str(result.get("summary") or f"Replay launch failed for {session_id}.")
+        )
 
     def _on_runs_item_changed(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         if getattr(self, "_runs_syncing", False) or column != 0:
@@ -2556,13 +2608,15 @@ def _session_summary_from_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
         started_ms = entry.get("started_at_ms_epoch")
     ended_ms = meta.get("ended_at_ms_epoch")
     schema_version = meta.get("schema_version")
-    return {
-        "session_id": str(entry.get("session_id") or meta.get("session_id") or ""),
+    records = _safe_int(counts.get("records"))
+    session_id = str(entry.get("session_id") or meta.get("session_id") or "")
+    summary = {
+        "session_id": session_id,
         "status": str(meta.get("status") or entry.get("status") or "INCOMPLETE"),
         "schema_version": str(schema_version if isinstance(schema_version, int) else "?"),
         "started": _format_session_epoch_ms(started_ms),
         "ended": _format_session_epoch_ms(ended_ms),
-        "records": _safe_int(counts.get("records")),
+        "records": records,
         "events": _safe_int(counts.get("events")),
         "deltas": _safe_int(counts.get("deltas")),
         "keyframes": _safe_int(counts.get("keyframes")),
@@ -2572,6 +2626,8 @@ def _session_summary_from_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
         "path": str(entry.get("path") or ""),
         "meta": meta,
     }
+    summary["reviewable"] = bool(session_id and records > 0)
+    return summary
 
 
 def _format_session_epoch_ms(value: Any) -> str:

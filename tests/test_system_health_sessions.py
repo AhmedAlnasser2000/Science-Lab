@@ -40,6 +40,7 @@ def test_session_summary_from_entry_complete_meta() -> None:
     assert summary["size_text"] == "2.00 MB"
     assert summary["started"] != "-"
     assert summary["ended"] != "-"
+    assert summary["reviewable"] is True
 
 
 def test_session_summary_from_entry_incomplete_defaults() -> None:
@@ -65,6 +66,34 @@ def test_session_summary_from_entry_incomplete_defaults() -> None:
     assert summary["size_bytes"] == 0
     assert summary["size_text"] == "0 B"
     assert summary["path"].endswith("s2")
+    assert summary["reviewable"] is False
+
+
+def test_session_summary_from_entry_ignores_unknown_fields() -> None:
+    entry = {
+        "session_id": "s3",
+        "status": "COMPLETE",
+        "size_bytes": 1024,
+        "meta": {
+            "schema_version": 1,
+            "status": "COMPLETE",
+            "counts": {
+                "records": 1,
+                "events": 0,
+                "deltas": 0,
+                "keyframes": 0,
+                "corrupt_lines": 0,
+            },
+            "future_field": {"x": 1},
+        },
+        "future_outer": ["ignore", "me"],
+    }
+
+    summary = _session_summary_from_entry(entry)
+    assert summary["session_id"] == "s3"
+    assert summary["status"] == "COMPLETE"
+    assert summary["records"] == 1
+    assert summary["reviewable"] is True
 
 
 def test_format_size_bytes_units() -> None:
