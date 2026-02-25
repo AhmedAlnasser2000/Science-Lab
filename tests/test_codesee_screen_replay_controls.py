@@ -112,11 +112,14 @@ def test_replay_api_surface_enters_and_exits_mode(tmp_path: Path) -> None:
         screen._refresh_replay_sessions()
         assert screen.enter_replay_mode("replay-s1") is True
         assert screen._replay_mode_active is True
+        assert "Exit Replay first" in screen.recording_start_btn.toolTip()
+        assert "Play/pause replay timeline" in screen.replay_play_toggle.toolTip()
 
         seek_result = screen.set_replay_seq(999)
         assert seek_result.resolved_seq == 4
         assert screen.set_replay_speed(2.0) == 2.0
         assert "Replay" in screen.replay_status_label.text()
+        assert "Recording controls locked" in screen.replay_status_label.text()
 
         screen.exit_replay_mode()
         assert screen._replay_mode_active is False

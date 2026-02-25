@@ -1106,6 +1106,34 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.replay_jump_back_btn.setEnabled(in_replay)
         self.replay_jump_forward_btn.setEnabled(in_replay)
         self.replay_seq_slider.setEnabled(in_replay)
+        if not has_session:
+            self.replay_enter_btn.setToolTip("No replay sessions available yet.")
+        elif in_replay:
+            self.replay_enter_btn.setToolTip("Replay is already active.")
+        else:
+            self.replay_enter_btn.setToolTip("Review the selected session in replay mode.")
+        if in_replay:
+            self.replay_delete_btn.setToolTip("Exit replay before deleting sessions.")
+            self.replay_exit_btn.setToolTip("Exit replay mode and restore normal live controls.")
+        else:
+            self.replay_delete_btn.setToolTip("Delete the selected replay session.")
+            self.replay_exit_btn.setToolTip("Enter replay mode first.")
+        self.replay_play_toggle.setToolTip(
+            "Play/pause replay timeline." if in_replay else "Enter replay mode to use playback controls."
+        )
+        self.replay_jump_back_btn.setToolTip(
+            "Jump backward in replay."
+            if in_replay
+            else "Enter replay mode to jump through a session."
+        )
+        self.replay_jump_forward_btn.setToolTip(
+            "Jump forward in replay."
+            if in_replay
+            else "Enter replay mode to jump through a session."
+        )
+        self.replay_seq_slider.setToolTip(
+            "Scrub replay sequence position." if in_replay else "Enter replay mode to scrub the timeline."
+        )
         live_allowed = bool((not self._safe_mode) and self._runtime_hub and (not in_replay))
         self.live_toggle.setEnabled(live_allowed)
         self.recording_start_btn.setEnabled(not in_replay)
@@ -1116,12 +1144,46 @@ class CodeSeeScreen(QtWidgets.QWidget):
         self.recording_pause_btn.setText("Resume Recording" if self._session_recording_paused else "Pause Recording")
         self.recording_pause_btn.setEnabled(recording_active and not in_replay)
         self.recording_stop_btn.setEnabled(recording_active and not in_replay)
+        if in_replay:
+            disabled_hint = "Unavailable during replay. Click Exit Replay first."
+            self.recording_start_btn.setToolTip(disabled_hint)
+            self.recording_pause_btn.setToolTip(disabled_hint)
+            self.recording_stop_btn.setToolTip(disabled_hint)
+        else:
+            self.recording_start_btn.setToolTip("Start a new semantic recording session.")
+            if recording_active:
+                self.recording_pause_btn.setToolTip("Pause or resume the active recording session.")
+                self.recording_stop_btn.setToolTip("Stop the active recording session.")
+            else:
+                self.recording_pause_btn.setToolTip("No active recording session to pause.")
+                self.recording_stop_btn.setToolTip("No active recording session to stop.")
         has_bookmark = bool(self._selected_replay_bookmark())
         self.replay_bookmark_combo.setEnabled(bool(has_session))
         self.replay_bookmark_add_btn.setEnabled(in_replay)
         self.replay_bookmark_update_btn.setEnabled(in_replay and has_bookmark)
         self.replay_bookmark_jump_btn.setEnabled(in_replay and has_bookmark)
         self.replay_bookmark_delete_btn.setEnabled(in_replay and has_bookmark)
+        self.replay_bookmark_add_btn.setToolTip(
+            "Add bookmark at current replay position."
+            if in_replay
+            else "Enter replay mode to add bookmarks."
+        )
+        bookmark_hint = "Select a bookmark and enter replay mode."
+        self.replay_bookmark_update_btn.setToolTip(
+            "Update selected bookmark to current replay position."
+            if in_replay and has_bookmark
+            else bookmark_hint
+        )
+        self.replay_bookmark_jump_btn.setToolTip(
+            "Jump to selected bookmark."
+            if in_replay and has_bookmark
+            else bookmark_hint
+        )
+        self.replay_bookmark_delete_btn.setToolTip(
+            "Delete selected bookmark."
+            if in_replay and has_bookmark
+            else bookmark_hint
+        )
         self._sync_replay_jump_controls()
         self._update_replay_status_label()
 
@@ -1148,6 +1210,7 @@ class CodeSeeScreen(QtWidgets.QWidget):
         )
         if self._replay_buffered_live_count > 0:
             text += f" | Live paused ({self._replay_buffered_live_count})"
+        text += " | Recording controls locked"
         text += f" | {recording_text}"
         self.replay_status_label.setText(text)
 

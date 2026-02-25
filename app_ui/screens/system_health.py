@@ -143,6 +143,29 @@ BUS_WORKSPACE_GET_ACTIVE_REQUEST = (
     else "core.workspace.get_active.request"
 )
 
+SESSION_TABLE_COLUMNS = [
+    ("Session", "Session display name (System Health only); open details for raw ID"),
+    ("Status", "Lifecycle status"),
+    ("Started", "Session start time"),
+    ("Ended", "Session end time"),
+    ("Records", "Total records in records.jsonl"),
+    ("Events", "Event record count"),
+    ("Deltas", "Delta record count"),
+    ("Keyframes", "Keyframe reference count"),
+    ("Corrupt", "Corrupt/invalid record lines"),
+    ("Schema", "Schema version"),
+    ("Size", "Total session size on disk"),
+]
+SESSION_DISPLAY_NAMES_FILENAME = ".system_health_session_names.json"
+SESSION_TABLE_LAYOUT_FILENAME = ".system_health_sessions_table_layout.json"
+SESSION_TABLE_DEFAULT_WIDTHS = [460, 110, 170, 170, 86, 86, 86, 96, 86, 86, 92]
+SESSION_TABLE_MIN_WIDTHS = [220, 90, 130, 130, 70, 70, 70, 70, 70, 70, 70]
+SESSION_HEADER_HEIGHT_MIN = 24
+SESSION_HEADER_HEIGHT_MAX = 64
+SESSION_ROW_HEIGHT_PRESETS = [("Compact", 22), ("Normal", 26), ("Comfortable", 32)]
+DEFAULT_SESSION_HEADER_HEIGHT = 34
+DEFAULT_SESSION_ROW_HEIGHT = 26
+
 CORE_JOB_REPORT = "core.report.generate"
 
 
@@ -297,6 +320,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self._pillars_report: Optional[Dict[str, Any]] = None
         self._pillars_fail_only = False
         self._session_rows: list[Dict[str, Any]] = []
+        self._session_display_names: Dict[str, str] = {}
+        self._sessions_layout_syncing = False
         self._sessions_workspace_id = "default"
         self._connect_ui_signals()
         self._bus_dispatch_bridge = _BusDispatchBridge(self)
@@ -681,6 +706,10 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.sessions_open_btn.clicked.connect(self._open_selected_session_folder)
         self.sessions_open_btn.setEnabled(False)
         sessions_toolbar.addWidget(self.sessions_open_btn)
+        self.sessions_rename_btn = QtWidgets.QPushButton("Rename selected")
+        self.sessions_rename_btn.clicked.connect(self._rename_selected_session_label)
+        self.sessions_rename_btn.setEnabled(False)
+        sessions_toolbar.addWidget(self.sessions_rename_btn)
         self.sessions_delete_btn = QtWidgets.QPushButton("Delete selected")
         self.sessions_delete_btn.clicked.connect(self._delete_selected_session)
         self.sessions_delete_btn.setEnabled(False)
@@ -692,6 +721,33 @@ class SystemHealthScreen(QtWidgets.QWidget):
         self.sessions_open_root_btn = QtWidgets.QPushButton("Open sessions root")
         self.sessions_open_root_btn.clicked.connect(self._open_sessions_root_folder)
         sessions_toolbar.addWidget(self.sessions_open_root_btn)
+        self.sessions_autofit_btn = QtWidgets.QPushButton("Auto-fit columns")
+        self.sessions_autofit_btn.clicked.connect(self._autofit_sessions_table_columns)
+        sessions_toolbar.addWidget(self.sessions_autofit_btn)
+        self.sessions_reset_layout_btn = QtWidgets.QPushButton("Reset columns")
+        self.sessions_reset_layout_btn.clicked.connect(self._reset_sessions_table_layout)
+        sessions_toolbar.addWidget(self.sessions_reset_layout_btn)
+        sessions_toolbar.addWidget(QtWidgets.QLabel("Header px:"))
+        self.sessions_header_height_spin = QtWidgets.QSpinBox()
+        self.sessions_header_height_spin.setRange(SESSION_HEADER_HEIGHT_MIN, SESSION_HEADER_HEIGHT_MAX)
+        self.sessions_header_height_spin.setValue(DEFAULT_SESSION_HEADER_HEIGHT)
+        self.sessions_header_height_spin.setSingleStep(1)
+        self.sessions_header_height_spin.setSuffix(" px")
+        self.sessions_header_height_spin.valueChanged.connect(
+            self._on_sessions_header_height_spin_changed
+        )
+        sessions_toolbar.addWidget(self.sessions_header_height_spin)
+        sessions_toolbar.addWidget(QtWidgets.QLabel("Row height:"))
+        self.sessions_row_height_combo = QtWidgets.QComboBox()
+        for label, height in SESSION_ROW_HEIGHT_PRESETS:
+            self.sessions_row_height_combo.addItem(label, height)
+        default_row_index = self.sessions_row_height_combo.findData(DEFAULT_SESSION_ROW_HEIGHT)
+        if default_row_index >= 0:
+            self.sessions_row_height_combo.setCurrentIndex(default_row_index)
+        self.sessions_row_height_combo.currentIndexChanged.connect(
+            self._on_sessions_row_height_changed
+        )
+        sessions_toolbar.addWidget(self.sessions_row_height_combo)
         self.sessions_workspace_label = QtWidgets.QLabel(f"{terms.PROJECT}: default")
         self.sessions_workspace_label.setStyleSheet("color: #444;")
         sessions_toolbar.addWidget(self.sessions_workspace_label)
@@ -703,33 +759,17 @@ class SystemHealthScreen(QtWidgets.QWidget):
         page_sessions_layout.addWidget(self.sessions_status)
 
         self.sessions_table = QtWidgets.QTableWidget(0, 11)
-        self.sessions_table.setHorizontalHeaderLabels(
-            [
-                "Session",
-                "Status",
-                "Start",
-                "End",
-                "Records",
-                "Events",
-                "Deltas",
-                "Keyframes",
-                "Corrupt",
-                "Schema",
-                "Size",
-            ]
-        )
+        self.sessions_table.setHorizontalHeaderLabels([label for label, _tip in SESSION_TABLE_COLUMNS])
+        for index, (_label, tooltip) in enumerate(SESSION_TABLE_COLUMNS):
+            item = self.sessions_table.horizontalHeaderItem(index)
+            if item is not None:
+                item.setToolTip(tooltip)
         sessions_header = self.sessions_table.horizontalHeader()
-        sessions_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        sessions_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(7, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(8, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(9, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        sessions_header.setSectionResizeMode(10, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        for index in range(self.sessions_table.columnCount()):
+            sessions_header.setSectionResizeMode(index, QtWidgets.QHeaderView.ResizeMode.Interactive)
+        sessions_header.setSectionsMovable(False)
+        sessions_header.setStretchLastSection(False)
+        sessions_header.sectionResized.connect(self._on_sessions_column_resized)
         self.sessions_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
         )
@@ -740,6 +780,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
         self.sessions_table.currentCellChanged.connect(self._on_sessions_row_changed)
+        self._style_sessions_table()
         page_sessions_layout.addWidget(self.sessions_table, stretch=1)
 
         self.sessions_detail = QtWidgets.QPlainTextEdit()
@@ -831,8 +872,18 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self.sessions_refresh_btn.setEnabled(bool(enabled))
         if hasattr(self, "sessions_open_root_btn"):
             self.sessions_open_root_btn.setEnabled(bool(enabled))
+        if hasattr(self, "sessions_autofit_btn"):
+            self.sessions_autofit_btn.setEnabled(bool(enabled))
+        if hasattr(self, "sessions_reset_layout_btn"):
+            self.sessions_reset_layout_btn.setEnabled(bool(enabled))
+        if hasattr(self, "sessions_header_height_spin"):
+            self.sessions_header_height_spin.setEnabled(bool(enabled))
+        if hasattr(self, "sessions_row_height_combo"):
+            self.sessions_row_height_combo.setEnabled(bool(enabled))
         if hasattr(self, "sessions_open_btn"):
             self.sessions_open_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
+        if hasattr(self, "sessions_rename_btn"):
+            self.sessions_rename_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
         if hasattr(self, "sessions_delete_btn"):
             self.sessions_delete_btn.setEnabled(bool(enabled and self.sessions_table.currentRow() >= 0))
         if hasattr(self, "sessions_review_btn"):
@@ -860,6 +911,44 @@ class SystemHealthScreen(QtWidgets.QWidget):
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
+
+    def _style_sessions_table(self) -> None:
+        if not hasattr(self, "sessions_table"):
+            return
+        self.sessions_table.setShowGrid(True)
+        self.sessions_table.setAlternatingRowColors(True)
+        self.sessions_table.setStyleSheet(
+            "QTableWidget {"
+            "  background-color: #102247;"
+            "  alternate-background-color: #183062;"
+            "  color: #cfe0ff;"
+            "  gridline-color: #244780;"
+            "}"
+            "QTableWidget::item {"
+            "  padding: 4px 8px;"
+            "}"
+            "QTableWidget::item:selected {"
+            "  background-color: #24467d;"
+            "  color: #f5f9ff;"
+            "}"
+            "QHeaderView::section {"
+            "  background-color: #2a4c8f;"
+            "  color: #f1f6ff;"
+            "  font-weight: 600;"
+            "  border: 1px solid #3c63a8;"
+            "  padding: 2px 8px;"
+            "}"
+        )
+        header = self.sessions_table.horizontalHeader()
+        header.setVisible(True)
+        header.setMinimumSectionSize(56)
+        header.setDefaultAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        header.setHighlightSections(False)
+        vertical_header = self.sessions_table.verticalHeader()
+        vertical_header.setVisible(False)
+        vertical_header.setDefaultSectionSize(DEFAULT_SESSION_ROW_HEIGHT)
+        self._apply_sessions_header_height(DEFAULT_SESSION_HEADER_HEIGHT)
+        self._apply_sessions_row_height(DEFAULT_SESSION_ROW_HEIGHT)
 
     def _run_codesee_trail_self_test(self) -> None:
         callback = self._on_run_codesee_trail_self_test
@@ -1341,10 +1430,13 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         workspace_id = self._active_workspace_id()
         self._sessions_workspace_id = workspace_id
+        self._session_display_names = _load_session_display_names(workspace_id)
         self.sessions_workspace_label.setText(f"{terms.PROJECT}: {workspace_id}")
         self._session_rows = []
         self.sessions_table.setRowCount(0)
         self.sessions_open_btn.setEnabled(False)
+        if hasattr(self, "sessions_rename_btn"):
+            self.sessions_rename_btn.setEnabled(False)
         if hasattr(self, "sessions_delete_btn"):
             self.sessions_delete_btn.setEnabled(False)
         if hasattr(self, "sessions_review_btn"):
@@ -1362,12 +1454,15 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
 
         for entry in entries:
-            self._session_rows.append(_session_summary_from_entry(entry))
+            row = _session_summary_from_entry(entry)
+            session_id = str(row.get("session_id") or "")
+            row["display_name"] = self._session_display_names.get(session_id) or session_id
+            self._session_rows.append(row)
 
         self.sessions_table.setRowCount(len(self._session_rows))
         for row_idx, row in enumerate(self._session_rows):
             cells = [
-                QtWidgets.QTableWidgetItem(str(row.get("session_id") or "")),
+                QtWidgets.QTableWidgetItem(str(row.get("display_name") or row.get("session_id") or "")),
                 QtWidgets.QTableWidgetItem(str(row.get("status") or "")),
                 QtWidgets.QTableWidgetItem(str(row.get("started") or "-")),
                 QtWidgets.QTableWidgetItem(str(row.get("ended") or "-")),
@@ -1380,12 +1475,31 @@ class SystemHealthScreen(QtWidgets.QWidget):
                 QtWidgets.QTableWidgetItem(str(row.get("size_text") or "0 B")),
             ]
             for col_idx, item in enumerate(cells):
+                if col_idx >= 4:
+                    item.setTextAlignment(
+                        int(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+                    )
+                    item.setBackground(QtGui.QBrush(QtGui.QColor("#132a54")))
+                elif col_idx == 1:
+                    item.setTextAlignment(
+                        int(QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignVCenter)
+                    )
                 self.sessions_table.setItem(row_idx, col_idx, item)
+            cells[0].setToolTip(f"Session ID: {row.get('session_id')}")
+            status_text = str(row.get("status") or "").upper()
+            status_item = cells[1]
+            if status_text == "ACTIVE":
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#9ed0ff")))
+            elif status_text == "COMPLETE":
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#cfe0ff")))
+            else:
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#ffdf9a")))
             self.sessions_table.item(row_idx, 0).setData(QtCore.Qt.ItemDataRole.UserRole, row)
 
         self.sessions_status.setText(
             f"{len(self._session_rows)} session(s) found for {terms.PROJECT.lower()} '{workspace_id}'."
         )
+        self._apply_sessions_table_layout(workspace_id)
         if self._session_rows:
             self.sessions_table.selectRow(0)
             self._render_selected_session_summary(0)
@@ -1405,6 +1519,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
     def _render_selected_session_summary(self, row_index: int) -> None:
         if row_index < 0 or row_index >= len(self._session_rows):
             self.sessions_open_btn.setEnabled(False)
+            if hasattr(self, "sessions_rename_btn"):
+                self.sessions_rename_btn.setEnabled(False)
             if hasattr(self, "sessions_delete_btn"):
                 self.sessions_delete_btn.setEnabled(False)
             if hasattr(self, "sessions_review_btn"):
@@ -1413,6 +1529,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             return
         row = self._session_rows[row_index]
         summary = {
+            "display_name": row.get("display_name"),
             "session_id": row.get("session_id"),
             "workspace_id": self._sessions_workspace_id,
             "status": row.get("status"),
@@ -1432,6 +1549,8 @@ class SystemHealthScreen(QtWidgets.QWidget):
         }
         self.sessions_detail.setPlainText(json.dumps(summary, indent=2, ensure_ascii=False))
         self.sessions_open_btn.setEnabled(bool(row.get("path")))
+        if hasattr(self, "sessions_rename_btn"):
+            self.sessions_rename_btn.setEnabled(bool(row.get("session_id")))
         if hasattr(self, "sessions_delete_btn"):
             self.sessions_delete_btn.setEnabled(bool(row.get("session_id")))
         if hasattr(self, "sessions_review_btn"):
@@ -1454,6 +1573,166 @@ class SystemHealthScreen(QtWidgets.QWidget):
             self._open_folder(Path("data") / "workspaces" / workspace_id / "codesee" / "sessions")
             return
         self._open_folder(codesee_session_store.workspace_sessions_root(workspace_id))
+
+    def _on_sessions_column_resized(
+        self,
+        logical_index: int,
+        old_size: int,
+        new_size: int,
+    ) -> None:
+        del logical_index, old_size, new_size
+        if self._sessions_layout_syncing:
+            return
+        self._save_sessions_table_layout()
+
+    def _on_sessions_header_height_spin_changed(self, value: int) -> None:
+        del value
+        if self._sessions_layout_syncing:
+            return
+        height = self._selected_sessions_header_height()
+        self._apply_sessions_header_height(height)
+        self._save_sessions_table_layout()
+
+    def _on_sessions_row_height_changed(self, index: int) -> None:
+        del index
+        if self._sessions_layout_syncing:
+            return
+        height = self._selected_sessions_row_height()
+        self._apply_sessions_row_height(height)
+        self._save_sessions_table_layout()
+
+    def _selected_sessions_header_height(self) -> int:
+        if hasattr(self, "sessions_header_height_spin"):
+            return _clamp_session_header_height(self.sessions_header_height_spin.value())
+        return DEFAULT_SESSION_HEADER_HEIGHT
+
+    def _apply_sessions_header_height(self, height: int) -> None:
+        if not hasattr(self, "sessions_table"):
+            return
+        header = self.sessions_table.horizontalHeader()
+        header.setFixedHeight(_clamp_session_header_height(height))
+
+    def _selected_sessions_row_height(self) -> int:
+        if hasattr(self, "sessions_row_height_combo"):
+            value = self.sessions_row_height_combo.currentData()
+            if value is not None:
+                return _clamp_session_row_height(value)
+        return DEFAULT_SESSION_ROW_HEIGHT
+
+    def _apply_sessions_row_height(self, height: int) -> None:
+        if not hasattr(self, "sessions_table"):
+            return
+        vertical_header = self.sessions_table.verticalHeader()
+        vertical_header.setDefaultSectionSize(_clamp_session_row_height(height))
+
+    def _apply_sessions_table_layout(self, workspace_id: str) -> None:
+        if not hasattr(self, "sessions_table"):
+            return
+        layout = _load_session_table_layout(workspace_id)
+        widths = layout.get("column_widths") or []
+        header_height = _clamp_session_header_height(layout.get("header_height"))
+        row_height = _clamp_session_row_height(layout.get("row_height"))
+        self._sessions_layout_syncing = True
+        try:
+            for idx in range(self.sessions_table.columnCount()):
+                width = widths[idx] if idx < len(widths) else SESSION_TABLE_DEFAULT_WIDTHS[idx]
+                minimum = SESSION_TABLE_MIN_WIDTHS[idx]
+                self.sessions_table.setColumnWidth(idx, max(minimum, int(width)))
+            if hasattr(self, "sessions_header_height_spin"):
+                self.sessions_header_height_spin.setValue(header_height)
+            if hasattr(self, "sessions_row_height_combo"):
+                row_combo_index = self.sessions_row_height_combo.findData(row_height)
+                if row_combo_index >= 0:
+                    self.sessions_row_height_combo.setCurrentIndex(row_combo_index)
+            self._apply_sessions_header_height(header_height)
+            self._apply_sessions_row_height(row_height)
+        finally:
+            self._sessions_layout_syncing = False
+
+    def _save_sessions_table_layout(self) -> None:
+        if self._sessions_layout_syncing:
+            return
+        if not hasattr(self, "sessions_table"):
+            return
+        widths: list[int] = []
+        for idx in range(self.sessions_table.columnCount()):
+            minimum = SESSION_TABLE_MIN_WIDTHS[idx]
+            widths.append(max(minimum, int(self.sessions_table.columnWidth(idx))))
+        header_height = self._selected_sessions_header_height()
+        row_height = self._selected_sessions_row_height()
+        _save_session_table_layout(self._sessions_workspace_id, widths, header_height, row_height)
+
+    def _autofit_sessions_table_columns(self) -> None:
+        if not hasattr(self, "sessions_table"):
+            return
+        self._sessions_layout_syncing = True
+        try:
+            self.sessions_table.resizeColumnsToContents()
+            for idx in range(self.sessions_table.columnCount()):
+                minimum = SESSION_TABLE_MIN_WIDTHS[idx]
+                if self.sessions_table.columnWidth(idx) < minimum:
+                    self.sessions_table.setColumnWidth(idx, minimum)
+        finally:
+            self._sessions_layout_syncing = False
+        self._save_sessions_table_layout()
+
+    def _reset_sessions_table_layout(self) -> None:
+        if not hasattr(self, "sessions_table"):
+            return
+        self._sessions_layout_syncing = True
+        try:
+            for idx in range(self.sessions_table.columnCount()):
+                self.sessions_table.setColumnWidth(idx, SESSION_TABLE_DEFAULT_WIDTHS[idx])
+            if hasattr(self, "sessions_header_height_spin"):
+                self.sessions_header_height_spin.setValue(DEFAULT_SESSION_HEADER_HEIGHT)
+            if hasattr(self, "sessions_row_height_combo"):
+                default_row_index = self.sessions_row_height_combo.findData(DEFAULT_SESSION_ROW_HEIGHT)
+                if default_row_index >= 0:
+                    self.sessions_row_height_combo.setCurrentIndex(default_row_index)
+            self._apply_sessions_header_height(DEFAULT_SESSION_HEADER_HEIGHT)
+            self._apply_sessions_row_height(DEFAULT_SESSION_ROW_HEIGHT)
+        finally:
+            self._sessions_layout_syncing = False
+        self._save_sessions_table_layout()
+        self.sessions_status.setText("Session table layout reset.")
+
+    def _rename_selected_session_label(self) -> None:
+        row_index = self.sessions_table.currentRow() if hasattr(self, "sessions_table") else -1
+        if row_index < 0 or row_index >= len(self._session_rows):
+            return
+        row = self._session_rows[row_index]
+        session_id = str(row.get("session_id") or "").strip()
+        if not session_id:
+            return
+        current_name = str(row.get("display_name") or session_id)
+        default_text = "" if current_name == session_id else current_name
+        value, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Rename Session",
+            "Display name (System Health only; leave blank to reset):",
+            QtWidgets.QLineEdit.EchoMode.Normal,
+            default_text,
+        )
+        if not ok:
+            return
+        display_name = _sanitize_session_display_name(value)
+        if not _save_session_display_name(self._sessions_workspace_id, session_id, display_name):
+            self.sessions_status.setText(f"Rename failed for {session_id}: could not persist display names.")
+            return
+        if display_name:
+            self._session_display_names[session_id] = display_name
+        else:
+            self._session_display_names.pop(session_id, None)
+        row["display_name"] = display_name or session_id
+        item = self.sessions_table.item(row_index, 0)
+        if item is not None:
+            item.setText(str(row.get("display_name") or session_id))
+            item.setToolTip(f"Session ID: {session_id}")
+        if display_name:
+            self.sessions_status.setText(f"Renamed session {session_id} to '{display_name}'.")
+        else:
+            self.sessions_status.setText(f"Reset session name for {session_id}.")
+        self._render_selected_session_summary(row_index)
 
     def _delete_selected_session(self) -> None:
         if codesee_session_store is None:
@@ -1487,6 +1766,7 @@ class SystemHealthScreen(QtWidgets.QWidget):
             else:
                 self.sessions_status.setText(f"Delete failed for {session_id}: {reason}")
             return
+        _save_session_display_name(self._sessions_workspace_id, session_id, "")
         self.sessions_status.setText(f"Deleted session {session_id}.")
         self._refresh_sessions_panel()
 
@@ -2654,6 +2934,150 @@ def _safe_int(value: Any) -> int:
         return int(value)
     except Exception:
         return 0
+
+
+def _sanitize_session_display_name(value: Any) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return ""
+    return text[:72]
+
+
+def _session_display_names_path(workspace_id: str) -> Path:
+    if codesee_session_store is not None:
+        root = codesee_session_store.workspace_sessions_root(workspace_id)
+    else:
+        safe_workspace = str(workspace_id or "default").strip() or "default"
+        root = Path("data") / "workspaces" / safe_workspace / "codesee" / "sessions"
+    return root / SESSION_DISPLAY_NAMES_FILENAME
+
+
+def _load_session_display_names(workspace_id: str) -> Dict[str, str]:
+    path = _session_display_names_path(workspace_id)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    names: Dict[str, str] = {}
+    for key, value in raw.items():
+        session_id = str(key or "").strip()
+        if not session_id:
+            continue
+        if codesee_session_store is not None:
+            session_id = codesee_session_store.sanitize_session_id(session_id)
+        display_name = _sanitize_session_display_name(value)
+        if display_name:
+            names[session_id] = display_name
+    return names
+
+
+def _save_session_display_name(workspace_id: str, session_id: str, display_name: str) -> bool:
+    session_key = str(session_id or "").strip()
+    if codesee_session_store is not None:
+        session_key = codesee_session_store.sanitize_session_id(session_key)
+    if not session_key:
+        return False
+    names = _load_session_display_names(workspace_id)
+    clean_name = _sanitize_session_display_name(display_name)
+    if clean_name:
+        names[session_key] = clean_name
+    else:
+        names.pop(session_key, None)
+    path = _session_display_names_path(workspace_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(names, indent=2, ensure_ascii=False), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def _clamp_session_header_height(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        return DEFAULT_SESSION_HEADER_HEIGHT
+    if parsed < SESSION_HEADER_HEIGHT_MIN:
+        return SESSION_HEADER_HEIGHT_MIN
+    if parsed > SESSION_HEADER_HEIGHT_MAX:
+        return SESSION_HEADER_HEIGHT_MAX
+    return parsed
+
+
+def _clamp_session_row_height(value: Any) -> int:
+    preset_values = [int(height) for _label, height in SESSION_ROW_HEIGHT_PRESETS]
+    try:
+        parsed = int(value)
+    except Exception:
+        return DEFAULT_SESSION_ROW_HEIGHT
+    if parsed in preset_values:
+        return parsed
+    return DEFAULT_SESSION_ROW_HEIGHT
+
+
+def _session_table_layout_path(workspace_id: str) -> Path:
+    if codesee_session_store is not None:
+        root = codesee_session_store.workspace_sessions_root(workspace_id)
+    else:
+        safe_workspace = str(workspace_id or "default").strip() or "default"
+        root = Path("data") / "workspaces" / safe_workspace / "codesee" / "sessions"
+    return root / SESSION_TABLE_LAYOUT_FILENAME
+
+
+def _load_session_table_layout(workspace_id: str) -> Dict[str, Any]:
+    path = _session_table_layout_path(workspace_id)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    raw_widths = raw.get("column_widths")
+    widths: list[int] = []
+    for idx in range(len(SESSION_TABLE_COLUMNS)):
+        minimum = SESSION_TABLE_MIN_WIDTHS[idx]
+        default = SESSION_TABLE_DEFAULT_WIDTHS[idx]
+        if isinstance(raw_widths, list) and idx < len(raw_widths):
+            width = _safe_int(raw_widths[idx])
+            widths.append(max(minimum, width) if width > 0 else default)
+        else:
+            widths.append(default)
+    return {
+        "column_widths": widths,
+        "header_height": _clamp_session_header_height(raw.get("header_height")),
+        "row_height": _clamp_session_row_height(raw.get("row_height")),
+    }
+
+
+def _save_session_table_layout(
+    workspace_id: str,
+    column_widths: list[int],
+    header_height: int,
+    row_height: Optional[int] = None,
+) -> bool:
+    widths: list[int] = []
+    for idx in range(len(SESSION_TABLE_COLUMNS)):
+        minimum = SESSION_TABLE_MIN_WIDTHS[idx]
+        default = SESSION_TABLE_DEFAULT_WIDTHS[idx]
+        if idx < len(column_widths):
+            width = _safe_int(column_widths[idx])
+            widths.append(max(minimum, width) if width > 0 else default)
+        else:
+            widths.append(default)
+    payload = {
+        "column_widths": widths,
+        "header_height": _clamp_session_header_height(header_height),
+        "row_height": _clamp_session_row_height(row_height),
+    }
+    path = _session_table_layout_path(workspace_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return True
+    except Exception:
+        return False
 
 
 # === [NAV-99] End =============================================================
