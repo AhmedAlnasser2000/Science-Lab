@@ -295,10 +295,31 @@ def _node_aliases(node_id: str) -> set[str]:
     if not text:
         return set()
     aliases = {text}
-    if text.startswith("system:"):
-        aliases.add(text.split(":", 1)[1])
+    if text.startswith("module."):
+        suffix = text.split("module.", 1)[1]
+        if suffix:
+            aliases.add(suffix)
+            aliases.add(f"system:{suffix}")
+            if suffix == "ui":
+                aliases.add("app_ui")
+                aliases.add("system:app_ui")
+    elif text.startswith("system:"):
+        suffix = text.split(":", 1)[1]
+        if suffix:
+            aliases.add(suffix)
+            aliases.add(f"module.{suffix}")
+            if suffix == "app_ui":
+                aliases.add("ui")
+                aliases.add("module.ui")
     elif ":" not in text:
         aliases.add(f"system:{text}")
+        aliases.add(f"module.{text}")
+        if text == "app_ui":
+            aliases.add("ui")
+            aliases.add("module.ui")
+        elif text == "ui":
+            aliases.add("app_ui")
+            aliases.add("system:app_ui")
     if text.startswith("block:labhost:"):
         suffix = text.split("block:labhost:", 1)[1]
         if suffix:

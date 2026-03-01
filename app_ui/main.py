@@ -433,7 +433,12 @@ class MainMenuScreen(QtWidgets.QWidget):
 
     def _add_button(self, label: str, callback) -> None:
         button = QtWidgets.QPushButton(label)
-        button.setFixedWidth(220)
+        button.setMinimumWidth(220)
+        button.setMaximumWidth(480)
+        button.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
         button.clicked.connect(callback)
         self.buttons_layout.addWidget(button)
 
@@ -754,7 +759,13 @@ class SettingsDialog(QtWidgets.QDialog):
 
         layout.addWidget(QtWidgets.QLabel("UI Scale"))
         self.scale_combo = QtWidgets.QComboBox()
-        self.scale_combo.addItems(["80%", "90%", "100%", "110%", "125%", "150%"])
+        self.scale_combo.addItems(
+            ["50%", "60%", "70%", "80%", "90%", "100%", "110%", "125%", "150%", "175%", "200%", "250%"]
+        )
+        self.scale_combo.setEditable(True)
+        editor = self.scale_combo.lineEdit()
+        if editor is not None:
+            editor.setValidator(QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"\d{2,3}%?"), editor))
         layout.addWidget(self.scale_combo)
 
         layout.addWidget(QtWidgets.QLabel("Density"))
@@ -820,7 +831,7 @@ class SettingsDialog(QtWidgets.QDialog):
             profile = self.profile_combo.currentText()
             ui_config.save_experience_profile(profile)
 
-            scale_percent = int(self.scale_combo.currentText().replace("%", ""))
+            scale_percent = ui_scale.clamp_scale_percent(self.scale_combo.currentText())
             density = "compact" if self.density_combo.currentText().lower().startswith("compact") else "comfortable"
             scale_cfg = ui_scale.UiScaleConfig(scale_percent=scale_percent, density=density)
             ui_scale.save_config(scale_cfg)
@@ -2850,6 +2861,7 @@ class MainWindow(QtWidgets.QMainWindow):
             bus=APP_BUS,
             workspace_selector_factory=selector_factory,
             on_run_codesee_trail_self_test=self._run_codesee_trail_visual_self_test,
+            on_open_codesee_replay_session=self._open_codesee_replay_session_from_system_health,
         )
         self.content_management = ContentManagementScreen(
             self.adapter,
@@ -2911,6 +2923,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 runtime_hub=self.codesee_hub,
                 on_open_window=self._open_code_see_window,
             )
+            self.codesee.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Ignored,
+                QtWidgets.QSizePolicy.Policy.Ignored,
+            )
+            self.codesee.setMinimumSize(0, 0)
             try:
                 self.codesee.set_screen_context(self._codesee_context)
             except Exception:
@@ -3643,6 +3660,27 @@ class MainWindow(QtWidgets.QMainWindow):
                     sys.stderr.write("[codesee] disabled; open_root unavailable\n")
                 except Exception:
                     pass
+
+    def _open_codesee_replay_session_from_system_health(self, session_id: str) -> Dict[str, Any]:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return {"ok": False, "summary": "Replay launch failed: invalid session id."}
+        if self.current_profile != "Explorer":
+            return {"ok": False, "summary": "Replay launch unavailable outside Explorer profile."}
+        if getattr(self, "_codesee_disabled", False):
+            return {"ok": False, "summary": "Replay launch unavailable (CodeSee disabled)."}
+        screen = getattr(self, "codesee", None)
+        if not isinstance(screen, CodeSeeScreen):
+            return {"ok": False, "summary": "Replay launch unavailable: CodeSee screen missing."}
+        self._open_code_see()
+        try:
+            screen._refresh_replay_sessions()
+            if not bool(screen.enter_replay_mode(sid)):
+                return {"ok": False, "summary": f"Replay launch failed for {sid}."}
+        except Exception as exc:
+            return {"ok": False, "summary": f"Replay launch failed for {sid}: {exc}"}
+        self._publish_codesee_event("Code See Replay", node_ids=["system:app_ui"])
+        return {"ok": True, "summary": f"Replay opened for {sid}."}
 
     def _open_code_see_window(self) -> None:
         if self.current_profile != "Explorer":

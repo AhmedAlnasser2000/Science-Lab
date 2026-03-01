@@ -1,4 +1,4 @@
-﻿## Git Hygiene: Worktree-First
+## Git Hygiene: Worktree-First
 
 This repository uses a worktree-first workflow for all new slices/milestones.
 
@@ -26,10 +26,17 @@ Quick start:
 - When ambiguous:
   - read `memory/INDEX.md` plus relevant canonical docs first
   - then verify in code before asserting.
-- Do not write to `memory/` unless the user explicitly issues a memory trigger command.
+- Do not write to `memory/` unless either: (a) the user explicitly issues a memory trigger command, or (b) standing compulsory end-of-gate memory append policy is active for the slice.
 - Canon-first save command: `CS` (or `CANON SAVE`) appends verbatim memory to `memory/canon/verbatim_ledger.md` first.
 - Discussions are non-binding context; only approved extracts are promoted into decisions/issues/runbooks.
 
+- End-of-gate memory append policy (mandatory):
+- At the end of every completed task/gate/mid-gate, append memory updates to:
+  - `memory/current-state.md`
+  - `memory/sessions/<slice_id>/...`
+  - `memory/journal/...`
+- If one artifact has no substantive change, record an explicit `no change` note in session/journal for auditability.
+- This is a standing workflow requirement unless the user explicitly disables/defer it.
 ## Wrong-Branch Recovery Policy (Patch-First, No Guessing)
 
 If edits are made on the wrong slice/branch, recovery must be done from an exact patch artifact, not memory.
@@ -101,6 +108,13 @@ Gate completion output contract (mandatory):
   - For `Frontend` completions, include launch command plus manual verification checklist.
   - For `Backend` completions, include launch command only (no manual checklist unless requested).
   - If launch is blocked in the current environment, state the blocker and provide the closest valid command.
+
+- Memory append handoff (mandatory):
+  - After each completed task/gate/mid-gate, update memory artifacts before commit:
+    - `memory/current-state.md`
+    - `memory/sessions/<slice_id>/...`
+    - `memory/journal/...`
+  - Completion summary must list which memory files were updated (or explicitly marked no-change).
 
 Mid-gate change policy:
 - Purpose:

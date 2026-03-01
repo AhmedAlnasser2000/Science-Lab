@@ -1,8 +1,8 @@
-# Current State
+﻿# Current State
 
 - Repository: PhysicsLab
-- Snapshot generated during slice v5.5e from working tree based on HEAD b9f2c03 (with pending e6 changes).
-- Active milestone: V5.5e (semantic session recording foundation).
+- Snapshot normalized on 2026-02-26 from HEAD `8d0d794` after V5.5f push to `origin/work/v5.5f`.
+- Active milestone: V5.5f (CodeSee session replay player roadmap and implementation).
 - Operational mode: WORKLOG AUTO ON
 - Worklog auto enabled_at_local: 2026-02-24 07:02:26 +03:00
 
@@ -15,16 +15,13 @@
 - Each commit is treated as a task and must be logged in session+journal artifacts.
 
 ## Progress snapshot
-- e1 complete: roadmap + contract doc/index entries.
-- e2 complete: recorder core (`session_schema`, `session_store`, `session_recording`) + deterministic tests.
-- e3 complete: runtime ingestion wiring (events + monitor/trace deltas, fail-soft) + deterministic tests.
-- e4 complete: keyframe cadence (`every K records`) + forced stop keyframe + deterministic reconstructability helper with corrupt-keyframe fallback tests.
-- e5 complete: System Health `Sessions` frontend panel (workspace session list + metadata, read-only summary payload, open selected/root folder actions).
-- e6 complete: retention + hardening (lock-aware prune protection, malformed-line `corrupt_lines` propagation, INCOMPLETE meta normalization) + backend hardening test matrix.
+- V5.5e complete: semantic recording foundation delivered (e1-e6), finalized on `main` via `7cf8a6d` (includes e6 hardening commit lineage `6ef6e68`).
+- V5.5f complete: replay player roadmap + implementation through f7 finalized and pushed (`6c175c9..8d0d794`).
+- V5.5f delivered: replay timeline/seek/controller, replay UI controls, trail focus/jump refinements, bookmark CRUD sidecar, System Health replay launcher/hardening, and sessions UX/layout controls.
 
 ## Next task
-- Current candidate: V5.5e finalization (memory completion + commit/push/PR handoff).
-- Status: active.
+- Current candidate: awaiting user direction for next slice/gate.
+- Status: idle (V5.5f complete and pushed).
 - User override rule: this next task can be rejected, replaced, or paused at any time for fixes or new objectives.
 
 ## Primary pointers
@@ -37,7 +34,28 @@
 - Dictionary snapshots: memory/dictionaries/
 - v5.5e commit task log: memory/sessions/v5.5e/2026-02-24__commit-task-log.md
 - v5.5e journal: memory/journal/2026-02-24__v5.5e-commit-task-tracking.md
+- v5.5f commit task log: memory/sessions/v5.5f/2026-02-24__commit-task-log.md
+- v5.5f journal: memory/journal/2026-02-24__v5.5f-commit-task-tracking.md
 
 ## Notes
 - WORKLOG AUTO ON means completed task/gate updates should be reflected in current-state/sessions/journal (and runbooks when procedure-level changes exist).
 - Canonical truth is protocol + indexed canonical artifacts + code verification.
+- [2026-02-24 14:02:13 +03:00] V5.5f f2_followup_1 complete (pending commit): policy enforcement added to AGENTS/workflow_rules requiring compulsory memory append at each task/gate/mid-gate.
+- [2026-02-24 14:12:30 +03:00] V5.5f f3 complete (pending commit): timeline index + keyframe seek engine validated (`python -m compileall -q app_ui/codesee/runtime`; `python -m pytest -q tests/test_codesee_session_replay.py tests/test_codesee_session_recording.py` -> 10 passed).
+- [2026-02-24 14:21:15 +03:00] V5.5f f4 complete (pending commit): `ReplayController` added with deterministic tick/speed/scrub/jump behavior; verification `python -m compileall -q app_ui/codesee/runtime`; `python -m pytest -q tests/test_codesee_session_replay.py tests/test_codesee_session_recording.py` -> 12 passed.
+- [2026-02-24 20:35:50 +03:00] V5.5f f5_followup_1 complete (pending commit): replay trail-focus overlay now reuses replay seek monitor/trace state, replay jump seconds is user-configurable via spinbox, and node alias bridge aligns `system:app_ui` with `module.ui`; verification `python -m pytest -q tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py tests/test_codesee_session_recording.py` -> 16 passed.
+- [2026-02-24 20:51:00 +03:00] V5.5f f5_followup_2 complete (pending commit): session store now normalizes stale `ACTIVE` sessions without lock into `INCOMPLETE`, and adds guarded `delete_session(...)` API (`active`/`locked` protection); verification `python -m pytest -q tests/test_codesee_session_hardening.py` -> 8 passed.
+- [2026-02-24 20:51:00 +03:00] V5.5f f5_followup_3 implemented (pending manual UI confirmation + commit): explicit recording lifecycle controls added in CodeSee (`Start/Pause/Stop Recording`, `Review Session`, `Delete Session`), replay auto-pauses recording while reviewing, clearer session labels/status text, and System Health Sessions adds `Delete selected`; verification `python -m pytest -q tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_hardening.py tests/test_codesee_session_replay.py tests/test_codesee_session_recording.py tests/test_system_health_sessions.py` -> 29 passed.
+- [2026-02-25 19:05:11 +03:00] V5.5f f5_followup_5 complete (pending commit): replay `Play` now accumulates a continuous playhead across sparse timestamps (no midpoint snap), uses floor timestamp->seq resolution during playback, and rewinds to the first frame when Play is pressed from timeline tail; verification `python -m pytest -q tests/test_codesee_session_replay.py tests/test_codesee_screen_replay_controls.py` -> 15 passed.
+- [2026-02-25 19:21:57 +03:00] V5.5f f6 implemented (pending manual UI confirmation + commit): added bookmark sidecar helpers (`bookmarks_path/read_bookmarks/write_bookmarks`) in `app_ui/codesee/storage/session_store.py`, integrated replay bookmark CRUD/jump controls in CodeSee replay UI, and added regression tests `tests/test_codesee_session_replay_bookmarks.py` plus replay-control bookmark coverage; verification `python -m pytest -q tests/test_codesee_session_replay_bookmarks.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py` -> 19 passed.
+- [2026-02-25 19:44:17 +03:00] V5.5f f7 implemented (pending manual UI confirmation + commit): added optional System Health Sessions `Review in CodeSee` launcher into replay, session summary reviewability wiring for action state, forward-safe unknown-field tolerance checks, and replay mutation-boundary regression asserting replay actions do not mutate `records.jsonl`/`keyframes`/`session_meta.json`; verification `python -m pytest -q tests/test_system_health_sessions.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay_bookmarks.py tests/test_codesee_session_replay.py` -> 24 passed.
+- [2026-02-25 21:23:19 +03:00] V5.5f f7 mid-gate UI polish implemented (pending manual UI confirmation + commit): replay controls now explain disabled states (tooltips + status hint) when replay locks recording actions, and System Health Sessions table now exposes a persistent metric designation hint plus per-column header tooltips for numeric fields; verification `python -m pytest -q tests/test_codesee_screen_replay_controls.py tests/test_system_health_sessions.py tests/test_codesee_session_replay.py tests/test_codesee_session_replay_bookmarks.py` -> 25 passed.
+- [2026-02-25 21:31:14 +03:00] V5.5f f7 mid-gate header-clarity refinement implemented (pending manual UI confirmation + commit): Sessions table now uses high-contrast bold headers with clearer labels (`Session ID`, `Started`, `Ended`), grouped metrics emphasis, right-aligned numeric columns, and status color cues to make numeric columns self-explanatory at a glance; verification `python -m compileall -q app_ui/screens/system_health.py tests/test_system_health_sessions.py`; `python -m pytest -q tests/test_system_health_sessions.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py tests/test_codesee_session_replay_bookmarks.py` -> 25 passed.
+- [2026-02-26 00:08:35 +03:00] V5.5f f7 mid-gate sessions UX polish implemented (pending manual UI confirmation + commit): removed duplicate sessions metrics hint row, fixed Sessions header readability/visibility and hid left row-index gutter, and added System Health-only session display-name rename support (Rename selected) persisted to sidecar map .system_health_session_names.json without altering CodeSee replay session IDs; verification python -m pytest -q tests/test_system_health_sessions.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py tests/test_codesee_session_replay_bookmarks.py -> 28 passed.
+- [2026-02-26 00:10:10 +03:00] V5.5f f7 mid-gate regression fix (pending manual UI confirmation + commit): restored visible Sessions table headers by removing per-header-item background overrides that hid label text on dark theme while retaining stable header height and no left row-index gutter; verification python -m pytest -q tests/test_system_health_sessions.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py tests/test_codesee_session_replay_bookmarks.py -> 28 passed.
+- [2026-02-26 00:23:58 +03:00] V5.5f f7 mid-gate sessions layout controls implemented (pending manual UI confirmation + commit): Sessions table now supports user-resizable columns (interactive header drag), per-workspace persisted table layout sidecar (.system_health_sessions_table_layout.json), Auto-fit columns, Reset columns, and header height presets (Small/Normal/Large) in System Health only; verification python -m pytest -q tests/test_system_health_sessions.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py tests/test_codesee_session_replay_bookmarks.py -> 31 passed.
+- [2026-02-26 00:50:57 +03:00] V5.5f f7 mid-gate sessions vertical-sizing controls implemented (pending manual UI confirmation + commit): added System Health Sessions Row height presets (Compact/Normal/Comfortable) with per-workspace persistence in .system_health_sessions_table_layout.json; this provides vertical resizing control without re-enabling left row-header gutter drag; verification python -m pytest -q tests/test_system_health_sessions.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py tests/test_codesee_session_replay_bookmarks.py -> 32 passed.
+- [2026-02-26 00:56:39 +03:00] V5.5f f7 mid-gate header vertical-resize refinement implemented (pending manual UI confirmation + commit): replaced coarse header-size preset combo with precise Header px spinbox (24-64 px) in System Health Sessions, persisted per workspace in .system_health_sessions_table_layout.json to allow direct vertical tuning of header readability; verification python -m pytest -q tests/test_system_health_sessions.py tests/test_codesee_screen_replay_controls.py tests/test_codesee_session_replay.py tests/test_codesee_session_replay_bookmarks.py -> 32 passed.
+- [2026-02-26 01:02:33 +03:00] V5.5f f7 gate closed (Frontend, pass): completed System Health Sessions UX hardening (clear headers, replay-state explainers, System Health-only rename labels, resizable columns, auto-fit/reset, persisted per-workspace table layout, row-height presets, and precise header vertical sizing via Header px); manual UI confirmation received; commit pending.
+- [2026-02-26 01:06:12 +03:00] V5.5f finalization: committed as `8d0d794` and pushed to `origin/work/v5.5f` (remote range `6c175c9..8d0d794`).
+- [2026-02-26 01:13:01 +03:00] Memory normalization pass: reconciled stale pending markers across v5.5e/v5.5f task tables and current-state summary to reflect actual completion and push status (`V5.5e` complete on `main`, `V5.5f` complete on `origin/work/v5.5f` at `8d0d794`).

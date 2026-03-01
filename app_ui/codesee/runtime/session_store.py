@@ -121,14 +121,15 @@ def list_sessions(workspace_id: str) -> List[Dict[str, Any]]:
         if not child.is_dir():
             continue
         raw_meta = read_json(meta_path(child))
+        has_lock = lock_path(child).exists()
         meta = _normalized_session_meta(
             raw_meta,
             session_id=child.name,
             workspace_id=workspace_id,
             session_root=child,
+            has_lock=has_lock,
         )
         started = int(meta.get("started_at_ms_epoch") or 0)
-        has_lock = lock_path(child).exists()
         sessions.append(
             {
                 "session_id": child.name,
@@ -196,12 +197,36 @@ def prune_sessions(
     }
 
 
+def delete_session(
+    workspace_id: str,
+    session_id: str,
+    *,
+    active_session_id: Optional[str] = None,
+    allow_locked: bool = False,
+) -> Dict[str, Any]:
+    sid = sanitize_session_id(session_id)
+    active_sid = sanitize_session_id(active_session_id) if active_session_id else None
+    root = session_dir(workspace_id, sid)
+    if not root.exists():
+        return {"ok": False, "session_id": sid, "reason": "missing"}
+    if active_sid and sid == active_sid:
+        return {"ok": False, "session_id": sid, "reason": "active"}
+    if lock_path(root).exists() and not allow_locked:
+        return {"ok": False, "session_id": sid, "reason": "locked"}
+    try:
+        shutil.rmtree(root)
+    except Exception as exc:
+        return {"ok": False, "session_id": sid, "reason": f"delete_failed:{exc}"}
+    return {"ok": True, "session_id": sid, "reason": "deleted"}
+
+
 def _normalized_session_meta(
     raw_meta: Optional[Dict[str, Any]],
     *,
     session_id: str,
     workspace_id: str,
     session_root: Path,
+    has_lock: bool,
 ) -> Dict[str, Any]:
     meta: Dict[str, Any] = dict(raw_meta or {})
     counts = _normalized_counts(meta.get("counts"))
@@ -218,6 +243,8 @@ def _normalized_session_meta(
         session_schema.SESSION_STATUS_COMPLETE,
         session_schema.SESSION_STATUS_INCOMPLETE,
     }:
+        status = session_schema.SESSION_STATUS_INCOMPLETE
+    if status == session_schema.SESSION_STATUS_ACTIVE and not bool(has_lock):
         status = session_schema.SESSION_STATUS_INCOMPLETE
 
     meta["session_id"] = str(meta.get("session_id") or session_id)

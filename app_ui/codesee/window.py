@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from app_ui import ui_scale
 from app_ui.window_state import restore_geometry as restore_window_geometry
 from app_ui.window_state import save_geometry as save_window_geometry
 from .runtime.hub import CodeSeeRuntimeHub
@@ -24,7 +25,7 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("Code See")
         self.resize(1100, 720)
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(720, 480)
         self._on_close = on_close
         self._save_timer = QtCore.QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -50,6 +51,8 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
                 QtWidgets.QSizePolicy.Policy.Expanding,
                 QtWidgets.QSizePolicy.Policy.Expanding,
             )
+        self._apply_ui_scale_geometry(ui_scale.get_config())
+        ui_scale.register_listener(self._on_ui_scale_changed)
         self._restore_geometry()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[name-defined]
@@ -81,3 +84,14 @@ class CodeSeeWindow(QtWidgets.QMainWindow):
 
     def _restore_geometry(self) -> None:
         restore_window_geometry(self, "codesee")
+
+    def _on_ui_scale_changed(self, cfg: ui_scale.UiScaleConfig) -> None:
+        self._apply_ui_scale_geometry(cfg)
+
+    def _apply_ui_scale_geometry(self, cfg: ui_scale.UiScaleConfig) -> None:
+        del cfg
+        min_w = int(ui_scale.scale_px(720))
+        min_h = int(ui_scale.scale_px(480))
+        self.setMinimumSize(min_w, min_h)
+        if self.width() < min_w or self.height() < min_h:
+            self.resize(max(self.width(), min_w), max(self.height(), min_h))
